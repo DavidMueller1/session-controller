@@ -1,0 +1,41 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { CONFIG } from "./config.js";
+
+/**
+ * An entry from the live CLI session registry (~/.claude/sessions/<pid>.json). Only
+ * currently-running sessions appear here. `name` is the user's rename (the strip
+ * callsign for terminal sessions); `status` is Claude Code's own busy/idle signal.
+ */
+export interface RegistryEntry {
+  sessionId: string;
+  name: string | null;
+  status: string | null;
+  entrypoint: string | null;
+}
+
+export function isRegistryFile(p: string): boolean {
+  return p.startsWith(CONFIG.sessionsDir + path.sep) && p.endsWith(".json");
+}
+
+export async function parseRegistryFile(filePath: string): Promise<RegistryEntry | null> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(filePath, "utf8");
+  } catch {
+    return null;
+  }
+  let o: any;
+  try {
+    o = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!o || typeof o.sessionId !== "string") return null;
+  return {
+    sessionId: o.sessionId,
+    name: typeof o.name === "string" && o.name.trim() ? o.name.trim() : null,
+    status: typeof o.status === "string" ? o.status : null,
+    entrypoint: typeof o.entrypoint === "string" ? o.entrypoint : null,
+  };
+}

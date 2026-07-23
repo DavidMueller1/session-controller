@@ -12,6 +12,10 @@ export const CONFIG = {
   /** CLI transcripts: ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl */
   cliProjectsDir: path.join(home, ".claude", "projects"),
 
+  /** live session registry: ~/.claude/sessions/<pid>.json — holds the user's rename
+   *  (`name`) and a live `status` per running session, keyed by sessionId */
+  sessionsDir: path.join(home, ".claude", "sessions"),
+
   /** Claude Desktop (Cowork / local agent mode) session metadata */
   desktopSessionDirs: [
     path.join(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions"),

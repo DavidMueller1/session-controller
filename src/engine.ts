@@ -7,6 +7,7 @@ import { correlate } from "./correlate.js";
 import { resolve } from "./deriveState.js";
 import { parseCliTranscript } from "./parseCli.js";
 import { isDesktopSessionFile, parseDesktopSession } from "./parseDesktop.js";
+import { type RegistryEntry, isRegistryFile, parseRegistryFile } from "./registry.js";
 import type { DiscoveredSession, SessionFacts } from "./types.js";
 
 function isCliTranscript(p: string): boolean {
@@ -32,6 +33,8 @@ function signature(list: DiscoveredSession[]): string {
  */
 export class Engine extends EventEmitter {
   private facts = new Map<string, SessionFacts>();
+  /** live session registry, keyed by file path (a few running sessions) */
+  private registry = new Map<string, RegistryEntry>();
   private current: DiscoveredSession[] = [];
   private lastSig = "";
   private watcher?: FSWatcher;
@@ -49,13 +52,36 @@ export class Engine extends EventEmitter {
   }
 
   private async upsert(p: string): Promise<void> {
+    if (isRegistryFile(p)) {
+      const entry = await parseRegistryFile(p);
+      if (entry) this.registry.set(p, entry);
+      return;
+    }
     const f = await this.parseFile(p);
     if (f) this.facts.set(p, f);
   }
 
+  private forget(p: string): void {
+    this.facts.delete(p);
+    this.registry.delete(p);
+  }
+
+  /** sessionId → registry entry (rebuilt cheaply; only a handful of live sessions) */
+  private registryBySession(): Map<string, RegistryEntry> {
+    const m = new Map<string, RegistryEntry>();
+    for (const e of this.registry.values()) m.set(e.sessionId, e);
+    return m;
+  }
+
   private recompute(force = false): void {
     const now = Date.now();
-    const list = correlate([...this.facts.values()].map((f) => resolve(f, now)));
+    const names = this.registryBySession();
+    const list = correlate([...this.facts.values()].map((f) => resolve(f, now))).map((a) => {
+      // a terminal session's rename (registry `name`) is its callsign; desktop titles
+      // are left as-is (their metadata title is already good).
+      const name = names.get(a.id)?.name;
+      return name ? { ...a, title: name } : a;
+    });
     const sig = signature(list);
     if (!force && sig === this.lastSig) return;
     this.lastSig = sig;
@@ -77,13 +103,13 @@ export class Engine extends EventEmitter {
     }
     const targets = entries
       .map((e) => path.join(dir, e))
-      .filter((p) => isCliTranscript(p) || isDesktopSessionFile(p));
+      .filter((p) => isCliTranscript(p) || isDesktopSessionFile(p) || isRegistryFile(p));
     await Promise.all(targets.map((p) => this.upsert(p)));
   }
 
   /** one-shot: full scan + derive, no watchers or timers (used by `once`) */
   async scan(): Promise<void> {
-    const roots = [CONFIG.cliProjectsDir, ...CONFIG.desktopSessionDirs];
+    const roots = [CONFIG.cliProjectsDir, CONFIG.sessionsDir, ...CONFIG.desktopSessionDirs];
     await Promise.all(roots.map((r) => this.scanDir(r)));
     this.recompute(true);
   }
@@ -92,20 +118,20 @@ export class Engine extends EventEmitter {
   async start(): Promise<void> {
     await this.scan();
 
-    const roots = [CONFIG.cliProjectsDir, ...CONFIG.desktopSessionDirs];
+    const roots = [CONFIG.cliProjectsDir, CONFIG.sessionsDir, ...CONFIG.desktopSessionDirs];
     this.watcher = chokidar.watch(roots, {
       ignoreInitial: true,
       persistent: true,
       depth: 8,
       // chokidar v4 dropped glob support — filter files by shape here instead
       ignored: (p: string, stats?: { isFile(): boolean }) =>
-        stats?.isFile() === true && !isCliTranscript(p) && !isDesktopSessionFile(p),
+        stats?.isFile() === true && !isCliTranscript(p) && !isDesktopSessionFile(p) && !isRegistryFile(p),
     });
     this.watcher
       .on("add", (p) => this.upsert(p).then(() => this.scheduleRecompute()))
       .on("change", (p) => this.upsert(p).then(() => this.scheduleRecompute()))
       .on("unlink", (p) => {
-        this.facts.delete(p);
+        this.forget(p);
         this.scheduleRecompute();
       });
 
@@ -114,7 +140,7 @@ export class Engine extends EventEmitter {
     // safety net: occasionally re-read all files in case an fs event was missed
     this.intervals.push(
       setInterval(() => {
-        Promise.all([...this.facts.keys()].map((p) => this.upsert(p))).then(() => this.recompute());
+        Promise.all([...this.facts.keys(), ...this.registry.keys()].map((p) => this.upsert(p))).then(() => this.recompute());
       }, CONFIG.reconcileMs),
     );
   }

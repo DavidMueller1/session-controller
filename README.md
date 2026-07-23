@@ -21,9 +21,11 @@ See [CONCEPT.md](CONCEPT.md) for the full design and the locked decisions.
 ### What's tracked
 
 - **CLI sessions** — read from `~/.claude/projects/**/*.jsonl` (branch + cwd come straight
-  from the transcript).
+  from the transcript). The strip **callsign is the session's `/rename`** value, read live
+  from `~/.claude/sessions/<pid>.json` (falls back to the auto title for unnamed sessions).
 - **Desktop sessions** — read from
-  `~/Library/Application Support/Claude/{local-agent-mode,claude-code}-sessions/**/local_*.json`.
+  `~/Library/Application Support/Claude/{local-agent-mode,claude-code}-sessions/**/local_*.json`
+  (uses the session's own title).
 - Read-only: the app never writes to Claude's files.
 - Activity state (Layer A of the concept) is derived per session and is **never terminal** —
   a stale session goes `COLD`, never "finished". Landing stays a human decision (Phase 6).
@@ -86,6 +88,7 @@ src/
   types.ts        SessionFacts, DiscoveredSession, ActivityState
   parseCli.ts     JSONL transcript → SessionFacts
   parseDesktop.ts desktop metadata json → SessionFacts
+  registry.ts     ~/.claude/sessions/*.json → live session name (rename) + status
   deriveState.ts  facts + now → resolved state (pure, no I/O)
   correlate.ts    dedupe/merge sessions into one aircraft each
   engine.ts       watch + scan + fast tick; emits `update(aircraft)`
@@ -105,7 +108,9 @@ web/              Vue 3 + Vite flight-strip board
     types.ts
 ```
 
-## Next (Phase 4)
+## Next
 
-User-owned aircraft cards: manual session→card assignment with ranked suggestions,
-rich card metadata, drag between lanes. See CONCEPT.md §10.
+Phase 4 (manual assignment) was **dropped** — session naming via `/rename` makes it
+unnecessary; this is a session tracker. Next up: **Phase 5** (CLI hooks + the registry
+`status` field to make working/MIA/needs-input exact) and **Phase 6** (PR integration,
+git icons, landed-on-merge). See CONCEPT.md §10.

@@ -262,9 +262,14 @@ follow-up PR: it keeps its history, resets `prState` for the new branch/PR, and 
 2. **CLI hooks:** ✅ Install `Stop`/`Notification`/`SessionEnd` hooks for precise
    *needs-input* / *suspected-done* detection.
 3. **Frontend:** ✅ Vue 3.
-4. **Session → card assignment:** ✅ **Manual, with ranked suggestions** (git branch + project
-   folder + `cliSessionId`). You confirm every attachment via the inbound-tray UI.
-5. **Card metadata:** ✅ Rich card — callsign, description, priority, notes, Jira ticket link.
+4. **Naming instead of assignment:** ✅ **Superseded.** The original plan was a manual
+   session→card assignment tray. In practice each CLI session already carries a user-set
+   **name** (the `/rename` value, stored in `~/.claude/sessions/<pid>.json` and read live),
+   and desktop sessions carry their own title. That name *is* the callsign, so the app is a
+   **session tracker** — no separate card/assignment layer. Annotation is covered by notes +
+   landed. (Phase 4 dropped.)
+5. **Card metadata:** notes + landed on each session strip (rich cards/Jira dropped with the
+   assignment layer; revisit only if a real need appears).
 6. **Landing:** ✅ **No time-based auto-landing.** Two-layer model (§5): the system shows a
    *suspected-done* signal and live PR state (git icons: exists / merged), but **only you mark
    a feature Landed**. Dormant ≠ landed (overnight-safe). **Go-around** supported for
@@ -277,14 +282,15 @@ follow-up PR: it keeps its history, resets `prState` for the new branch/PR, and 
 
 ---
 
-## 10. Suggested build phases
+## 10. Build phases
 
-1. **Watcher spike** — read both source trees, print discovered sessions + activity state to
-   console. Proves tracking end-to-end, zero UI.
-2. **Store + API** — SQLite schema, REST + WebSocket, activity-state derivation.
-3. **Board UI (Vue)** — flight strips, lanes, live updates.
-4. **Inbound tray + assignment** — suggestions, manual assign/override, create card, rich-card
-   editing.
-5. **CLI hooks** — install Stop/Notification/SessionEnd → precise needs-input / suspected-done.
-6. **PR integration** — `gh` polling, git icons, Approach lane, Landed action, go-around.
+1. ✅ **Watcher spike** — read both source trees, derive activity state, dedupe. Console board.
+2. ✅ **Store + API** — SQLite + Fastify REST/WebSocket over a shared engine.
+3. ✅ **Board UI (Vue)** — dark control-tower board: in-flight band, lanes, flashing holding,
+   notes → parked, FLIP animation, manual Landed row + go-around, MIA (soft in-flight) state.
+4. ~~Inbound tray + assignment~~ — **dropped** (see §9.4). Replaced by live session naming:
+   CLI strips use the `/rename` value from `~/.claude/sessions`; desktop strips use their title.
+5. **CLI hooks + registry status** — install Stop/Notification/SessionEnd, and use the
+   registry `status` (busy/idle) → make working / MIA / needs-input exact instead of inferred.
+6. **PR integration** — `gh` polling, git icons, Approach lane, Landed-on-merge nudge.
 7. **Polish** — holding alerts, archive/search, launchd background agent.
