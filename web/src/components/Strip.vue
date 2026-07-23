@@ -16,7 +16,11 @@ const landed = computed(() => !!props.aircraft.landed);
 const parked = computed(() => isParked(props.aircraft) && !landed.value);
 const flashing = computed(() => isFlashing(props.aircraft) && !landed.value);
 const mia = computed(() => isMia(props.aircraft));
-const age = computed(() => formatAge(props.aircraft.lastActivityAt ? props.now - props.aircraft.lastActivityAt : null));
+// time in current state (reset only on state change), not time since last event
+const age = computed(() => {
+  const since = props.aircraft.stateSince ?? props.aircraft.lastActivityAt;
+  return formatAge(since ? props.now - since : null);
+});
 const surfaces = computed(() => props.aircraft.surfaces ?? [props.aircraft.source]);
 const spineColor = computed(() => (landed.value ? LANDED_COLOR : parked.value ? "var(--amber-deep)" : meta.value.color));
 

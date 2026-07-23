@@ -8,10 +8,12 @@ import type { Aircraft } from "./types";
 const { aircraft, connected, now, start, setNote, removeNote, land, unland } = useBoard();
 onMounted(start);
 
+// order by when each entered its state, so tool calls / thinking don't reshuffle the
+// board — a strip only moves when its state actually changes.
+const orderKey = (a: { stateSince?: number | null; lastActivityAt: number | null }) =>
+  a.stateSince ?? a.lastActivityAt ?? 0;
 const byLane = (lane: string) =>
-  aircraft.value
-    .filter((a) => laneOf(a) === lane)
-    .sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0));
+  aircraft.value.filter((a) => laneOf(a) === lane).sort((a, b) => orderKey(b) - orderKey(a));
 
 // in-flight: active first, MIA (lost contact) drifts to the end of the band
 const inflight = computed(() =>

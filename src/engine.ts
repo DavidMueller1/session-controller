@@ -35,6 +35,8 @@ export class Engine extends EventEmitter {
   private facts = new Map<string, SessionFacts>();
   /** live session registry, keyed by file path (a few running sessions) */
   private registry = new Map<string, RegistryEntry>();
+  /** per-aircraft: current state + when it was entered (drives the displayed timer) */
+  private stateSince = new Map<string, { state: string; since: number }>();
   private current: DiscoveredSession[] = [];
   private lastSig = "";
   private watcher?: FSWatcher;
@@ -76,12 +78,25 @@ export class Engine extends EventEmitter {
   private recompute(force = false): void {
     const now = Date.now();
     const names = this.registryBySession();
+    const seen = new Set<string>();
     const list = correlate([...this.facts.values()].map((f) => resolve(f, now))).map((a) => {
       // a terminal session's rename (registry `name`) is its callsign; desktop titles
       // are left as-is (their metadata title is already good).
       const name = names.get(a.id)?.name;
-      return name ? { ...a, title: name } : a;
+      const titled = name ? { ...a, title: name } : a;
+
+      // stateSince: the moment this aircraft entered its current state. It drives the
+      // displayed timer + ordering, so tool calls / thinking don't reset the clock or
+      // reshuffle the board — only a real state change does. lastActivityAt still drives
+      // the MIA/dormant thresholds internally.
+      seen.add(titled.id);
+      const prev = this.stateSince.get(titled.id);
+      const since = prev && prev.state === titled.state ? prev.since : prev ? now : titled.lastActivityAt ?? now;
+      this.stateSince.set(titled.id, { state: titled.state, since });
+      return { ...titled, stateSince: since };
     });
+    for (const id of [...this.stateSince.keys()]) if (!seen.has(id)) this.stateSince.delete(id);
+
     const sig = signature(list);
     if (!force && sig === this.lastSig) return;
     this.lastSig = sig;

@@ -57,8 +57,12 @@ export interface DiscoveredSession {
   title: string | null;
   model: string | null;
   firstSeenAt: number | null;
+  /** timestamp of the last transcript event — used INTERNALLY for MIA/dormant timing, not shown */
   lastActivityAt: number | null;
   state: ActivityState;
+  /** when the aircraft entered its current state — drives the displayed timer + ordering
+   *  (so tool calls / thinking don't reset the clock or reshuffle the board) */
+  stateSince?: number | null;
   /** one-line description of the most recent event */
   lastEventSummary: string;
   /** desktop→cli correlation key (§2b), when present */

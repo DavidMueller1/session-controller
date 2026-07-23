@@ -21,6 +21,7 @@ export interface Aircraft {
   firstSeenAt: number | null;
   lastActivityAt: number | null;
   state: ActivityState;
+  stateSince?: number | null;
   lastEventSummary: string;
   linkedCliSessionId: string | null;
   note?: string | null;
