@@ -19,8 +19,10 @@ function deriveCli(f: SessionFacts, now: number): [ActivityState, string] {
   if (f.tailKind === "assistant-text") {
     return [age > CONFIG.needsInputGraceMs ? "needs-input" : "working", f.tailSummary];
   }
-  // assistant-tool | tool-result | human => work in motion
-  return [age > CONFIG.workingWindowMs ? "idle" : "working", f.tailSummary];
+  // assistant-tool | tool-result | human => work in motion. Stays "working" (flying)
+  // through normal composition gaps; only goes "idle" (rendered as MIA) after a long
+  // radar silence. It never leaves the in-flight lane until it's dormant (Cold).
+  return [age > CONFIG.miaAfterMs ? "idle" : "working", f.tailSummary];
 }
 
 function deriveDesktop(f: SessionFacts, now: number): [ActivityState, string] {
@@ -28,7 +30,7 @@ function deriveDesktop(f: SessionFacts, now: number): [ActivityState, string] {
   if (f.lastActivityAt == null) return ["unknown", "no activity timestamp"];
   const age = now - f.lastActivityAt;
   if (age > CONFIG.dormantMs) return ["dormant", "cold — no recent activity"];
-  if (age > CONFIG.workingWindowMs) return ["idle", "idle"];
+  if (age > CONFIG.miaAfterMs) return ["idle", "no recent activity"];
   return ["working", "active"];
 }
 

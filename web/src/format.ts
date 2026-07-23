@@ -12,12 +12,16 @@ export const STATE: Record<ActivityState, StateMeta> = {
   "needs-input": { lane: "holding", color: "#e0a92e", label: "Needs you" },
   error: { lane: "holding", color: "#f85149", label: "Go-around" },
   "suspected-done": { lane: "approach", color: "#58a6ff", label: "Approach" },
-  idle: { lane: "taxiing", color: "#7d8590", label: "Taxiing" },
+  // idle stays in the in-flight lane — a mid-work session that's gone quiet is still
+  // flying, just "lost contact" (rendered with a soft MIA badge).
+  idle: { lane: "inflight", color: "#6b7688", label: "MIA" },
   dormant: { lane: "cold", color: "#4d5560", label: "Cold" },
   unknown: { lane: "cold", color: "#4d5560", label: "Unknown" },
 };
 
-export const LANE_ORDER: Lane[] = ["holding", "approach", "taxiing"];
+export function isMia(a: Aircraft): boolean {
+  return a.state === "idle" && !a.landed;
+}
 
 export const LANDED_COLOR = "#2f6f4f";
 

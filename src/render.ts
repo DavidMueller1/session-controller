@@ -28,7 +28,7 @@ const STATE: Record<ActivityState, StateStyle> = {
   "needs-input": { dot: "◆", label: "HOLDING", paint: c.yellow, rank: 0 },
   error: { dot: "✖", label: "GO-AROUND", paint: c.red, rank: 1 },
   working: { dot: "●", label: "IN-FLIGHT", paint: c.green, rank: 2 },
-  idle: { dot: "○", label: "TAXIING", paint: c.cyan, rank: 3 },
+  idle: { dot: "◌", label: "MIA", paint: c.cyan, rank: 3 },
   "suspected-done": { dot: "🛬", label: "APPROACH?", paint: c.magenta, rank: 4 },
   dormant: { dot: "○", label: "COLD", paint: c.gray, rank: 5 },
   unknown: { dot: "?", label: "UNKNOWN", paint: c.dim, rank: 6 },

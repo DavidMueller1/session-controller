@@ -18,8 +18,9 @@ export const CONFIG = {
     path.join(home, "Library", "Application Support", "Claude", "claude-code-sessions"),
   ],
 
-  /** mid-turn + within this window since last activity => working, else idle */
-  workingWindowMs: 60_000,
+  /** a mid-work session stays "working" until this long of silence, then goes MIA
+   *  (still flying, just a soft "lost contact" badge — not a separate lane) */
+  miaAfterMs: 5 * 60_000,
   /** assistant turn ended; wait this short grace before calling it needs-input (HOLDING) */
   needsInputGraceMs: 8_000,
   /** no activity for this long => "cold" (dormant). NOT landed. Overnight-safe. */

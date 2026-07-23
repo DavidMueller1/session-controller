@@ -27,7 +27,7 @@ export interface Aircraft {
   landed?: boolean;
 }
 
-export type Lane = "inflight" | "holding" | "approach" | "taxiing" | "cold" | "landed";
+export type Lane = "inflight" | "holding" | "approach" | "cold" | "landed";
 
 export interface WsMessage {
   type: "snapshot" | "update";

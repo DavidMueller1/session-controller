@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, nextTick } from "vue";
 import type { Aircraft } from "../types";
-import { STATE, LANDED_COLOR, isParked, isFlashing, formatAge, projectName } from "../format";
+import { STATE, LANDED_COLOR, isParked, isFlashing, isMia, formatAge, projectName } from "../format";
 
 const props = defineProps<{ aircraft: Aircraft; now: number }>();
 const emit = defineEmits<{
@@ -15,6 +15,7 @@ const meta = computed(() => STATE[props.aircraft.state]);
 const landed = computed(() => !!props.aircraft.landed);
 const parked = computed(() => isParked(props.aircraft) && !landed.value);
 const flashing = computed(() => isFlashing(props.aircraft) && !landed.value);
+const mia = computed(() => isMia(props.aircraft));
 const age = computed(() => formatAge(props.aircraft.lastActivityAt ? props.now - props.aircraft.lastActivityAt : null));
 const surfaces = computed(() => props.aircraft.surfaces ?? [props.aircraft.source]);
 const spineColor = computed(() => (landed.value ? LANDED_COLOR : parked.value ? "var(--amber-deep)" : meta.value.color));
@@ -37,12 +38,13 @@ function commitNote() {
 </script>
 
 <template>
-  <div class="strip" :class="{ flash: flashing, parked, landed }" :data-fid="aircraft.id">
+  <div class="strip" :class="{ flash: flashing, parked, landed, mia }" :data-fid="aircraft.id">
     <div class="spine" :style="{ background: spineColor }"></div>
     <div class="body">
       <div class="cs">
         <span class="title">{{ aircraft.title || aircraft.id }}</span>
         <span v-if="landed" class="badge" style="background: #16301f; color: #4cc38a"><i class="ti ti-check"></i> Landed</span>
+        <span v-else-if="mia" class="badge" style="background: #1c222c; color: #8b98a8" title="no activity for 5+ min — still flying, but lost contact"><i class="ti ti-clock"></i> MIA</span>
         <span v-else-if="parked" class="badge" style="background: var(--amber-bg); color: var(--amber)">Parked</span>
         <span
           v-else-if="aircraft.state === 'needs-input' || aircraft.state === 'error'"
@@ -99,6 +101,7 @@ function commitNote() {
 .strip.parked { background: var(--strip-parked); }
 .strip.flash { animation: flash 1s ease-in-out infinite; }
 .strip.landed { opacity: 0.9; }
+.strip.mia { opacity: 0.7; }
 .spine { width: 4px; flex: none; }
 .body { flex: 1; min-width: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
 .cs { display: flex; align-items: center; gap: 6px; }

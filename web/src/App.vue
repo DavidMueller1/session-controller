@@ -2,7 +2,7 @@
 import { computed, onBeforeUpdate, onMounted, onUpdated, ref } from "vue";
 import Strip from "./components/Strip.vue";
 import { useBoard } from "./useBoard";
-import { laneOf, isFlashing } from "./format";
+import { laneOf, isFlashing, isMia } from "./format";
 import type { Aircraft } from "./types";
 
 const { aircraft, connected, now, start, setNote, removeNote, land, unland } = useBoard();
@@ -13,9 +13,11 @@ const byLane = (lane: string) =>
     .filter((a) => laneOf(a) === lane)
     .sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0));
 
-const inflight = computed(() => byLane("inflight"));
+// in-flight: active first, MIA (lost contact) drifts to the end of the band
+const inflight = computed(() =>
+  byLane("inflight").sort((a, b) => Number(isMia(a)) - Number(isMia(b))),
+);
 const approach = computed(() => byLane("approach"));
-const taxiing = computed(() => byLane("taxiing"));
 const cold = computed(() => byLane("cold"));
 const landed = computed(() => byLane("landed"));
 // holding: flashing "needs you" strips first, parked ones after
@@ -94,14 +96,6 @@ function onUnland(id: string) { unland(id); }
           <div v-if="!approach.length" class="empty">clear</div>
         </div>
       </section>
-
-      <section class="lane">
-        <div class="lane-h"><i class="ti ti-circle-filled" style="color: var(--gray)"></i>Taxiing <span class="n">{{ taxiing.length }}</span></div>
-        <div class="stack">
-          <Strip v-for="a in taxiing" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" />
-          <div v-if="!taxiing.length" class="empty">clear</div>
-        </div>
-      </section>
     </div>
 
     <template v-if="landed.length">
@@ -142,7 +136,7 @@ header { display: flex; align-items: center; justify-content: space-between; fle
 .horizon { display: flex; align-items: center; gap: 8px; margin: 14px 0 12px; }
 .horizon span { flex: 1; height: 1px; background: var(--border-soft); }
 .horizon label { font-size: 10px; color: #4d5560; letter-spacing: 1px; }
-.lanes { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 10px; align-items: start; }
+.lanes { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; align-items: start; }
 .lane { background: var(--panel); border-radius: 10px; padding: 8px; }
 .lane .lane-h { margin-bottom: 8px; padding: 0 2px; }
 .stack { display: flex; flex-direction: column; gap: 8px; min-height: 34px; }
