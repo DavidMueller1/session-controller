@@ -77,7 +77,7 @@ export function render(sessions: DiscoveredSession[], now: number, clear: boolea
 
   const lines: string[] = [];
   lines.push("");
-  lines.push(c.bold("  ✈  TRAFFIC CONTROLLER") + c.dim("  — phase 1 watcher spike"));
+  lines.push(c.bold("  ✈  TRAFFIC CONTROLLER") + c.dim("  — live session board"));
   lines.push(c.dim(`  ${sessions.length} aircraft tracked   ${new Date(now).toLocaleTimeString()}`));
   lines.push("  " + (summaryLine || c.dim("no sessions found")));
   lines.push("");

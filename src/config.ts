@@ -31,4 +31,10 @@ export const CONFIG = {
   fastTickMs: 1_000,
   /** safety-net full re-read of all files, in case a filesystem event was missed */
   reconcileMs: 60_000,
+
+  /** API server (Phase 2) */
+  apiPort: Number(process.env.PORT ?? 4317),
+  apiHost: process.env.HOST ?? "127.0.0.1",
+  /** SQLite database file */
+  dbPath: path.join(process.cwd(), "data", "traffic-controller.db"),
 };

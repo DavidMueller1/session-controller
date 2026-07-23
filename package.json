@@ -1,21 +1,30 @@
 {
   "name": "traffic-controller",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Air-traffic-control style tracker for parallel Claude sessions (Phase 1: watcher spike)",
+  "description": "Air-traffic-control style tracker for parallel Claude sessions",
   "scripts": {
-    "dev": "tsx watch src/watcher.ts",
-    "start": "tsx src/watcher.ts",
-    "once": "tsx src/watcher.ts --once",
+    "start": "tsx src/server.ts",
+    "serve": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts",
+    "board": "tsx src/console-app.ts",
+    "once": "tsx src/console-app.ts --once",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "chokidar": "^4.0.3"
+    "@fastify/websocket": "^11.0.2",
+    "better-sqlite3": "^11.8.1",
+    "chokidar": "^4.0.3",
+    "fastify": "^5.2.1"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
   }
 }
