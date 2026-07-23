@@ -31,12 +31,24 @@ function collapseCli(group: DiscoveredSession[]): DiscoveredSession {
  */
 function merge(cli: DiscoveredSession, desktop: DiscoveredSession): DiscoveredSession {
   const lastActivityAt = Math.max(cli.lastActivityAt ?? 0, desktop.lastActivityAt ?? 0) || null;
-  const cliNewer = (cli.lastActivityAt ?? 0) >= (desktop.lastActivityAt ?? 0);
-  const base = cliNewer ? cli : desktop;
 
-  let state = base.state;
-  let lastEventSummary = base.lastEventSummary;
-  if (desktop.state === "suspected-done" && (state === "dormant" || state === "idle" || state === "unknown")) {
+  // Trust the CLI transcript for state — it's the only source that can tell
+  // "waiting on you" (needs-input) from "working". The desktop metadata is time-only
+  // and would collapse a waiting session into a false MIA. We use the desktop side
+  // only for (a) rescuing a lagging CLI transcript and (b) the archived signal.
+  let state = cli.state;
+  let lastEventSummary = cli.lastEventSummary;
+
+  // CLI transcripts for desktop-run sessions can lag; a fresher desktop "working"
+  // heartbeat means it's genuinely active even if the CLI tail looks stale.
+  const desktopFresher = (desktop.lastActivityAt ?? 0) > (cli.lastActivityAt ?? 0);
+  if (desktopFresher && desktop.state === "working" && (state === "idle" || state === "dormant" || state === "unknown")) {
+    state = "working";
+    lastEventSummary = cli.lastEventSummary || "active";
+  }
+
+  // archived is a real "done" signal — surface it unless the CLI shows clear activity
+  if (desktop.state === "suspected-done" && state !== "working" && state !== "needs-input") {
     state = "suspected-done";
     lastEventSummary = desktop.lastEventSummary;
   }
