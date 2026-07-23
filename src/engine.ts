@@ -82,23 +82,30 @@ export class Engine extends EventEmitter {
 
   private recompute(force = false): void {
     const now = Date.now();
-    const names = this.registryBySession();
+    const reg = this.registryBySession();
     const seen = new Set<string>();
-    const list = correlate([...this.facts.values()].map((f) => resolve(f, now))).map((a) => {
+    const list = correlate([...this.facts.values()].map((f) => resolve(f, now))).map((a0) => {
+      const entry = reg.get(a0.id);
       // a terminal session's rename (registry `name`) is its callsign; desktop titles
       // are left as-is (their metadata title is already good).
-      const name = names.get(a.id)?.name;
-      const titled = name ? { ...a, title: name } : a;
+      let a = entry?.name ? { ...a0, title: entry.name } : a0;
+
+      // Registry `status` is Claude Code's own live signal — authoritative for CLI
+      // sessions, so we trust it over transcript-timing inference: busy => working,
+      // idle => waiting on you. Desktop-run sessions report null status; those fall
+      // back to the inferred state. This is what makes states exact without hooks.
+      if (entry?.status === "busy") a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
+      else if (entry?.status === "idle") a = { ...a, state: "needs-input" };
 
       // stateSince: the moment this aircraft entered its current state. It drives the
       // displayed timer + ordering, so tool calls / thinking don't reset the clock or
       // reshuffle the board — only a real state change does. lastActivityAt still drives
       // the MIA/dormant thresholds internally.
-      seen.add(titled.id);
-      const prev = this.stateSince.get(titled.id);
-      const since = prev && prev.state === titled.state ? prev.since : prev ? now : titled.lastActivityAt ?? now;
-      this.stateSince.set(titled.id, { state: titled.state, since });
-      return { ...titled, stateSince: since };
+      seen.add(a.id);
+      const prev = this.stateSince.get(a.id);
+      const since = prev && prev.state === a.state ? prev.since : prev ? now : a.lastActivityAt ?? now;
+      this.stateSince.set(a.id, { state: a.state, since });
+      return { ...a, stateSince: since };
     });
     for (const id of [...this.stateSince.keys()]) if (!seen.has(id)) this.stateSince.delete(id);
 

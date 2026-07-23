@@ -191,7 +191,13 @@ Derived per session. This layer never declares a feature "done" on its own.
 | **idle** | No file change for a short while; session still open. |
 | **dormant** | No activity for a long stretch (e.g. overnight). **Greyed, not landed** — just "cold". |
 | **suspected-done** | A *soft* signal: `Stop`/`SessionEnd` hook fired, or desktop `isArchived: true`, or dormant + a merged PR. Shown as a "🛬 system thinks this is finished — confirm?" badge. **Never moves the aircraft to Landed by itself.** |
-| **error** | Last events show tool errors / abort. Go-around marker. |
+| **error** | *(removed)* tool errors are not terminal — Claude retries; no auto go-around. |
+
+**Authoritative override (implemented).** For a **live CLI session**, Claude Code's own
+`status` in `~/.claude/sessions/<pid>.json` overrides the inferred state: `busy` → working,
+`idle` → needs-input (waiting on you). This is exact and needs no setup. The transcript-shape
+inference above is the fallback for desktop-run sessions and ended sessions. `AskUserQuestion`
+/ `ExitPlanMode` in the transcript also map straight to needs-input.
 
 ### Layer B — Flight status (the board lane — you own it, PR-informed)
 | flightStatus | Meaning |
@@ -275,10 +281,18 @@ follow-up PR: it keeps its history, resets `prState` for the new branch/PR, and 
    a feature Landed**. Dormant ≠ landed (overnight-safe). **Go-around** supported for
    follow-up PRs.
 
+7. **No hooks (for shareability):** ✅ For distributing to colleagues, file-watching + the
+   registry `status` field is the right base: **zero per-machine setup**, covers CLI + desktop
+   + history, and recovers state on restart. Hooks would require editing each person's
+   `settings.json`, only fire for CLI sessions (not desktop), and drop events when the app
+   isn't running — so they'd be an optional power-user add-on at best, not the baseline.
+
 ### Still to confirm (minor)
 - **PR poll interval** (e.g. every 60s vs. on-demand refresh) and which repos/remotes to scan.
 - **Dormant threshold** for the grey "cold" indicator only (purely visual, never terminal) —
   suggest ~2h.
+- **Cross-platform**: core watching is portable; desktop paths + the `open` window-focus are
+  macOS-only and need per-OS handling before non-mac colleagues can use those parts.
 
 ---
 
@@ -290,7 +304,12 @@ follow-up PR: it keeps its history, resets `prState` for the new branch/PR, and 
    notes → parked, FLIP animation, manual Landed row + go-around, MIA (soft in-flight) state.
 4. ~~Inbound tray + assignment~~ — **dropped** (see §9.4). Replaced by live session naming:
    CLI strips use the `/rename` value from `~/.claude/sessions`; desktop strips use their title.
-5. **CLI hooks + registry status** — install Stop/Notification/SessionEnd, and use the
-   registry `status` (busy/idle) → make working / MIA / needs-input exact instead of inferred.
+5. ✅ **Registry status** — for live CLI sessions, take state from Claude Code's own
+   `~/.claude/sessions` `status` (busy → In-flight, idle → Holding); authoritative, no
+   transcript guesswork, **zero per-machine setup**. Desktop sessions fall back to inference.
+   Also: `open` action focuses the host window; AskUserQuestion/ExitPlanMode → Holding; tool
+   errors are not terminal. **Hooks intentionally skipped** — they'd need per-machine
+   settings.json edits and only cover CLI (see the distribution note in §9).
 6. **PR integration** — `gh` polling, git icons, Approach lane, Landed-on-merge nudge.
-7. **Polish** — holding alerts, archive/search, launchd background agent.
+7. **Polish + packaging** — holding alerts, archive/search, launchd agent; cross-platform
+   desktop paths + a simple install so colleagues can run it.

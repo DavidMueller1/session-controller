@@ -14,9 +14,14 @@ See [CONCEPT.md](CONCEPT.md) for the full design and the locked decisions.
 - **Phase 2 — store + API ✅** — a shared `Engine` feeds a SQLite store and a Fastify REST +
   WebSocket server that pushes live updates.
 - **Phase 3 — Vue board UI ✅** — a dark control-tower flight-strip board (`web/`) over the
-  WebSocket: an In-flight band across the top, Holding / Approach / Taxiing lanes below, a
-  collapsed Cold footer. Holding flashes at 1 Hz; add a note and a strip settles to steady
-  **Parked**. Strips FLIP-animate between lanes (honors `prefers-reduced-motion`).
+  WebSocket: an In-flight band across the top, Holding / Approach lanes below, a collapsed
+  Cold footer. Holding flashes at 1 Hz; add a note and a strip settles to steady **Parked**.
+  Strips FLIP-animate between lanes (honors `prefers-reduced-motion`).
+- **Phase 5 — registry status ✅** — for live CLI sessions the state comes from Claude Code's
+  own `status` (busy → In-flight, idle → Holding), read from `~/.claude/sessions` — authoritative,
+  no transcript guesswork, and crucially **zero per-machine setup** (the reason this is
+  shareable). Desktop-run sessions fall back to inference. **Hooks are deliberately not used** —
+  they'd require editing each colleague's `settings.json` and only cover CLI sessions anyway.
 
 ### What's tracked
 
