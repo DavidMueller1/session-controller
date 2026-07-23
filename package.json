@@ -10,9 +10,12 @@
     "dev": "tsx watch src/server.ts",
     "board": "tsx src/console-app.ts",
     "once": "tsx src/console-app.ts --once",
+    "ui": "pnpm --dir web dev",
+    "ui:build": "pnpm --dir web build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fastify/static": "^8.0.4",
     "@fastify/websocket": "^11.0.2",
     "better-sqlite3": "^11.8.1",
     "chokidar": "^4.0.3",

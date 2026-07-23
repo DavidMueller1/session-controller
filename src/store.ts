@@ -72,7 +72,31 @@ export class Store {
         linked_cli_session_id TEXT,
         updated_at            INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS notes (
+        id         TEXT PRIMARY KEY,
+        note       TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
     `);
+  }
+
+  /** all notes as { aircraftId: note } — notes outlive sessions (kept, not pruned) */
+  getNotes(): Record<string, string> {
+    const rows = this.db.prepare(`SELECT id, note FROM notes`).all() as { id: string; note: string }[];
+    return Object.fromEntries(rows.map((r) => [r.id, r.note]));
+  }
+
+  setNote(id: string, note: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO notes (id, note, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET note = excluded.note, updated_at = excluded.updated_at`,
+      )
+      .run(id, note, Date.now());
+  }
+
+  deleteNote(id: string): void {
+    this.db.prepare(`DELETE FROM notes WHERE id = ?`).run(id);
   }
 
   /** upsert the current live set and prune sessions that disappeared */

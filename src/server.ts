@@ -1,9 +1,12 @@
+import fs from "node:fs";
+import path from "node:path";
+import staticPlugin from "@fastify/static";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { CONFIG } from "./config.js";
 import { Engine } from "./engine.js";
 import { Store } from "./store.js";
-import type { ActivityState, DiscoveredSession } from "./types.js";
+import type { DiscoveredSession } from "./types.js";
 
 /** the ws socket type, sourced from @fastify/websocket to avoid importing ws directly */
 type WebSocket = import("@fastify/websocket").WebSocket;
@@ -21,6 +24,10 @@ async function main(): Promise<void> {
   const app = Fastify({ logger: false });
   await app.register(websocket);
 
+  let notes = store.getNotes();
+  const decorate = (list: DiscoveredSession[]): DiscoveredSession[] =>
+    list.map((a) => ({ ...a, note: notes[a.id] ?? null }));
+
   const clients = new Set<WebSocket>();
   const broadcast = (msg: unknown) => {
     const data = JSON.stringify(msg);
@@ -28,17 +35,16 @@ async function main(): Promise<void> {
       if (c.readyState === 1) c.send(data);
     }
   };
+  const pushUpdate = () => broadcast({ type: "update", ts: Date.now(), aircraft: decorate(engine.aircraft()) });
 
-  // engine → persist + push
+  // engine → persist sessions + push decorated update
   engine.on("update", (list: DiscoveredSession[]) => {
     store.syncSessions(list);
-    broadcast({ type: "update", ts: Date.now(), aircraft: list });
-    const c = counts(list);
-    const summary = Object.entries(c)
+    broadcast({ type: "update", ts: Date.now(), aircraft: decorate(list) });
+    const summary = Object.entries(counts(list))
       .map(([k, v]) => `${k} ${v}`)
       .join(" · ");
-    const time = new Date().toLocaleTimeString();
-    process.stdout.write(`[${time}] ${list.length} aircraft · ${summary} → ${clients.size} client(s)\n`);
+    process.stdout.write(`[${new Date().toLocaleTimeString()}] ${list.length} aircraft · ${summary} → ${clients.size} client(s)\n`);
   });
 
   // REST
@@ -49,33 +55,62 @@ async function main(): Promise<void> {
     uptimeSec: Math.round(process.uptime()),
   }));
 
-  app.get("/api/aircraft", async () => engine.aircraft());
+  app.get("/api/aircraft", async () => decorate(engine.aircraft()));
 
   app.get<{ Params: { id: string } }>("/api/aircraft/:id", async (req, reply) => {
-    const hit = engine.aircraft().find((a) => a.id === req.params.id);
+    const hit = decorate(engine.aircraft()).find((a) => a.id === req.params.id);
     if (!hit) return reply.code(404).send({ error: "not found" });
     return hit;
   });
 
-  app.get<{ Querystring: { state?: ActivityState } }>("/api/summary", async (req) => {
+  app.get("/api/summary", async () => {
     const list = engine.aircraft();
     return { total: list.length, byState: counts(list), ts: Date.now() };
+  });
+
+  // notes (user data) — add turns a "needs you" strip into "parked"
+  app.put<{ Params: { id: string }; Body: { note?: string } }>("/api/aircraft/:id/note", async (req, reply) => {
+    const note = (req.body?.note ?? "").trim();
+    if (!note) return reply.code(400).send({ error: "note required" });
+    store.setNote(req.params.id, note);
+    notes = store.getNotes();
+    pushUpdate();
+    return { ok: true, id: req.params.id, note };
+  });
+
+  app.delete<{ Params: { id: string } }>("/api/aircraft/:id/note", async (req) => {
+    store.deleteNote(req.params.id);
+    notes = store.getNotes();
+    pushUpdate();
+    return { ok: true, id: req.params.id };
   });
 
   // WebSocket: snapshot on connect, then live updates
   app.get("/ws", { websocket: true }, (socket: WebSocket) => {
     clients.add(socket);
-    socket.send(JSON.stringify({ type: "snapshot", ts: Date.now(), aircraft: engine.aircraft() }));
+    socket.send(JSON.stringify({ type: "snapshot", ts: Date.now(), aircraft: decorate(engine.aircraft()) }));
     socket.on("close", () => clients.delete(socket));
     socket.on("error", () => clients.delete(socket));
   });
 
+  // serve the built Vue app (if present) with SPA fallback
+  const webDist = path.join(process.cwd(), "web", "dist");
+  if (fs.existsSync(webDist)) {
+    await app.register(staticPlugin, { root: webDist });
+    app.setNotFoundHandler((req, reply) => {
+      if (req.raw.url?.startsWith("/api")) return reply.code(404).send({ error: "not found" });
+      return reply.sendFile("index.html");
+    });
+  }
+
   await engine.start();
   await app.listen({ port: CONFIG.apiPort, host: CONFIG.apiHost });
+  const ui = fs.existsSync(webDist) ? `  UI    http://${CONFIG.apiHost}:${CONFIG.apiPort}/\n` : "  UI    run `pnpm --dir web dev` for the Vue board\n";
   process.stdout.write(
-    `\n  ✈  Traffic Controller API on http://${CONFIG.apiHost}:${CONFIG.apiPort}\n` +
-      `     REST  /api/health  /api/aircraft  /api/aircraft/:id  /api/summary\n` +
-      `     WS    /ws  (snapshot + live updates)\n\n`,
+    `\n  ✈  Feature Controller on http://${CONFIG.apiHost}:${CONFIG.apiPort}\n` +
+      ui +
+      `  REST  /api/health  /api/aircraft  /api/aircraft/:id  /api/summary\n` +
+      `  WS    /ws  (snapshot + live updates)\n\n`,
   );
 
   const shutdown = async () => {

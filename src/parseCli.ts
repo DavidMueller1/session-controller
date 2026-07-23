@@ -42,7 +42,7 @@ function classify(o: any): NormEvent {
       return { kind: "tool-result", ts, summary: isError ? "tool error" : "tool result received", isError };
     }
     const text = typeof content === "string" ? content : blocks.find((b) => b.type === "text")?.text ?? "";
-    return { kind: "human", ts, summary: `you: ${truncate(firstLine(text), 60)}`, isError: false };
+    return { kind: "human", ts, summary: `you: ${truncate(cleanUserText(text), 60)}`, isError: false };
   }
 
   if (type === "system") {
@@ -55,6 +55,16 @@ function classify(o: any): NormEvent {
 }
 
 const CONVERSATIONAL = new Set<NormEvent["kind"]>(["human", "assistant-text", "assistant-tool", "tool-result"]);
+
+/**
+ * Strip harness noise from a user message so it reads as a title: XML-ish wrappers
+ * (`<command-message>`, `<command-name>`, `<local-command-…>`, `<task-notification>`),
+ * caveat preambles, and collapsed whitespace.
+ */
+function cleanUserText(s: string): string {
+  const oneLine = firstLine(s.replace(/<[^>]*>/g, " ").replace(/\s+/g, " "));
+  return oneLine.replace(/^Caveat:.*?\.\s*/i, "").trim();
+}
 
 export async function parseCliTranscript(filePath: string): Promise<SessionFacts | null> {
   let raw: string;

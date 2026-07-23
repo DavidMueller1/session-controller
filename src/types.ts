@@ -69,4 +69,10 @@ export interface DiscoveredSession {
    * `["cli", "desktop"]`. Absent = just its own `source`.
    */
   surfaces?: SessionSource[];
+  /**
+   * User-supplied note. NOT derived from files — populated by the server from the
+   * notes store. A note on a `needs-input` aircraft turns it from flashing "Needs you"
+   * into a steady "Parked" strip in the UI.
+   */
+  note?: string | null;
 }

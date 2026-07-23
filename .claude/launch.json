@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "feature-controller",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["start"],
+      "port": 4317,
+      "autoPort": true
+    }
+  ]
+}

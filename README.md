@@ -13,6 +13,10 @@ See [CONCEPT.md](CONCEPT.md) for the full design and the locked decisions.
   status, dedupes into one aircraft each. Console board.
 - **Phase 2 — store + API ✅** — a shared `Engine` feeds a SQLite store and a Fastify REST +
   WebSocket server that pushes live updates.
+- **Phase 3 — Vue board UI ✅** — a dark control-tower flight-strip board (`web/`) over the
+  WebSocket: an In-flight band across the top, Holding / Approach / Taxiing lanes below, a
+  collapsed Cold footer. Holding flashes at 1 Hz; add a note and a strip settles to steady
+  **Parked**. Strips FLIP-animate between lanes (honors `prefers-reduced-motion`).
 
 ### What's tracked
 
@@ -37,6 +41,8 @@ Runs on `http://127.0.0.1:4317` (override with `PORT` / `HOST`).
 | `GET /api/aircraft` | full aircraft list (live, deduped) |
 | `GET /api/aircraft/:id` | one aircraft (404 if unknown) |
 | `GET /api/summary` | totals grouped by state |
+| `PUT /api/aircraft/:id/note` | set a note (turns a "needs you" strip into "parked") |
+| `DELETE /api/aircraft/:id/note` | remove the note |
 | `WS /ws` | `snapshot` on connect, then `update` messages on every change |
 
 State is persisted to SQLite at `data/traffic-controller.db` (gitignored) on every change.
@@ -55,12 +61,20 @@ State is persisted to SQLite at `data/traffic-controller.db` (gitignored) on eve
 ## Run
 
 ```bash
-nvm use          # Node 22
-pnpm install
+nvm use                     # Node 22
+pnpm install                # backend deps
+pnpm --dir web install      # frontend deps
 
-pnpm serve       # start the REST + WebSocket API (also: pnpm start / pnpm dev)
-pnpm board       # live console board (Ctrl-C to stop)
-pnpm once        # one-shot console scan + print, then exit
+# production-ish: build the UI, then the server serves it at http://127.0.0.1:4317/
+pnpm ui:build
+pnpm serve
+
+# dev: backend + Vite dev server (HMR) in two terminals
+pnpm serve                  # backend API on :4317
+pnpm ui                     # Vite on :5173, proxies /api and /ws to :4317
+
+pnpm board                  # live console board (no browser)
+pnpm once                   # one-shot console scan
 pnpm typecheck
 ```
 
@@ -76,12 +90,22 @@ src/
   correlate.ts    dedupe/merge sessions into one aircraft each
   engine.ts       watch + scan + fast tick; emits `update(aircraft)`
   store.ts        SQLite persistence (better-sqlite3)
-  server.ts       Fastify REST + WebSocket API  ← entry
+  server.ts       Fastify REST + WebSocket API + serves web/dist  ← entry
   console-app.ts  live console board            ← entry
   render.ts       console board rendering (ANSI, no deps)
   util.ts         small formatting helpers
+
+web/              Vue 3 + Vite flight-strip board
+  src/
+    App.vue         board layout + cross-lane FLIP animation
+    components/Strip.vue   one flight strip (badges, chips, notes)
+    useBoard.ts     WebSocket client + note actions
+    format.ts       state → lane/color/label, age formatting
+    style.css       dark control-tower theme + flash/strip animations
+    types.ts
 ```
 
-## Next (Phase 3)
+## Next (Phase 4)
 
-Vue web UI (flight-strip board) consuming the WebSocket. See CONCEPT.md §10.
+User-owned aircraft cards: manual session→card assignment with ranked suggestions,
+rich card metadata, drag between lanes. See CONCEPT.md §10.
