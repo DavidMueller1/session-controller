@@ -45,9 +45,18 @@ Runs on `http://127.0.0.1:4317` (override with `PORT` / `HOST`).
 | `GET /api/summary` | totals grouped by state |
 | `PUT /api/aircraft/:id/note` | set a note (turns a "needs you" strip into "parked") |
 | `DELETE /api/aircraft/:id/note` | remove the note |
+| `POST /api/aircraft/:id/open` | focus the session's host window (macOS) |
 | `WS /ws` | `snapshot` on connect, then `update` messages on every change |
 
 State is persisted to SQLite at `data/traffic-controller.db` (gitignored) on every change.
+
+### Open a session (macOS)
+
+Click a strip's title (or its **open** button) to bring the session's host to the front. The
+backend resolves the host from the live registry `pid` (walking the process tree): terminal
+sessions focus the **PhpStorm project window** for their `cwd`; desktop sessions focus the
+**Claude app**; a bare iTerm/Terminal focuses that app. Limits: it focuses the *window*, not
+the exact terminal tab, and can't deep-link a specific Claude conversation.
 
 ### States
 
@@ -88,7 +97,8 @@ src/
   types.ts        SessionFacts, DiscoveredSession, ActivityState
   parseCli.ts     JSONL transcript → SessionFacts
   parseDesktop.ts desktop metadata json → SessionFacts
-  registry.ts     ~/.claude/sessions/*.json → live session name (rename) + status
+  registry.ts     ~/.claude/sessions/*.json → live session name (rename) + status + pid
+  open.ts         focus a session's host window (macOS `open`, pid ancestry detect)
   deriveState.ts  facts + now → resolved state (pure, no I/O)
   correlate.ts    dedupe/merge sessions into one aircraft each
   engine.ts       watch + scan + fast tick; emits `update(aircraft)`

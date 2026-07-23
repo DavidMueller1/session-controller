@@ -12,6 +12,8 @@ export interface RegistryEntry {
   name: string | null;
   status: string | null;
   entrypoint: string | null;
+  pid: number | null;
+  cwd: string | null;
 }
 
 export function isRegistryFile(p: string): boolean {
@@ -37,5 +39,7 @@ export async function parseRegistryFile(filePath: string): Promise<RegistryEntry
     name: typeof o.name === "string" && o.name.trim() ? o.name.trim() : null,
     status: typeof o.status === "string" ? o.status : null,
     entrypoint: typeof o.entrypoint === "string" ? o.entrypoint : null,
+    pid: typeof o.pid === "number" ? o.pid : null,
+    cwd: typeof o.cwd === "string" ? o.cwd : null,
   };
 }

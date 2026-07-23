@@ -9,6 +9,7 @@ const emit = defineEmits<{
   removeNote: [id: string];
   land: [id: string];
   unland: [id: string];
+  open: [id: string];
 }>();
 
 const meta = computed(() => STATE[props.aircraft.state]);
@@ -46,7 +47,7 @@ function commitNote() {
     <div class="spine" :style="{ background: spineColor }"></div>
     <div class="body">
       <div class="cs">
-        <span class="title">{{ aircraft.title || aircraft.id }}</span>
+        <span class="title" role="button" tabindex="0" title="Open this session's window" @click="emit('open', aircraft.id)" @keydown.enter="emit('open', aircraft.id)">{{ aircraft.title || aircraft.id }}</span>
         <span v-if="landed" class="badge" style="background: #16301f; color: #4cc38a"><i class="ti ti-check"></i> Landed</span>
         <span v-else-if="mia" class="badge" style="background: #1c222c; color: #8b98a8" title="no activity for 5+ min — still flying, but lost contact"><i class="ti ti-clock"></i> MIA</span>
         <span v-else-if="parked" class="badge" style="background: var(--amber-bg); color: var(--amber)">Parked</span>
@@ -87,6 +88,7 @@ function commitNote() {
           @keydown.esc="editing = false"
           @blur="commitNote"
         />
+        <button class="ghost" title="Open this session's window" @click="emit('open', aircraft.id)"><i class="ti ti-external-link"></i> open</button>
         <button v-if="!aircraft.note && !editing" class="ghost" @click="openNote"><i class="ti ti-plus"></i> note</button>
 
         <button v-if="!landed" class="ghost land" title="Mark landed" @click="emit('land', aircraft.id)">
@@ -109,7 +111,8 @@ function commitNote() {
 .spine { width: 4px; flex: none; }
 .body { flex: 1; min-width: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
 .cs { display: flex; align-items: center; gap: 6px; }
-.title { font-size: 13px; font-weight: 500; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.title { font-size: 13px; font-weight: 500; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.title:hover { text-decoration: underline; }
 .badge { font-size: 10px; padding: 1px 6px; border-radius: 6px; white-space: nowrap; flex: none; display: inline-flex; align-items: center; gap: 3px; }
 .chips { display: flex; gap: 5px; flex-wrap: wrap; }
 .chip { font-size: 11px; color: var(--text-dim); background: var(--chip); border-radius: 6px; padding: 1px 6px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

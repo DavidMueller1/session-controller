@@ -47,6 +47,11 @@ export class Engine extends EventEmitter {
     return this.current;
   }
 
+  /** live registry entry (pid / entrypoint / cwd) for an aircraft id, if it's running */
+  registryEntry(id: string): RegistryEntry | undefined {
+    return this.registryBySession().get(id);
+  }
+
   private async parseFile(p: string): Promise<SessionFacts | null> {
     if (isCliTranscript(p)) return parseCliTranscript(p);
     if (isDesktopSessionFile(p)) return parseDesktopSession(p);

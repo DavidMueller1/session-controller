@@ -5,6 +5,7 @@ import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { CONFIG } from "./config.js";
 import { Engine } from "./engine.js";
+import { openAircraft } from "./open.js";
 import { Store } from "./store.js";
 import type { DiscoveredSession } from "./types.js";
 
@@ -99,6 +100,25 @@ async function main(): Promise<void> {
     landed = new Set(store.getLanded());
     pushUpdate();
     return { ok: true, id: req.params.id, landed: false };
+  });
+
+  // open/focus the session's host (PhpStorm project window, Claude app, or terminal)
+  app.post<{ Params: { id: string } }>("/api/aircraft/:id/open", async (req, reply) => {
+    const a = engine.aircraft().find((x) => x.id === req.params.id);
+    if (!a) return reply.code(404).send({ error: "not found" });
+    const reg = engine.registryEntry(a.id);
+    const surfaces = a.surfaces ?? [a.source];
+    try {
+      const result = await openAircraft({
+        entrypoint: reg?.entrypoint,
+        pid: reg?.pid,
+        cwd: a.project ?? reg?.cwd ?? null,
+        desktopOnly: surfaces.includes("desktop") && !surfaces.includes("cli"),
+      });
+      return result;
+    } catch (err) {
+      return reply.code(500).send({ ok: false, error: String(err) });
+    }
   });
 
   // WebSocket: snapshot on connect, then live updates
