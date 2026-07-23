@@ -79,6 +79,16 @@ hover for exact `% + tokens`. The window defaults to **1M** (auto-bumps beyond a
 `CONTEXT_WINDOW` if a session exceeds it) — set `CONTEXT_WINDOW=200000` if you run Claude in
 standard 200k mode.
 
+### Holding notifications
+
+Toggle the header **bell** to get a browser notification when a session enters holding
+(needs you). It uses the Web Notifications API (no OS dependency, works cross-platform) and
+only fires after the strip has stayed in holding for ~20s — so the session you're actively
+replying to (you answer within that window) never pings; only genuinely-waiting ones do.
+Clicking a notification focuses that session's host window. Baselined on enable, so existing
+holding sessions don't ping; each session pings again only after it leaves and re-enters
+holding.
+
 ### States
 
 | Board label | Meaning |

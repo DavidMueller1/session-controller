@@ -5,7 +5,7 @@ import { useBoard } from "./useBoard";
 import { laneOf, isFlashing, isMia } from "./format";
 import type { Aircraft } from "./types";
 
-const { aircraft, connected, now, start, setNote, removeNote, land, unland, open } = useBoard();
+const { aircraft, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify } = useBoard();
 onMounted(start);
 
 // order by when each entered its state, so tool calls / thinking don't reshuffle the
@@ -68,6 +68,16 @@ function onOpen(id: string) { open(id); }
         <span><b style="color: var(--green)">{{ inflight.length }}</b> in-flight</span>
         <span><b style="color: var(--blue)">{{ approach.length }}</b> approach</span>
         <span v-if="landed.length"><b style="color: #4cc38a">{{ landed.length }}</b> landed</span>
+        <button
+          v-if="notifySupported"
+          class="bell"
+          :class="{ on: notifyEnabled }"
+          :title="notifyEnabled ? 'Holding notifications on — click to mute' : 'Notify me when a session needs me'"
+          :aria-label="notifyEnabled ? 'Mute holding notifications' : 'Enable holding notifications'"
+          @click="toggleNotify"
+        >
+          <i class="ti" :class="notifyEnabled ? 'ti-bell' : 'ti-bell-off'"></i>
+        </button>
         <span class="dot" :style="{ color: connected ? 'var(--green)' : 'var(--red)' }">
           <i class="ti ti-circle-filled"></i>{{ connected ? "live" : "reconnecting" }}
         </span>
@@ -130,6 +140,9 @@ header { display: flex; align-items: center; justify-content: space-between; fle
 .dot { display: inline-flex; align-items: center; gap: 5px; }
 .dot i { font-size: 8px; }
 .clock { color: var(--text-faint); }
+.bell { all: unset; cursor: pointer; display: inline-flex; align-items: center; padding: 3px; border-radius: 6px; color: var(--text-faint); font-size: 14px; }
+.bell:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-dim); }
+.bell.on { color: var(--amber); }
 .band-h, .lane-h { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--text); }
 .band-h { color: var(--green); margin: 12px 0 8px; }
 .band-h.landed-h { color: #4cc38a; margin-top: 18px; }
