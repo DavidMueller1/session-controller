@@ -42,6 +42,7 @@ export async function parseDesktopSession(filePath: string): Promise<SessionFact
     tailKind: "none",
     tailIsError: false,
     tailSummary: "",
+    contextTokens: null,
     archived: o.isArchived === true,
   };
 }

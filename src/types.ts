@@ -39,6 +39,8 @@ export interface SessionFacts {
   tailKind: TailKind;
   tailIsError: boolean;
   tailSummary: string;
+  /** context tokens in the most recent turn (input + cache_read + cache_creation) */
+  contextTokens: number | null;
   /** desktop: session archived by the app (a "suspected done" signal) */
   archived?: boolean;
 }
@@ -84,4 +86,7 @@ export interface DiscoveredSession {
    * CONCEPT.md). Overrides the activity lane so the aircraft sits in the Landed row.
    */
   landed?: boolean;
+  /** context tokens used in the latest turn, and that as a fraction of the window */
+  contextTokens?: number | null;
+  contextPct?: number | null;
 }

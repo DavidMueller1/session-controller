@@ -26,6 +26,8 @@ export interface Aircraft {
   linkedCliSessionId: string | null;
   note?: string | null;
   landed?: boolean;
+  contextTokens?: number | null;
+  contextPct?: number | null;
 }
 
 export type Lane = "inflight" | "holding" | "approach" | "cold" | "landed";

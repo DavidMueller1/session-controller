@@ -42,4 +42,8 @@ export const CONFIG = {
   apiHost: process.env.HOST ?? "127.0.0.1",
   /** SQLite database file */
   dbPath: path.join(process.cwd(), "data", "traffic-controller.db"),
+
+  /** default context window for the usage ring; auto-bumps to 1M if a session exceeds it.
+   *  Set CONTEXT_WINDOW=1000000 if you run Claude in 1M-context mode. */
+  contextWindow: Number(process.env.CONTEXT_WINDOW ?? 200_000),
 };

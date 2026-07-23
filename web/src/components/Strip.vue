@@ -25,6 +25,20 @@ const age = computed(() => {
 const surfaces = computed(() => props.aircraft.surfaces ?? [props.aircraft.source]);
 const spineColor = computed(() => (landed.value ? LANDED_COLOR : parked.value ? "var(--amber-deep)" : meta.value.color));
 
+// context-usage ring
+const ctxPct = computed(() => props.aircraft.contextPct ?? null);
+const CTX_R = 7;
+const CTX_CIRC = 2 * Math.PI * CTX_R;
+const ctxOffset = computed(() => CTX_CIRC * (1 - (ctxPct.value ?? 0)));
+const ctxColor = computed(() => {
+  const p = ctxPct.value ?? 0;
+  return p >= 0.9 ? "var(--red)" : p >= 0.75 ? "var(--amber)" : "#5f6b7a";
+});
+const ctxTitle = computed(() => {
+  if (ctxPct.value == null) return "";
+  return `${Math.round(ctxPct.value * 100)}% context used (${(props.aircraft.contextTokens ?? 0).toLocaleString()} tokens)`;
+});
+
 const editing = ref(false);
 const draft = ref("");
 const inputEl = ref<HTMLInputElement | null>(null);
@@ -56,6 +70,11 @@ function commitNote() {
           class="badge"
           :style="{ background: meta.color, color: 'var(--bg)' }"
         >{{ meta.label }}</span>
+        <svg v-if="ctxPct != null" class="ctx" viewBox="0 0 18 18" :aria-label="ctxTitle"><title>{{ ctxTitle }}</title>
+          <circle cx="9" cy="9" :r="CTX_R" fill="none" stroke="var(--border)" stroke-width="2.5" />
+          <circle cx="9" cy="9" :r="CTX_R" fill="none" :stroke="ctxColor" stroke-width="2.5" stroke-linecap="round"
+            :stroke-dasharray="CTX_CIRC" :stroke-dashoffset="ctxOffset" transform="rotate(-90 9 9)" />
+        </svg>
       </div>
 
       <div class="chips">
@@ -111,7 +130,8 @@ function commitNote() {
 .spine { width: 4px; flex: none; }
 .body { flex: 1; min-width: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
 .cs { display: flex; align-items: center; gap: 6px; }
-.title { font-size: 13px; font-weight: 500; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.title { font-size: 13px; font-weight: 500; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; min-width: 0; }
+.ctx { width: 16px; height: 16px; flex: none; margin-left: auto; }
 .title:hover { text-decoration: underline; }
 .badge { font-size: 10px; padding: 1px 6px; border-radius: 6px; white-space: nowrap; flex: none; display: inline-flex; align-items: center; gap: 3px; }
 .chips { display: flex; gap: 5px; flex-wrap: wrap; }

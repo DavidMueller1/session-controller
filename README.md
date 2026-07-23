@@ -71,6 +71,14 @@ backend resolves the host from the live registry `pid` (walking the process tree
 Limits: it focuses the *window*, not the exact terminal tab, and can't deep-link a specific
 Claude conversation. macOS-only.
 
+### Context-usage ring
+
+Each strip shows a small ring for how full the session's context is, from the latest turn's
+`message.usage` (`input + cache_read + cache_creation`). Muted below 75%, amber ≥75%, red ≥90%;
+hover for exact `% + tokens`. The window defaults to 200k and auto-bumps to 1M once a session
+exceeds 200k — set `CONTEXT_WINDOW=1000000` if you run Claude in 1M-context mode so small
+sessions read against 1M too.
+
 ### States
 
 | Board label | Meaning |

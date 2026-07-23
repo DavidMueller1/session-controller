@@ -89,6 +89,7 @@ export async function parseCliTranscript(filePath: string): Promise<SessionFacts
   let aiTitle: string | null = null;
   let firstUserText: string | null = null;
   let firstTs: number | null = null;
+  let contextTokens: number | null = null;
 
   for (const line of raw.split("\n")) {
     const s = line.trim();
@@ -103,6 +104,12 @@ export async function parseCliTranscript(filePath: string): Promise<SessionFacts
     if (typeof o.cwd === "string" && o.cwd) cwd = o.cwd;
     if (typeof o.gitBranch === "string" && o.gitBranch) branch = o.gitBranch;
     if (o.type === "ai-title" && o.aiTitle) aiTitle = String(o.aiTitle);
+
+    // context = prompt tokens of the most recent assistant turn (last one wins)
+    const u = o.type === "assistant" ? o.message?.usage : null;
+    if (u) {
+      contextTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+    }
 
     const ev = classify(o);
     if (ev.ts != null && firstTs == null) firstTs = ev.ts;
@@ -132,5 +139,6 @@ export async function parseCliTranscript(filePath: string): Promise<SessionFacts
     tailKind,
     tailIsError: tail?.isError ?? false,
     tailSummary: tail?.summary || "no conversation yet",
+    contextTokens,
   };
 }

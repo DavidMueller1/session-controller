@@ -37,6 +37,14 @@ function deriveDesktop(f: SessionFacts, now: number): [ActivityState, string] {
   return ["working", "active"];
 }
 
+/** context tokens as a fraction of the window (auto-bumps to 1M past the default) */
+function contextPctOf(tokens: number | null): number | null {
+  if (tokens == null) return null;
+  const base = CONFIG.contextWindow;
+  const window = tokens > base ? 1_000_000 : base;
+  return Math.min(1, tokens / window);
+}
+
 /** facts + current time -> a fully resolved session (state included) */
 export function resolve(f: SessionFacts, now: number): DiscoveredSession {
   const [state, lastEventSummary] = f.source === "cli" ? deriveCli(f, now) : deriveDesktop(f, now);
@@ -53,5 +61,7 @@ export function resolve(f: SessionFacts, now: number): DiscoveredSession {
     state,
     lastEventSummary,
     linkedCliSessionId: f.linkedCliSessionId,
+    contextTokens: f.contextTokens,
+    contextPct: contextPctOf(f.contextTokens),
   };
 }
