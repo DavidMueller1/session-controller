@@ -43,7 +43,7 @@ export const CONFIG = {
   /** SQLite database file */
   dbPath: path.join(process.cwd(), "data", "traffic-controller.db"),
 
-  /** default context window for the usage ring; auto-bumps to 1M if a session exceeds it.
-   *  Set CONTEXT_WINDOW=1000000 if you run Claude in 1M-context mode. */
-  contextWindow: Number(process.env.CONTEXT_WINDOW ?? 200_000),
+  /** default context window for the usage ring (1M-context mode).
+   *  Set CONTEXT_WINDOW=200000 if you run Claude in standard 200k mode. */
+  contextWindow: Number(process.env.CONTEXT_WINDOW ?? 1_000_000),
 };

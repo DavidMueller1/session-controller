@@ -75,9 +75,9 @@ Claude conversation. macOS-only.
 
 Each strip shows a small ring for how full the session's context is, from the latest turn's
 `message.usage` (`input + cache_read + cache_creation`). Muted below 75%, amber ≥75%, red ≥90%;
-hover for exact `% + tokens`. The window defaults to 200k and auto-bumps to 1M once a session
-exceeds 200k — set `CONTEXT_WINDOW=1000000` if you run Claude in 1M-context mode so small
-sessions read against 1M too.
+hover for exact `% + tokens`. The window defaults to **1M** (auto-bumps beyond a lower
+`CONTEXT_WINDOW` if a session exceeds it) — set `CONTEXT_WINDOW=200000` if you run Claude in
+standard 200k mode.
 
 ### States
 
