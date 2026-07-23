@@ -2,9 +2,9 @@ import { ref, shallowRef } from "vue";
 import { isFlashing, projectName } from "./format";
 import type { Aircraft, WsMessage } from "./types";
 
-/** how long a strip must stay in holding before we notify — long enough that the
- *  session you're actively replying to (you answer within this window) never pings. */
-const HOLD_NOTIFY_DELAY = 20_000;
+/** how long a strip must stay in holding before we notify. 0 = fire immediately.
+ *  (A larger value would suppress the session you're actively replying to.) */
+const HOLD_NOTIFY_DELAY = 0;
 
 /**
  * Live board state over the backend WebSocket, with auto-reconnect. The server is the
