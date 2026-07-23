@@ -7,7 +7,7 @@ import { CONFIG } from "./config.js";
 import { Engine } from "./engine.js";
 import { openAircraft } from "./open.js";
 import { Store } from "./store.js";
-import type { DiscoveredSession } from "./types.js";
+import type { DiscoveredSession, PrInfo } from "./types.js";
 
 /** the ws socket type, sourced from @fastify/websocket to avoid importing ws directly */
 type WebSocket = import("@fastify/websocket").WebSocket;
@@ -46,9 +46,30 @@ async function main(): Promise<void> {
   };
   const pushUpdate = () => broadcast({ type: "update", ts: Date.now(), aircraft: decorate(engine.aircraft()) });
 
+  // auto go-around: when a session's branch switches away from a merged PR, it's a
+  // same-session follow-up — clear that PR so it doesn't keep nagging in Approach
+  // (persisted, so revisiting the old branch won't re-flag it either).
+  const lastBranch = new Map<string, string | null>();
+  const lastPr = new Map<string, PrInfo | null>();
+  function autoClearOnBranchSwitch(list: DiscoveredSession[]): void {
+    let changed = false;
+    for (const a of list) {
+      const pb = lastBranch.get(a.id);
+      const pp = lastPr.get(a.id);
+      if (pb && a.branch && pb !== a.branch && pp?.state === "MERGED" && !cleared.has(`${a.id}:${pp.number}`)) {
+        store.clearPr(a.id, pp.number);
+        changed = true;
+      }
+      lastBranch.set(a.id, a.branch ?? null);
+      lastPr.set(a.id, a.pr ?? null);
+    }
+    if (changed) cleared = store.getClearedPrs();
+  }
+
   // engine → persist sessions + push decorated update
   engine.on("update", (list: DiscoveredSession[]) => {
     store.syncSessions(list);
+    autoClearOnBranchSwitch(list);
     broadcast({ type: "update", ts: Date.now(), aircraft: decorate(list) });
     const summary = Object.entries(counts(list))
       .map(([k, v]) => `${k} ${v}`)
