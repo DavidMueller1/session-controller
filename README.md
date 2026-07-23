@@ -53,10 +53,18 @@ State is persisted to SQLite at `data/traffic-controller.db` (gitignored) on eve
 ### Open a session (macOS)
 
 Click a strip's title (or its **open** button) to bring the session's host to the front. The
-backend resolves the host from the live registry `pid` (walking the process tree): terminal
-sessions focus the **PhpStorm project window** for their `cwd`; desktop sessions focus the
-**Claude app**; a bare iTerm/Terminal focuses that app. Limits: it focuses the *window*, not
-the exact terminal tab, and can't deep-link a specific Claude conversation.
+backend resolves the host from the live registry `pid` (walking the process tree):
+
+- **Terminal in a JetBrains IDE** → drives that exact IDE binary (`open -na <ide> --args <root>`,
+  same as the `phpstorm` launcher) to focus the matching project window — correct even with
+  several projects/worktrees open. The `cwd` is first resolved to its **git repo/worktree root**
+  (sessions often run in a monorepo subfolder like `…/shops/kartenliebe`, but the IDE has the
+  root open).
+- **Claude desktop** → focuses the Claude app.
+- **Bare iTerm / Terminal / Warp** → focuses that terminal app.
+
+Limits: it focuses the *window*, not the exact terminal tab, and can't deep-link a specific
+Claude conversation. macOS-only.
 
 ### States
 
