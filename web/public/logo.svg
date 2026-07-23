@@ -9,8 +9,7 @@
     </g>
   </g>
   <line x1="90" y1="90" x2="150" y2="55" stroke="#3fb950" stroke-width="10" stroke-linecap="round"/>
-  <circle cx="90" cy="90" r="6" fill="#3fb950"/>
-  <circle cx="150" cy="55" r="5.5" fill="#3fb950"/>
+  <circle cx="90" cy="90" r="9" fill="#3fb950"/>
   <circle cx="67" cy="68" r="4.5" fill="#3fb950"/>
   <circle cx="122" cy="117" r="5" fill="#3fb950"/>
 </svg>
