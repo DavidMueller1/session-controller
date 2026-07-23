@@ -1,5 +1,15 @@
 export type SessionSource = "cli" | "desktop";
 
+/** GitHub PR for a session's branch (via `gh`), attached by branch */
+export interface PrInfo {
+  number: number;
+  state: "OPEN" | "MERGED" | "CLOSED";
+  isDraft: boolean;
+  reviewDecision: string | null;
+  url: string;
+  title: string | null;
+}
+
 /**
  * Layer-A activity state (§5 of CONCEPT.md). This is derived automatically and is
  * NEVER terminal — nothing here marks a feature "landed". `suspected-done` is a soft
@@ -89,4 +99,6 @@ export interface DiscoveredSession {
   /** context tokens used in the latest turn, and that as a fraction of the window */
   contextTokens?: number | null;
   contextPct?: number | null;
+  /** PR for the branch (via gh), attached by branch. null = none/unknown */
+  pr?: PrInfo | null;
 }

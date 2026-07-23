@@ -39,6 +39,28 @@ const ctxTitle = computed(() => {
   return `${Math.round(ctxPct.value * 100)}% context used (${(props.aircraft.contextTokens ?? 0).toLocaleString()} tokens)`;
 });
 
+// PR pill
+const pr = computed(() => props.aircraft.pr ?? null);
+const prColor = computed(() => {
+  const p = pr.value;
+  if (!p) return "";
+  if (p.state === "MERGED") return "#a371f7";
+  if (p.state === "CLOSED") return "#f85149";
+  if (p.isDraft) return "#7d8590";
+  if (p.reviewDecision === "APPROVED") return "#3fb950";
+  if (p.reviewDecision === "REVIEW_REQUIRED" || p.reviewDecision === "CHANGES_REQUESTED") return "#e0a92e";
+  return "#58a6ff";
+});
+const prIcon = computed(() => (pr.value?.state === "MERGED" ? "ti-git-merge" : "ti-git-pull-request"));
+const prTitle = computed(() => {
+  const p = pr.value;
+  if (!p) return "";
+  const bits = [p.state.toLowerCase()];
+  if (p.isDraft) bits.push("draft");
+  if (p.reviewDecision) bits.push(p.reviewDecision.toLowerCase().replace(/_/g, " "));
+  return `${bits.join(" · ")}${p.title ? " — " + p.title : ""}`;
+});
+
 const editing = ref(false);
 const draft = ref("");
 const inputEl = ref<HTMLInputElement | null>(null);
@@ -88,6 +110,9 @@ function commitNote() {
       <div class="foot">
         <i v-if="surfaces.includes('cli')" class="ti ti-terminal-2" title="terminal"></i>
         <i v-if="surfaces.includes('desktop')" class="ti ti-device-desktop" title="desktop"></i>
+        <a v-if="pr" class="pr" :href="pr.url" target="_blank" rel="noreferrer" :style="{ color: prColor, borderColor: prColor }" :title="prTitle">
+          <i class="ti" :class="prIcon"></i>#{{ pr.number }}
+        </a>
         <span class="age" :style="{ color: landed ? LANDED_COLOR : meta.color }">{{ age }}</span>
       </div>
 
@@ -139,6 +164,7 @@ function commitNote() {
 .act { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .foot { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-faint); }
 .foot .age { margin-left: auto; font-weight: 500; }
+.pr { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; border: 0.5px solid; border-radius: 6px; padding: 0 5px; text-decoration: none; }
 .actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .note { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; background: var(--amber-bg); color: var(--amber); border-radius: 6px; padding: 2px 4px 2px 7px; }
 .icon { all: unset; cursor: pointer; display: inline-flex; align-items: center; padding: 2px; margin-left: 2px; border-radius: 4px; font-size: 13px; }

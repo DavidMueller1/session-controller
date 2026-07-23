@@ -1,5 +1,14 @@
 export type SessionSource = "cli" | "desktop";
 
+export interface PrInfo {
+  number: number;
+  state: "OPEN" | "MERGED" | "CLOSED";
+  isDraft: boolean;
+  reviewDecision: string | null;
+  url: string;
+  title: string | null;
+}
+
 export type ActivityState =
   | "working"
   | "needs-input"
@@ -28,6 +37,7 @@ export interface Aircraft {
   landed?: boolean;
   contextTokens?: number | null;
   contextPct?: number | null;
+  pr?: PrInfo | null;
 }
 
 export type Lane = "inflight" | "holding" | "approach" | "cold" | "landed";

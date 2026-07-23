@@ -7,8 +7,9 @@ import { correlate } from "./correlate.js";
 import { resolve } from "./deriveState.js";
 import { parseCliTranscript } from "./parseCli.js";
 import { isDesktopSessionFile, parseDesktopSession } from "./parseDesktop.js";
+import { fetchPr } from "./pr.js";
 import { type RegistryEntry, isRegistryFile, parseRegistryFile } from "./registry.js";
-import type { DiscoveredSession, SessionFacts } from "./types.js";
+import type { DiscoveredSession, PrInfo, SessionFacts } from "./types.js";
 
 function isCliTranscript(p: string): boolean {
   return p.endsWith(".jsonl");
@@ -20,7 +21,7 @@ function isCliTranscript(p: string): boolean {
  */
 function signature(list: DiscoveredSession[]): string {
   return list
-    .map((a) => `${a.id}:${a.state}:${a.lastActivityAt ?? 0}:${a.title ?? ""}:${a.lastEventSummary}`)
+    .map((a) => `${a.id}:${a.state}:${a.lastActivityAt ?? 0}:${a.title ?? ""}:${a.lastEventSummary}:${a.pr?.state ?? ""}:${a.pr?.number ?? ""}:${a.pr?.isDraft ? 1 : 0}:${a.pr?.reviewDecision ?? ""}`)
     .sort()
     .join("|");
 }
@@ -37,6 +38,8 @@ export class Engine extends EventEmitter {
   private registry = new Map<string, RegistryEntry>();
   /** per-aircraft: current state + when it was entered (drives the displayed timer) */
   private stateSince = new Map<string, { state: string; since: number }>();
+  /** PR status per aircraft id (via gh), refreshed on a slow poll */
+  private prById = new Map<string, PrInfo | null>();
   private current: DiscoveredSession[] = [];
   private lastSig = "";
   private watcher?: FSWatcher;
@@ -105,7 +108,7 @@ export class Engine extends EventEmitter {
       const prev = this.stateSince.get(a.id);
       const since = prev && prev.state === a.state ? prev.since : prev ? now : a.lastActivityAt ?? now;
       this.stateSince.set(a.id, { state: a.state, since });
-      return { ...a, stateSince: since };
+      return { ...a, stateSince: since, pr: this.prById.get(a.id) ?? null };
     });
     for (const id of [...this.stateSince.keys()]) if (!seen.has(id)) this.stateSince.delete(id);
 
@@ -114,6 +117,19 @@ export class Engine extends EventEmitter {
     this.lastSig = sig;
     this.current = list;
     this.emit("update", list);
+  }
+
+  /** refresh PR status for non-cold sessions that have a branch (bounded `gh` calls) */
+  private async pollPrs(): Promise<void> {
+    const targets = this.current.filter((a) => a.project && a.branch && a.state !== "dormant" && a.state !== "unknown");
+    await Promise.all(
+      targets.map(async (a) => {
+        this.prById.set(a.id, await fetchPr(a.project!, a.branch!));
+      }),
+    );
+    const ids = new Set(this.current.map((a) => a.id));
+    for (const id of [...this.prById.keys()]) if (!ids.has(id)) this.prById.delete(id);
+    this.recompute(true);
   }
 
   private scheduleRecompute(): void {
@@ -170,6 +186,10 @@ export class Engine extends EventEmitter {
         Promise.all([...this.facts.keys(), ...this.registry.keys()].map((p) => this.upsert(p))).then(() => this.recompute());
       }, CONFIG.reconcileMs),
     );
+
+    // PR status: initial poll + slow refresh
+    this.pollPrs();
+    this.intervals.push(setInterval(() => this.pollPrs(), CONFIG.prPollMs));
   }
 
   async stop(): Promise<void> {

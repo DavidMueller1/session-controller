@@ -46,4 +46,7 @@ export const CONFIG = {
   /** default context window for the usage ring (1M-context mode).
    *  Set CONTEXT_WINDOW=200000 if you run Claude in standard 200k mode. */
   contextWindow: Number(process.env.CONTEXT_WINDOW ?? 1_000_000),
+
+  /** how often to poll `gh` for PR status of non-cold sessions with a branch */
+  prPollMs: 60_000,
 };
