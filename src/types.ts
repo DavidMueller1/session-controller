@@ -16,7 +16,7 @@ export type ActivityState =
   | "unknown";
 
 /** shape of the most recent conversational turn — the input to state derivation */
-export type TailKind = "human" | "assistant-text" | "assistant-tool" | "tool-result" | "none";
+export type TailKind = "human" | "assistant-text" | "assistant-tool" | "assistant-ask" | "tool-result" | "none";
 
 /**
  * The raw facts parsed from a session file, WITHOUT any time-dependent state. These

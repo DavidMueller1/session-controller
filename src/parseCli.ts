@@ -10,11 +10,17 @@ import { firstLine, truncate } from "./util.js";
  * role, so they must classify as "tool-result", not "human".
  */
 interface NormEvent {
-  kind: "human" | "assistant-text" | "assistant-tool" | "tool-result" | "system" | "meta";
+  kind: "human" | "assistant-text" | "assistant-tool" | "assistant-ask" | "tool-result" | "system" | "meta";
   ts: number | null;
   summary: string;
   isError: boolean;
 }
+
+/** tools that block waiting on the user — their call means "needs you", not "working" */
+const ASK_TOOLS: Record<string, string> = {
+  AskUserQuestion: "asked you a question",
+  ExitPlanMode: "waiting for plan approval",
+};
 
 function classify(o: any): NormEvent {
   const type = o?.type;
@@ -28,9 +34,11 @@ function classify(o: any): NormEvent {
       const names = blocks
         .filter((b) => b.type === "tool_use")
         .map((b) => b.name)
-        .filter(Boolean)
-        .join(", ");
-      return { kind: "assistant-tool", ts, summary: `running tool: ${names || "?"}`, isError: false };
+        .filter(Boolean) as string[];
+      // a tool that waits on the user (AskUserQuestion / ExitPlanMode) = "needs you"
+      const ask = names.find((n) => ASK_TOOLS[n]);
+      if (ask) return { kind: "assistant-ask", ts, summary: ASK_TOOLS[ask], isError: false };
+      return { kind: "assistant-tool", ts, summary: `running tool: ${names.join(", ") || "?"}`, isError: false };
     }
     const text = blocks.find((b) => b.type === "text")?.text ?? (typeof content === "string" ? content : "");
     return { kind: "assistant-text", ts, summary: truncate(firstLine(text), 70) || "assistant responded", isError: false };
@@ -54,7 +62,7 @@ function classify(o: any): NormEvent {
   return { kind: "meta", ts, summary: "", isError: false };
 }
 
-const CONVERSATIONAL = new Set<NormEvent["kind"]>(["human", "assistant-text", "assistant-tool", "tool-result"]);
+const CONVERSATIONAL = new Set<NormEvent["kind"]>(["human", "assistant-text", "assistant-tool", "assistant-ask", "tool-result"]);
 
 /**
  * Strip harness noise from a user message so it reads as a title: XML-ish wrappers

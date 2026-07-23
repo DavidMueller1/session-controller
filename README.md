@@ -70,12 +70,14 @@ Claude conversation. macOS-only.
 
 | Board label | Meaning |
 |---|---|
-| `IN-FLIGHT` | working now |
-| `HOLDING` | recently ended a turn — likely waiting on you (refined by hooks in Phase 5) |
-| `TAXIING` | idle (recent but paused) |
-| `COLD` | dormant — no activity for a while (overnight-safe, **not** finished) |
+| `IN-FLIGHT` | working now (incl. right after a tool error — Claude just retries, so that's not terminal) |
+| `MIA` | mid-work but silent for 5+ min — still in the In-flight band, dimmed |
+| `HOLDING` | waiting on you: turn ended, or it called `AskUserQuestion` / `ExitPlanMode` |
 | `APPROACH?` | system suspects it wrapped up (desktop archived) — awaiting your confirmation |
-| `GO-AROUND` | last event was an error |
+| `COLD` | dormant — no activity for a while (overnight-safe, **not** finished) |
+
+(There's no automatic "error" state — a tool error isn't terminal. "Go-around" is the manual
+action to send a *landed* aircraft back into the pattern.)
 
 ## Run
 

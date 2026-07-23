@@ -15,13 +15,16 @@ function deriveCli(f: SessionFacts, now: number): [ActivityState, string] {
   const age = f.lastActivityAt != null ? now - f.lastActivityAt : Infinity;
   if (age > CONFIG.dormantMs) return ["dormant", f.tailSummary];
   if (f.tailKind === "none") return ["unknown", f.tailSummary];
-  if (f.tailIsError) return ["error", f.tailSummary];
+  // a tool that waits on the user (AskUserQuestion / ExitPlanMode) is unambiguously
+  // "needs you" — no grace, and it takes priority even over the age window.
+  if (f.tailKind === "assistant-ask") return ["needs-input", f.tailSummary];
   if (f.tailKind === "assistant-text") {
     return [age > CONFIG.needsInputGraceMs ? "needs-input" : "working", f.tailSummary];
   }
-  // assistant-tool | tool-result | human => work in motion. Stays "working" (flying)
-  // through normal composition gaps; only goes "idle" (rendered as MIA) after a long
-  // radar silence. It never leaves the in-flight lane until it's dormant (Cold).
+  // assistant-tool | tool-result | human => work in motion. A tool ERROR is NOT terminal:
+  // Claude almost always retries or finds another way, so we keep it "working" and never
+  // auto-flip to go-around. Stays flying through normal gaps; goes "idle" (MIA) only after
+  // a long radar silence, and never leaves the in-flight lane until dormant (Cold).
   return [age > CONFIG.miaAfterMs ? "idle" : "working", f.tailSummary];
 }
 
