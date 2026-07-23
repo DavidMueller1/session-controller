@@ -118,7 +118,8 @@ function commitNote() {
 .foot .age { margin-left: auto; font-weight: 500; }
 .actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .note { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; background: var(--amber-bg); color: var(--amber); border-radius: 6px; padding: 2px 4px 2px 7px; }
-.icon { all: unset; cursor: pointer; display: inline-flex; }
+.icon { all: unset; cursor: pointer; display: inline-flex; align-items: center; padding: 2px; margin-left: 2px; border-radius: 4px; font-size: 13px; }
+.icon:hover { background: rgba(255, 255, 255, 0.1); }
 .note-input { font-size: 11px; height: 26px; width: 100%; }
 .ghost { font-size: 11px; color: var(--text-faint); border: 0.5px dashed var(--border); border-radius: 6px; padding: 1px 7px; background: transparent; display: inline-flex; align-items: center; gap: 4px; }
 .ghost:hover { color: var(--text-dim); border-color: var(--gray); }
