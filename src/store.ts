@@ -77,7 +77,24 @@ export class Store {
         note       TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS landed (
+        id        TEXT PRIMARY KEY,
+        landed_at INTEGER NOT NULL
+      );
     `);
+  }
+
+  /** ids the user has marked landed (kept, not pruned with sessions) */
+  getLanded(): string[] {
+    return (this.db.prepare(`SELECT id FROM landed`).all() as { id: string }[]).map((r) => r.id);
+  }
+
+  setLanded(id: string): void {
+    this.db.prepare(`INSERT INTO landed (id, landed_at) VALUES (?, ?) ON CONFLICT(id) DO NOTHING`).run(id, Date.now());
+  }
+
+  unsetLanded(id: string): void {
+    this.db.prepare(`DELETE FROM landed WHERE id = ?`).run(id);
   }
 
   /** all notes as { aircraftId: note } — notes outlive sessions (kept, not pruned) */

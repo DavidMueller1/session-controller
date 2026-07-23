@@ -75,4 +75,9 @@ export interface DiscoveredSession {
    * into a steady "Parked" strip in the UI.
    */
   note?: string | null;
+  /**
+   * User marked this feature landed (done). NOT derived — a human decision (§5 of
+   * CONCEPT.md). Overrides the activity lane so the aircraft sits in the Landed row.
+   */
+  landed?: boolean;
 }

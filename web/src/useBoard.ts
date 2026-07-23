@@ -55,5 +55,13 @@ export function useBoard() {
     await fetch(`/api/aircraft/${encodeURIComponent(id)}/note`, { method: "DELETE" });
   }
 
-  return { aircraft, connected, now, start, setNote, removeNote };
+  async function land(id: string) {
+    await fetch(`/api/aircraft/${encodeURIComponent(id)}/landed`, { method: "POST" });
+  }
+
+  async function unland(id: string) {
+    await fetch(`/api/aircraft/${encodeURIComponent(id)}/landed`, { method: "DELETE" });
+  }
+
+  return { aircraft, connected, now, start, setNote, removeNote, land, unland };
 }

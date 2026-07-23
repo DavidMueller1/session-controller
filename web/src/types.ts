@@ -24,9 +24,10 @@ export interface Aircraft {
   lastEventSummary: string;
   linkedCliSessionId: string | null;
   note?: string | null;
+  landed?: boolean;
 }
 
-export type Lane = "inflight" | "holding" | "approach" | "taxiing" | "cold";
+export type Lane = "inflight" | "holding" | "approach" | "taxiing" | "cold" | "landed";
 
 export interface WsMessage {
   type: "snapshot" | "update";

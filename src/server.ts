@@ -25,8 +25,9 @@ async function main(): Promise<void> {
   await app.register(websocket);
 
   let notes = store.getNotes();
+  let landed = new Set(store.getLanded());
   const decorate = (list: DiscoveredSession[]): DiscoveredSession[] =>
-    list.map((a) => ({ ...a, note: notes[a.id] ?? null }));
+    list.map((a) => ({ ...a, note: notes[a.id] ?? null, landed: landed.has(a.id) }));
 
   const clients = new Set<WebSocket>();
   const broadcast = (msg: unknown) => {
@@ -83,6 +84,21 @@ async function main(): Promise<void> {
     notes = store.getNotes();
     pushUpdate();
     return { ok: true, id: req.params.id };
+  });
+
+  // landing (a human decision) — mark done / send back into the pattern (go-around)
+  app.post<{ Params: { id: string } }>("/api/aircraft/:id/landed", async (req) => {
+    store.setLanded(req.params.id);
+    landed = new Set(store.getLanded());
+    pushUpdate();
+    return { ok: true, id: req.params.id, landed: true };
+  });
+
+  app.delete<{ Params: { id: string } }>("/api/aircraft/:id/landed", async (req) => {
+    store.unsetLanded(req.params.id);
+    landed = new Set(store.getLanded());
+    pushUpdate();
+    return { ok: true, id: req.params.id, landed: false };
   });
 
   // WebSocket: snapshot on connect, then live updates

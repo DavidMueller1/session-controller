@@ -5,7 +5,7 @@ import { useBoard } from "./useBoard";
 import { laneOf, isFlashing } from "./format";
 import type { Aircraft } from "./types";
 
-const { aircraft, connected, now, start, setNote, removeNote } = useBoard();
+const { aircraft, connected, now, start, setNote, removeNote, land, unland } = useBoard();
 onMounted(start);
 
 const byLane = (lane: string) =>
@@ -17,6 +17,7 @@ const inflight = computed(() => byLane("inflight"));
 const approach = computed(() => byLane("approach"));
 const taxiing = computed(() => byLane("taxiing"));
 const cold = computed(() => byLane("cold"));
+const landed = computed(() => byLane("landed"));
 // holding: flashing "needs you" strips first, parked ones after
 const holding = computed(() =>
   byLane("holding").sort((a, b) => Number(isFlashing(b)) - Number(isFlashing(a))),
@@ -46,6 +47,8 @@ onUpdated(() => {
 
 function onSet(id: string, note: string) { setNote(id, note); }
 function onRemove(id: string) { removeNote(id); }
+function onLand(id: string) { land(id); }
+function onUnland(id: string) { unland(id); }
 </script>
 
 <template>
@@ -59,6 +62,7 @@ function onRemove(id: string) { removeNote(id); }
         <span><b style="color: var(--amber)">{{ holding.length }}</b> holding</span>
         <span><b style="color: var(--green)">{{ inflight.length }}</b> in-flight</span>
         <span><b style="color: var(--blue)">{{ approach.length }}</b> approach</span>
+        <span v-if="landed.length"><b style="color: #4cc38a">{{ landed.length }}</b> landed</span>
         <span class="dot" :style="{ color: connected ? 'var(--green)' : 'var(--red)' }">
           <i class="ti ti-circle-filled"></i>{{ connected ? "live" : "reconnecting" }}
         </span>
@@ -68,7 +72,7 @@ function onRemove(id: string) { removeNote(id); }
 
     <div class="band-h"><i class="ti ti-plane-inflight"></i>In-flight <span class="n">{{ inflight.length }}</span></div>
     <div class="band">
-      <Strip v-for="a in inflight" :key="a.id" :aircraft="a" :now="now" class="band-item" @set-note="onSet" @remove-note="onRemove" />
+      <Strip v-for="a in inflight" :key="a.id" :aircraft="a" :now="now" class="band-item" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" />
       <div v-if="!inflight.length" class="empty">no active sessions</div>
     </div>
 
@@ -78,7 +82,7 @@ function onRemove(id: string) { removeNote(id); }
       <section class="lane holding-lane">
         <div class="lane-h"><i class="ti ti-circle-filled" style="color: var(--amber)"></i>Holding <span class="n">{{ holding.length }}</span></div>
         <div class="stack">
-          <Strip v-for="a in holding" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" />
+          <Strip v-for="a in holding" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" />
           <div v-if="!holding.length" class="empty">clear</div>
         </div>
       </section>
@@ -86,7 +90,7 @@ function onRemove(id: string) { removeNote(id); }
       <section class="lane">
         <div class="lane-h"><i class="ti ti-circle-filled" style="color: var(--blue)"></i>Approach <span class="n">{{ approach.length }}</span></div>
         <div class="stack">
-          <Strip v-for="a in approach" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" />
+          <Strip v-for="a in approach" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" />
           <div v-if="!approach.length" class="empty">clear</div>
         </div>
       </section>
@@ -94,11 +98,18 @@ function onRemove(id: string) { removeNote(id); }
       <section class="lane">
         <div class="lane-h"><i class="ti ti-circle-filled" style="color: var(--gray)"></i>Taxiing <span class="n">{{ taxiing.length }}</span></div>
         <div class="stack">
-          <Strip v-for="a in taxiing" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" />
+          <Strip v-for="a in taxiing" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" />
           <div v-if="!taxiing.length" class="empty">clear</div>
         </div>
       </section>
     </div>
+
+    <template v-if="landed.length">
+      <div class="band-h landed-h"><i class="ti ti-plane-arrival"></i>Landed <span class="n">{{ landed.length }}</span></div>
+      <div class="band">
+        <Strip v-for="a in landed" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" />
+      </div>
+    </template>
 
     <div class="cold" @click="showCold = !showCold">
       <i class="ti" :class="showCold ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
@@ -106,7 +117,7 @@ function onRemove(id: string) { removeNote(id); }
       {{ cold.length }} cold — no recent activity (overnight-safe, not landed)
     </div>
     <div v-if="showCold" class="cold-grid">
-      <Strip v-for="a in cold" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" />
+      <Strip v-for="a in cold" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" />
     </div>
   </div>
 </template>
@@ -124,6 +135,7 @@ header { display: flex; align-items: center; justify-content: space-between; fle
 .clock { color: var(--text-faint); }
 .band-h, .lane-h { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--text); }
 .band-h { color: var(--green); margin: 12px 0 8px; }
+.band-h.landed-h { color: #4cc38a; margin-top: 18px; }
 .band-h .n, .lane-h .n { color: var(--text-faint); font-weight: 400; }
 .lane-h i { font-size: 9px; }
 .band { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }

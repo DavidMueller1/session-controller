@@ -19,7 +19,10 @@ export const STATE: Record<ActivityState, StateMeta> = {
 
 export const LANE_ORDER: Lane[] = ["holding", "approach", "taxiing"];
 
+export const LANDED_COLOR = "#2f6f4f";
+
 export function laneOf(a: Aircraft): Lane {
+  if (a.landed) return "landed"; // human decision overrides the activity-derived lane
   return STATE[a.state]?.lane ?? "cold";
 }
 
