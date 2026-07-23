@@ -10,6 +10,7 @@ const emit = defineEmits<{
   land: [id: string];
   unland: [id: string];
   open: [id: string];
+  goAround: [id: string];
 }>();
 
 const meta = computed(() => STATE[props.aircraft.state]);
@@ -84,7 +85,7 @@ function commitNote() {
     <div class="body">
       <div class="cs">
         <span class="title" role="button" tabindex="0" title="Open this session's window" @click="emit('open', aircraft.id)" @keydown.enter="emit('open', aircraft.id)">{{ aircraft.title || aircraft.id }}</span>
-        <span v-if="landed" class="badge" style="background: #16301f; color: #4cc38a"><i class="ti ti-check"></i> Landed</span>
+        <span v-if="landed" class="badge" style="background: #16301f; color: #4cc38a"><i class="ti ti-check"></i> Landed<button class="badge-x" aria-label="undo landing" title="undo landing" @click="emit('unland', aircraft.id)"><i class="ti ti-x"></i></button></span>
         <span v-else-if="mia" class="badge" style="background: #1c222c; color: #8b98a8" title="no activity for 5+ min — still flying, but lost contact"><i class="ti ti-clock"></i> MIA</span>
         <span v-else-if="parked" class="badge" style="background: var(--amber-bg); color: var(--amber)">Parked</span>
         <span
@@ -138,7 +139,12 @@ function commitNote() {
         <button v-if="!landed" class="ghost land" title="Mark landed" @click="emit('land', aircraft.id)">
           <i class="ti ti-plane-arrival"></i> land
         </button>
-        <button v-else class="ghost" title="Send back into the pattern" @click="emit('unland', aircraft.id)">
+        <button
+          v-if="!landed && aircraft.approach && aircraft.pr && aircraft.pr.state === 'MERGED'"
+          class="ghost"
+          title="Ignore this merged PR — a follow-up is coming in the same session"
+          @click="emit('goAround', aircraft.id)"
+        >
           <i class="ti ti-plane-departure"></i> go-around
         </button>
       </div>
@@ -159,6 +165,8 @@ function commitNote() {
 .ctx { width: 16px; height: 16px; flex: none; margin-left: auto; }
 .title:hover { text-decoration: underline; }
 .badge { font-size: 10px; padding: 1px 6px; border-radius: 6px; white-space: nowrap; flex: none; display: inline-flex; align-items: center; gap: 3px; }
+.badge-x { all: unset; cursor: pointer; display: inline-flex; margin-left: 3px; opacity: 0.7; }
+.badge-x:hover { opacity: 1; }
 .chips { display: flex; gap: 5px; flex-wrap: wrap; }
 .chip { font-size: 11px; color: var(--text-dim); background: var(--chip); border-radius: 6px; padding: 1px 6px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .act { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -310,6 +310,9 @@ follow-up PR: it keeps its history, resets `prState` for the new branch/PR, and 
    Also: `open` action focuses the host window; AskUserQuestion/ExitPlanMode → Holding; tool
    errors are not terminal. **Hooks intentionally skipped** — they'd need per-machine
    settings.json edits and only cover CLI (see the distribution note in §9).
-6. **PR integration** — `gh` polling, git icons, Approach lane, Landed-on-merge nudge.
+6. ✅ **PR integration** — per-strip GitHub PR pill via `gh` (attached by branch); a **merged**
+   PR drives the **Approach** lane; **go-around** ignores a merged PR (per-PR counter) for
+   same-session follow-ups; **land** is manual with an undo-× on the badge (separate from
+   go-around).
 7. **Polish + packaging** — holding alerts, archive/search, launchd agent; cross-platform
    desktop paths + a simple install so colleagues can run it.

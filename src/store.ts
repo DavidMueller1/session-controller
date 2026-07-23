@@ -81,7 +81,23 @@ export class Store {
         id        TEXT PRIMARY KEY,
         landed_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS pr_cleared (
+        id         TEXT NOT NULL,
+        pr_number  INTEGER NOT NULL,
+        cleared_at INTEGER NOT NULL,
+        PRIMARY KEY (id, pr_number)
+      );
     `);
+  }
+
+  /** go-around'd PRs as a set of "aircraftId:prNumber" — these are ignored for Approach */
+  getClearedPrs(): Set<string> {
+    const rows = this.db.prepare(`SELECT id, pr_number FROM pr_cleared`).all() as { id: string; pr_number: number }[];
+    return new Set(rows.map((r) => `${r.id}:${r.pr_number}`));
+  }
+
+  clearPr(id: string, prNumber: number): void {
+    this.db.prepare(`INSERT INTO pr_cleared (id, pr_number, cleared_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING`).run(id, prNumber, Date.now());
   }
 
   /** ids the user has marked landed (kept, not pruned with sessions) */

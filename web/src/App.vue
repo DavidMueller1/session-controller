@@ -5,7 +5,7 @@ import { useBoard } from "./useBoard";
 import { laneOf, isFlashing, isMia } from "./format";
 import type { Aircraft } from "./types";
 
-const { aircraft, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify } = useBoard();
+const { aircraft, connected, now, start, setNote, removeNote, land, unland, open, goAround, notifySupported, notifyEnabled, toggleNotify } = useBoard();
 onMounted(start);
 
 // order by when each entered its state, so tool calls / thinking don't reshuffle the
@@ -54,6 +54,7 @@ function onRemove(id: string) { removeNote(id); }
 function onLand(id: string) { land(id); }
 function onUnland(id: string) { unland(id); }
 function onOpen(id: string) { open(id); }
+function onGoAround(id: string) { goAround(id); }
 </script>
 
 <template>
@@ -87,7 +88,7 @@ function onOpen(id: string) { open(id); }
 
     <div class="band-h"><i class="ti ti-plane-inflight"></i>In-flight <span class="n">{{ inflight.length }}</span></div>
     <div class="band">
-      <Strip v-for="a in inflight" :key="a.id" :aircraft="a" :now="now" class="band-item" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
+      <Strip v-for="a in inflight" :key="a.id" :aircraft="a" :now="now" class="band-item" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" @go-around="onGoAround" />
       <div v-if="!inflight.length" class="empty">no active sessions</div>
     </div>
 
@@ -97,7 +98,7 @@ function onOpen(id: string) { open(id); }
       <section class="lane holding-lane">
         <div class="lane-h"><i class="ti ti-circle-filled" style="color: var(--amber)"></i>Holding <span class="n">{{ holding.length }}</span></div>
         <div class="stack">
-          <Strip v-for="a in holding" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
+          <Strip v-for="a in holding" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" @go-around="onGoAround" />
           <div v-if="!holding.length" class="empty">clear</div>
         </div>
       </section>
@@ -105,7 +106,7 @@ function onOpen(id: string) { open(id); }
       <section class="lane">
         <div class="lane-h"><i class="ti ti-circle-filled" style="color: var(--blue)"></i>Approach <span class="n">{{ approach.length }}</span></div>
         <div class="stack">
-          <Strip v-for="a in approach" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
+          <Strip v-for="a in approach" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" @go-around="onGoAround" />
           <div v-if="!approach.length" class="empty">clear</div>
         </div>
       </section>
@@ -114,7 +115,7 @@ function onOpen(id: string) { open(id); }
     <template v-if="landed.length">
       <div class="band-h landed-h"><i class="ti ti-plane-arrival"></i>Landed <span class="n">{{ landed.length }}</span></div>
       <div class="band">
-        <Strip v-for="a in landed" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
+        <Strip v-for="a in landed" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" @go-around="onGoAround" />
       </div>
     </template>
 
@@ -124,7 +125,7 @@ function onOpen(id: string) { open(id); }
       {{ cold.length }} cold — no recent activity (overnight-safe, not landed)
     </div>
     <div v-if="showCold" class="cold-grid">
-      <Strip v-for="a in cold" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
+      <Strip v-for="a in cold" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" @go-around="onGoAround" />
     </div>
   </div>
 </template>

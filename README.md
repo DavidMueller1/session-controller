@@ -22,6 +22,12 @@ See [CONCEPT.md](CONCEPT.md) for the full design and the locked decisions.
   no transcript guesswork, and crucially **zero per-machine setup** (the reason this is
   shareable). Desktop-run sessions fall back to inference. **Hooks are deliberately not used** —
   they'd require editing each colleague's `settings.json` and only cover CLI sessions anyway.
+- **Phase 6 — PR integration ✅** — each strip shows its branch's GitHub PR (via `gh`, polled
+  ~60s for non-cold sessions): a clickable pill coloured by state (draft / open / review /
+  merged / closed). A **merged** PR moves the strip to **Approach** (ready to land). **Landing**
+  stays a manual click (Landed badge has an **×** to undo). **Go-around** ignores the current
+  merged PR so a same-session follow-up isn't flagged — the next *different* merged PR re-flags
+  Approach.
 
 ### What's tracked
 
@@ -132,6 +138,7 @@ src/
   parseDesktop.ts desktop metadata json → SessionFacts
   registry.ts     ~/.claude/sessions/*.json → live session name (rename) + status + pid
   open.ts         focus a session's host window (macOS `open`, pid ancestry detect)
+  pr.ts           GitHub PR lookup for a branch via `gh`
   deriveState.ts  facts + now → resolved state (pure, no I/O)
   correlate.ts    dedupe/merge sessions into one aircraft each
   engine.ts       watch + scan + fast tick; emits `update(aircraft)`

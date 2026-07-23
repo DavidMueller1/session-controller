@@ -152,5 +152,9 @@ export function useBoard() {
     await fetch(`/api/aircraft/${encodeURIComponent(id)}/open`, { method: "POST" });
   }
 
-  return { aircraft, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify };
+  async function goAround(id: string) {
+    await fetch(`/api/aircraft/${encodeURIComponent(id)}/go-around`, { method: "POST" });
+  }
+
+  return { aircraft, connected, now, start, setNote, removeNote, land, unland, open, goAround, notifySupported, notifyEnabled, toggleNotify };
 }

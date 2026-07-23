@@ -27,8 +27,15 @@ async function main(): Promise<void> {
 
   let notes = store.getNotes();
   let landed = new Set(store.getLanded());
+  let cleared = store.getClearedPrs();
   const decorate = (list: DiscoveredSession[]): DiscoveredSession[] =>
-    list.map((a) => ({ ...a, note: notes[a.id] ?? null, landed: landed.has(a.id) }));
+    list.map((a) => {
+      const isLanded = landed.has(a.id);
+      // Approach = a merged PR the user hasn't go-around'd. Purely PR-driven; go-around
+      // clears the merge so a same-session follow-up doesn't get flagged. Landed wins.
+      const approach = !isLanded && a.pr?.state === "MERGED" && !cleared.has(`${a.id}:${a.pr.number}`);
+      return { ...a, note: notes[a.id] ?? null, landed: isLanded, approach };
+    });
 
   const clients = new Set<WebSocket>();
   const broadcast = (msg: unknown) => {
@@ -100,6 +107,17 @@ async function main(): Promise<void> {
     landed = new Set(store.getLanded());
     pushUpdate();
     return { ok: true, id: req.params.id, landed: false };
+  });
+
+  // go-around: ignore this session's currently-merged PR for Approach (a follow-up is
+  // coming in the same session). The next different merged PR re-flags Approach.
+  app.post<{ Params: { id: string } }>("/api/aircraft/:id/go-around", async (req, reply) => {
+    const a = engine.aircraft().find((x) => x.id === req.params.id);
+    if (!a?.pr || a.pr.state !== "MERGED") return reply.code(400).send({ error: "no merged PR to clear" });
+    store.clearPr(a.id, a.pr.number);
+    cleared = store.getClearedPrs();
+    pushUpdate();
+    return { ok: true, id: a.id, clearedPr: a.pr.number };
   });
 
   // open/focus the session's host (PhpStorm project window, Claude app, or terminal)

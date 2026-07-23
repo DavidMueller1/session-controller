@@ -38,6 +38,7 @@ export interface Aircraft {
   contextTokens?: number | null;
   contextPct?: number | null;
   pr?: PrInfo | null;
+  approach?: boolean;
 }
 
 export type Lane = "inflight" | "holding" | "approach" | "cold" | "landed";
