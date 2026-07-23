@@ -28,9 +28,10 @@ export function useBoard() {
 
   function fire(a: Aircraft) {
     if (!notifySupported || Notification.permission !== "granted") return;
-    const n = new Notification(`✈ Needs you — ${a.title || a.id}`, {
+    const n = new Notification(`Needs you — ${a.title || a.id}`, {
       body: [projectName(a.project), a.lastEventSummary].filter(Boolean).join(" · "),
       tag: a.id, // same session replaces rather than stacks
+      icon: "/notify-icon.png",
     });
     n.onclick = () => {
       window.focus();

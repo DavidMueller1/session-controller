@@ -60,7 +60,7 @@ function onOpen(id: string) { open(id); }
   <div class="wrap">
     <header>
       <div class="brand">
-        <i class="ti ti-plane-tilt" style="color: var(--green)"></i>
+        <img src="/logo.svg" class="brand-logo" alt="" />
         <span class="name">FEATURE CONTROLLER</span>
       </div>
       <div class="stats">
@@ -133,7 +133,7 @@ function onOpen(id: string) { open(id); }
 .wrap { max-width: 1600px; margin: 0 auto; padding: 14px 16px 28px; }
 header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft); }
 .brand { display: flex; align-items: center; gap: 9px; }
-.brand i { font-size: 20px; }
+.brand-logo { width: 26px; height: 26px; display: block; }
 .name { font-size: 15px; font-weight: 500; letter-spacing: 0.4px; }
 .stats { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--text-dim); }
 .stats b { font-weight: 500; }
