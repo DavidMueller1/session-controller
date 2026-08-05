@@ -103,6 +103,15 @@ async function main(): Promise<void> {
 
   app.get("/api/status", async () => anthropicStatus);
 
+  // compact count for the macOS menu-bar app: strips in Holding that are NOT parked
+  // (needs-input/error, not landed/approach, no note) — i.e. the ones flashing for you.
+  app.get("/api/badge", async () => {
+    const holding = fullList().filter(
+      (a) => (a.state === "needs-input" || a.state === "error") && !a.landed && !a.approach && !a.note,
+    ).length;
+    return { holding, ts: Date.now() };
+  });
+
   app.get<{ Params: { id: string } }>("/api/aircraft/:id", async (req, reply) => {
     const hit = fullList().find((a) => a.id === req.params.id);
     if (!hit) return reply.code(404).send({ error: "not found" });
