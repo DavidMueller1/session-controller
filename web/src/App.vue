@@ -4,8 +4,25 @@ import Strip from "./components/Strip.vue";
 import { useBoard } from "./useBoard";
 import { laneOf, isFlashing } from "./format";
 
-const { aircraft, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify } = useBoard();
+const { aircraft, status, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify } = useBoard();
 onMounted(start);
+
+// Claude service-status banner (from status.claude.com, pushed over the WS)
+const statusColor = (s: string): string =>
+  s === "major_outage" ? "var(--red)"
+  : s === "partial_outage" ? "#f0883e"
+  : s === "degraded_performance" ? "var(--amber)"
+  : s === "under_maintenance" ? "var(--blue)"
+  : "var(--gray)";
+const prettyStatus = (s: string) => s.replace(/_/g, " ");
+const showStatus = computed(() => {
+  const s = status.value;
+  return !!s && (s.components.length > 0 || s.incidents.length > 0 || (!!s.indicator && s.indicator !== "none"));
+});
+const statusSev = computed(() => {
+  const i = status.value?.indicator;
+  return i === "critical" || i === "major" ? "major" : i === "minor" ? "minor" : "info";
+});
 
 // order by when each entered its state, so tool calls / thinking don't reshuffle the
 // board — a strip only moves when its state actually changes.
@@ -72,6 +89,28 @@ function onOpen(id: string) { open(id); }
 
 <template>
   <div class="wrap">
+    <a
+      v-if="showStatus && status"
+      class="status-bar"
+      :class="'sev-' + statusSev"
+      :href="status.url"
+      target="_blank"
+      rel="noreferrer"
+      :title="'Claude service status — updated ' + new Date(status.updatedAt).toLocaleString()"
+    >
+      <i class="ti ti-alert-triangle"></i>
+      <span class="s-desc">{{ status.incidents[0]?.name || status.description }}</span>
+      <span class="s-chips">
+        <span
+          v-for="c in status.components"
+          :key="c.name"
+          class="s-badge"
+          :style="{ color: statusColor(c.status), borderColor: statusColor(c.status) }"
+        >{{ c.name }} · {{ prettyStatus(c.status) }}</span>
+      </span>
+      <span class="s-link">status.claude.com <i class="ti ti-external-link"></i></span>
+    </a>
+
     <header>
       <div class="brand">
         <img src="/logo.svg" class="brand-logo" alt="" />
@@ -167,6 +206,20 @@ function onOpen(id: string) { open(id); }
 
 <style scoped>
 .wrap { height: 100dvh; max-width: 1600px; margin: 0 auto; padding: 14px 16px 16px; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Claude service-status banner (only shown when something is not operational) */
+.status-bar { flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; text-decoration: none; margin-bottom: 8px; padding: 6px 12px; border-radius: 8px; font-size: 12px; border: 0.5px solid; }
+.status-bar.sev-minor { background: rgba(224, 169, 46, 0.09); border-color: rgba(224, 169, 46, 0.35); }
+.status-bar.sev-major { background: rgba(248, 81, 73, 0.1); border-color: rgba(248, 81, 73, 0.4); }
+.status-bar.sev-info { background: rgba(88, 166, 255, 0.09); border-color: rgba(88, 166, 255, 0.3); }
+.status-bar > i { font-size: 14px; color: var(--amber); }
+.status-bar.sev-major > i { color: var(--red); }
+.status-bar.sev-info > i { color: var(--blue); }
+.s-desc { font-weight: 600; color: var(--text-hi); }
+.s-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.s-badge { font-size: 11px; border: 0.5px solid; border-radius: 6px; padding: 0 6px; white-space: nowrap; }
+.s-link { margin-left: auto; color: var(--text-dim); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.s-link i { font-size: 12px; }
 header { flex: none; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft); }
 .brand { display: flex; align-items: center; gap: 9px; }
 .brand-logo { width: 26px; height: 26px; display: block; }

@@ -44,8 +44,16 @@ export interface Aircraft {
 
 export type Lane = "inflight" | "mia" | "holding" | "approach" | "cold" | "landed";
 
-export interface WsMessage {
-  type: "snapshot" | "update";
-  ts: number;
-  aircraft: Aircraft[];
+export interface AnthropicStatus {
+  indicator: string;
+  description: string;
+  components: { name: string; status: string }[];
+  incidents: { name: string; impact: string; status: string; url: string }[];
+  url: string;
+  updatedAt: string;
+  fetchedAt: number;
 }
+
+export type WsMessage =
+  | { type: "snapshot" | "update"; ts: number; aircraft: Aircraft[] }
+  | { type: "status"; ts: number; status: AnthropicStatus | null };

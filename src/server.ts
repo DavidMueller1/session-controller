@@ -6,8 +6,9 @@ import Fastify from "fastify";
 import { CONFIG } from "./config.js";
 import { Engine } from "./engine.js";
 import { openAircraft } from "./open.js";
+import { startStatusPolling } from "./status.js";
 import { Store } from "./store.js";
-import type { ActivityState, DiscoveredSession } from "./types.js";
+import type { ActivityState, AnthropicStatus, DiscoveredSession } from "./types.js";
 
 /** the ws socket type, sourced from @fastify/websocket to avoid importing ws directly */
 type WebSocket = import("@fastify/websocket").WebSocket;
@@ -60,6 +61,13 @@ async function main(): Promise<void> {
   };
   const pushUpdate = () => broadcast({ type: "update", ts: Date.now(), aircraft: fullList() });
 
+  // Claude/Anthropic service status → top banner
+  let anthropicStatus: AnthropicStatus | null = null;
+  const stopStatus = startStatusPolling((s) => {
+    anthropicStatus = s;
+    broadcast({ type: "status", ts: Date.now(), status: s });
+  });
+
   // landed auto-clears when a session works again — it "starts back up" on its own.
   function autoUnlandOnWork(list: DiscoveredSession[]): void {
     let changed = false;
@@ -92,6 +100,8 @@ async function main(): Promise<void> {
   }));
 
   app.get("/api/aircraft", async () => fullList());
+
+  app.get("/api/status", async () => anthropicStatus);
 
   app.get<{ Params: { id: string } }>("/api/aircraft/:id", async (req, reply) => {
     const hit = fullList().find((a) => a.id === req.params.id);
@@ -159,6 +169,7 @@ async function main(): Promise<void> {
   app.get("/ws", { websocket: true }, (socket: WebSocket) => {
     clients.add(socket);
     socket.send(JSON.stringify({ type: "snapshot", ts: Date.now(), aircraft: fullList() }));
+    socket.send(JSON.stringify({ type: "status", ts: Date.now(), status: anthropicStatus }));
     socket.on("close", () => clients.delete(socket));
     socket.on("error", () => clients.delete(socket));
   });
@@ -184,6 +195,7 @@ async function main(): Promise<void> {
   );
 
   const shutdown = async () => {
+    stopStatus();
     await engine.stop();
     await app.close();
     store.close();

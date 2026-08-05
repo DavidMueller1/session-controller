@@ -1,5 +1,18 @@
 export type SessionSource = "cli" | "desktop";
 
+/** Anthropic/Claude service status, from the public Statuspage API (status.claude.com) */
+export interface AnthropicStatus {
+  /** overall: none | minor | major | critical */
+  indicator: string;
+  description: string;
+  /** only components that are NOT operational */
+  components: { name: string; status: string }[];
+  incidents: { name: string; impact: string; status: string; url: string }[];
+  url: string;
+  updatedAt: string;
+  fetchedAt: number;
+}
+
 /** GitHub PR for a session's branch (via `gh`), attached by branch */
 export interface PrInfo {
   number: number;

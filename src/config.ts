@@ -49,4 +49,10 @@ export const CONFIG = {
 
   /** how often to poll `gh` for PR status of non-cold sessions with a branch */
   prPollMs: 60_000,
+
+  /** Claude/Anthropic service status (Statuspage) — drives the top status banner */
+  statusSummaryUrl: process.env.CLAUDE_STATUS_URL ?? "https://status.claude.com/api/v2/summary.json",
+  statusPageUrl: "https://status.claude.com",
+  /** status pages change slowly; poll every couple of minutes */
+  statusPollMs: 120_000,
 };
