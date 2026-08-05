@@ -114,7 +114,7 @@ function onOpen(id: string) { open(id); }
     <header>
       <div class="brand">
         <img src="/logo.svg" class="brand-logo" alt="" />
-        <span class="name">FEATURE CONTROLLER</span>
+        <span class="name">SESSION CONTROLLER</span>
       </div>
       <div class="stats">
         <span><b style="color: var(--amber)">{{ holding.length }}</b> holding</span>
