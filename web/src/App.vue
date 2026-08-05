@@ -14,6 +14,8 @@ function toggleFlight() {
   flight.value = !flight.value;
   localStorage.setItem("fc-flight", flight.value ? "1" : "0");
 }
+// transition debug mode (flight layer only) — client-side lane overrides for testing
+const debug = ref(false);
 
 // Claude service-status banner (from status.claude.com, pushed over the WS)
 const statusColor = (s: string): string =>
@@ -178,6 +180,16 @@ function onOpen(id: string) { open(id); }
           <i class="ti ti-plane"></i>
         </button>
         <button
+          v-if="flight"
+          class="bell"
+          :class="{ on: debug }"
+          :title="debug ? 'Transition debug on — click to exit' : 'Debug transitions (force strips between lanes)'"
+          aria-label="Toggle transition debug mode"
+          @click="debug = !debug"
+        >
+          <i class="ti ti-bug"></i>
+        </button>
+        <button
           v-if="notifySupported"
           class="bell"
           :class="{ on: notifyEnabled }"
@@ -198,6 +210,7 @@ function onOpen(id: string) { open(id); }
       v-if="flight"
       :aircraft="aircraft"
       :now="now"
+      :debug="debug"
       @set-note="onSet"
       @remove-note="onRemove"
       @land="onLand"
