@@ -16,6 +16,13 @@ export const CONFIG = {
    *  (`name`) and a live `status` per running session, keyed by sessionId */
   sessionsDir: path.join(home, ".claude", "sessions"),
 
+  /** per-session state written by our Claude Code hooks (Stop/UserPromptSubmit/…):
+   *  ~/.claude/tc-state/<session_id>.json = {state, ts}. Authoritative live signal that
+   *  works for BOTH desktop and terminal sessions (newer desktop builds dropped the
+   *  registry `status` field), as long as it's fresher than hookStaleMs. */
+  hookStateDir: path.join(home, ".claude", "tc-state"),
+  hookStaleMs: 15 * 60_000,
+
   /** Claude Desktop (Cowork / local agent mode) session metadata */
   desktopSessionDirs: [
     path.join(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions"),

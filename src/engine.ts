@@ -8,6 +8,7 @@ import { resolve } from "./deriveState.js";
 import { parseCliTranscript } from "./parseCli.js";
 import { isDesktopSessionFile, parseDesktopSession } from "./parseDesktop.js";
 import { fetchPr } from "./pr.js";
+import { type HookState, isHookStateFile, parseHookStateFile } from "./hookState.js";
 import { type RegistryEntry, isRegistryFile, parseRegistryFile } from "./registry.js";
 import type { DiscoveredSession, PrInfo, SessionFacts } from "./types.js";
 
@@ -36,6 +37,8 @@ export class Engine extends EventEmitter {
   private facts = new Map<string, SessionFacts>();
   /** live session registry, keyed by file path (a few running sessions) */
   private registry = new Map<string, RegistryEntry>();
+  /** live per-session state from our Claude Code hooks, keyed by sessionId */
+  private hookState = new Map<string, HookState>();
   /** per-aircraft: current state + when it was entered (drives the displayed timer) */
   private stateSince = new Map<string, { state: string; since: number }>();
   /** PR status per aircraft id (via gh), refreshed on a slow poll */
@@ -67,6 +70,11 @@ export class Engine extends EventEmitter {
       if (entry) this.registry.set(p, entry);
       return;
     }
+    if (isHookStateFile(p)) {
+      const h = await parseHookStateFile(p);
+      if (h) this.hookState.set(h.sessionId, h);
+      return;
+    }
     const f = await this.parseFile(p);
     if (f) this.facts.set(p, f);
   }
@@ -74,6 +82,7 @@ export class Engine extends EventEmitter {
   private forget(p: string): void {
     this.facts.delete(p);
     this.registry.delete(p);
+    if (isHookStateFile(p)) this.hookState.delete(path.basename(p, ".json"));
   }
 
   /** sessionId → registry entry (rebuilt cheaply; only a handful of live sessions) */
@@ -103,6 +112,15 @@ export class Engine extends EventEmitter {
       // back to the inferred state. This is what makes states exact without hooks.
       if (entry?.status === "busy") a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
       else if (entry?.status === "idle") a = { ...a, state: "needs-input" };
+
+      // Hooks are the most reliable live signal — they fire on Stop / UserPromptSubmit /
+      // tool use regardless of desktop-vs-terminal or build (newer desktop builds no
+      // longer publish registry `status`). A fresh hook state wins over both.
+      const hs = this.hookState.get(a.id);
+      if (hs && now - hs.ts < CONFIG.hookStaleMs) {
+        if (hs.state === "working") a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
+        else if (hs.state === "needs-input") a = { ...a, state: "needs-input" };
+      }
 
       // stateSince: the moment this aircraft entered its current state. It drives the
       // displayed timer + ordering, so tool calls / thinking don't reset the clock or
@@ -150,29 +168,31 @@ export class Engine extends EventEmitter {
     }
     const targets = entries
       .map((e) => path.join(dir, e))
-      .filter((p) => isCliTranscript(p) || isDesktopSessionFile(p) || isRegistryFile(p));
+      .filter((p) => isCliTranscript(p) || isDesktopSessionFile(p) || isRegistryFile(p) || isHookStateFile(p));
     await Promise.all(targets.map((p) => this.upsert(p)));
   }
 
   /** one-shot: full scan + derive, no watchers or timers (used by `once`) */
   async scan(): Promise<void> {
-    const roots = [CONFIG.cliProjectsDir, CONFIG.sessionsDir, ...CONFIG.desktopSessionDirs];
+    const roots = [CONFIG.cliProjectsDir, CONFIG.sessionsDir, CONFIG.hookStateDir, ...CONFIG.desktopSessionDirs];
     await Promise.all(roots.map((r) => this.scanDir(r)));
     this.recompute(true);
   }
 
   /** long-running: scan, then watch + tick for live updates */
   async start(): Promise<void> {
+    // make sure the hook-state dir exists so chokidar watches it from the start
+    await fs.mkdir(CONFIG.hookStateDir, { recursive: true }).catch(() => {});
     await this.scan();
 
-    const roots = [CONFIG.cliProjectsDir, CONFIG.sessionsDir, ...CONFIG.desktopSessionDirs];
+    const roots = [CONFIG.cliProjectsDir, CONFIG.sessionsDir, CONFIG.hookStateDir, ...CONFIG.desktopSessionDirs];
     this.watcher = chokidar.watch(roots, {
       ignoreInitial: true,
       persistent: true,
       depth: 8,
       // chokidar v4 dropped glob support — filter files by shape here instead
       ignored: (p: string, stats?: { isFile(): boolean }) =>
-        stats?.isFile() === true && !isCliTranscript(p) && !isDesktopSessionFile(p) && !isRegistryFile(p),
+        stats?.isFile() === true && !isCliTranscript(p) && !isDesktopSessionFile(p) && !isRegistryFile(p) && !isHookStateFile(p),
     });
     this.watcher
       .on("add", (p) => this.upsert(p).then(() => this.scheduleRecompute()))
