@@ -42,6 +42,10 @@ onMounted(() => {
 });
 onBeforeUnmount(() => ro?.disconnect());
 
+// Single global speed for all flight-layer movement. Bumped up for testing so the travel
+// is easy to watch — drop to ~500ms for production feel.
+const TRAVEL = "1800ms";
+
 // geometry
 const GAP = 8;
 const HEAD = 22; // room for a lane label above each zone
@@ -103,7 +107,7 @@ const placed = computed(() => props.aircraft.filter((a) => rects.value[a.id]));
 </script>
 
 <template>
-  <div ref="sky" class="sky">
+  <div ref="sky" class="sky" :style="{ '--travel': TRAVEL }">
     <div v-for="z in zones" :key="z.k" class="zone-label" :style="{ transform: `translate(${z.x}px, ${z.y}px)`, color: z.c }">
       {{ z.k }}
     </div>
@@ -132,6 +136,6 @@ const placed = computed(() => props.aircraft.filter((a) => rects.value[a.id]));
 .zone-label { position: absolute; top: 0; left: 0; font-size: 11px; font-weight: 500; letter-spacing: 0.3px; opacity: 0.85; pointer-events: none; z-index: 1; }
 /* the payoff: because slots share one coordinate space, a lane change is a transform +
    size tween on the SAME node — the strip travels instead of teleporting. */
-.slot { position: absolute; top: 0; left: 0; overflow: hidden; transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1), width 0.5s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.slot { position: absolute; top: 0; left: 0; overflow: hidden; transition: transform var(--travel, 0.5s) cubic-bezier(0.2, 0.7, 0.2, 1), width var(--travel, 0.5s) cubic-bezier(0.2, 0.7, 0.2, 1); }
 .slot :deep(.strip) { height: 100%; }
 </style>
