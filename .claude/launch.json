@@ -7,6 +7,12 @@
       "runtimeArgs": ["start"],
       "port": 4317,
       "autoPort": true
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "web", "exec", "vite", "--host", "127.0.0.1"],
+      "port": 5173
     }
   ]
 }

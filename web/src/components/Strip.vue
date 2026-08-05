@@ -92,6 +92,11 @@ function commitNote() {
           class="badge"
           :style="{ background: meta.color, color: 'var(--bg)' }"
         >{{ meta.label }}</span>
+        <span
+          v-else-if="aircraft.state === 'suspected-done' || aircraft.state === 'dormant' || aircraft.state === 'unknown'"
+          class="badge dim"
+          :title="'lost contact — ' + meta.label.toLowerCase()"
+        >{{ meta.label }}</span>
         <svg v-if="ctxPct != null" class="ctx" viewBox="0 0 18 18" :aria-label="ctxTitle"><title>{{ ctxTitle }}</title>
           <circle cx="9" cy="9" :r="CTX_R" fill="none" stroke="var(--border)" stroke-width="2.5" />
           <circle cx="9" cy="9" :r="CTX_R" fill="none" :stroke="ctxColor" stroke-width="2.5" stroke-linecap="round"
@@ -156,6 +161,7 @@ function commitNote() {
 .ctx { width: 16px; height: 16px; flex: none; margin-left: auto; }
 .title:hover { text-decoration: underline; }
 .badge { font-size: 10px; padding: 1px 6px; border-radius: 6px; white-space: nowrap; flex: none; display: inline-flex; align-items: center; gap: 3px; }
+.badge.dim { background: #1c222c; color: #8b98a8; }
 .badge-x { all: unset; cursor: pointer; display: inline-flex; margin-left: 3px; opacity: 0.7; }
 .badge-x:hover { opacity: 1; }
 .chips { display: flex; gap: 5px; flex-wrap: wrap; }

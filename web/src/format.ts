@@ -13,11 +13,13 @@ export const STATE: Record<ActivityState, StateMeta> = {
   error: { lane: "holding", color: "#f85149", label: "Go-around" },
   // archived desktop sessions are done-ish; the Approach lane is now driven by the
   // server's `approach` flag (merged PR), not by this state.
-  "suspected-done": { lane: "cold", color: "#58a6ff", label: "Wrapped up" },
-  // idle = mid-work but gone quiet → its own small MIA lane ("lost contact").
+  "suspected-done": { lane: "mia", color: "#58a6ff", label: "Wrapped up" },
+  // idle = mid-work but gone quiet → the MIA rail ("lost contact").
   idle: { lane: "mia", color: "#6b7688", label: "MIA" },
-  dormant: { lane: "cold", color: "#4d5560", label: "Cold" },
-  unknown: { lane: "cold", color: "#4d5560", label: "Unknown" },
+  // Cold is no longer a state — it's the Landed overflow (see App.vue). Everything that
+  // isn't actively in a lane and isn't landed lives in the MIA rail so nothing vanishes.
+  dormant: { lane: "mia", color: "#6b7688", label: "Dormant" },
+  unknown: { lane: "mia", color: "#6b7688", label: "Unknown" },
 };
 
 export function isMia(a: Aircraft): boolean {
@@ -28,9 +30,9 @@ export const LANDED_COLOR = "#2f6f4f";
 
 export function laneOf(a: Aircraft): Lane {
   if (a.state === "working") return "inflight"; // a thinking session is ALWAYS in-flight
-  if (a.landed) return "landed"; // human decision (server auto-clears it once it works again)
+  if (a.landed) return "landed"; // human decision (App splits Landed→Cold by what fits on screen)
   if (a.approach) return "approach"; // merged PR → ready to land
-  return STATE[a.state]?.lane ?? "cold"; // needs-input→holding · idle→mia · else cold
+  return STATE[a.state]?.lane ?? "mia"; // needs-input→holding · everything else quiet→MIA rail
 }
 
 /** a needs-input aircraft with a note is "parked" (steady, triaged) rather than flashing */
