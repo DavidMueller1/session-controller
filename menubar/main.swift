@@ -175,15 +175,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Helpers
 
-    func isPortOpen() -> Bool {
-        !run("/usr/sbin/lsof", ["-ti", "tcp:\(kPort)"]).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    func killPort(force: Bool = false) {
-        let pids = run("/usr/sbin/lsof", ["-ti", "tcp:\(kPort)"])
+    // IMPORTANT: filter to LISTEN sockets only. A bare `lsof -ti tcp:PORT` also lists
+    // every *client* connected to the port — including this app (it polls /api/badge)
+    // and the browser — so killing that set would take us (and the dashboard tab) down
+    // with the server. `-sTCP:LISTEN` matches just the server, and we still guard our PID.
+    func serverPIDs() -> [String] {
+        let mine = String(ProcessInfo.processInfo.processIdentifier)
+        return run("/usr/sbin/lsof", ["-ti", "tcp:\(kPort)", "-sTCP:LISTEN"])
             .split(whereSeparator: \.isNewline)
             .map(String.init)
-        for pid in pids { _ = run("/bin/kill", force ? ["-9", pid] : [pid]) }
+            .filter { $0 != mine }
+    }
+
+    func isPortOpen() -> Bool { !serverPIDs().isEmpty }
+
+    func killPort(force: Bool = false) {
+        for pid in serverPIDs() { _ = run("/bin/kill", force ? ["-9", pid] : [pid]) }
     }
 
     @discardableResult
