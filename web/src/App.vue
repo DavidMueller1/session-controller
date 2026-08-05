@@ -80,6 +80,43 @@ function onLandedWheel(e: WheelEvent) {
   e.preventDefault();
 }
 
+// v-fade: mask a scroll container's edges, but only on the side(s) that still have
+// hidden content — so a scrollable list looks like it continues rather than being cut.
+const FADE = 28;
+function updateFade(el: HTMLElement) {
+  const xOver = el.scrollWidth - el.clientWidth > 1;
+  const yOver = el.scrollHeight - el.clientHeight > 1;
+  const build = (dir: string, start: boolean, end: boolean) => {
+    const stops = [start ? "transparent 0" : "#000 0"];
+    if (start) stops.push(`#000 ${FADE}px`);
+    if (end) stops.push(`#000 calc(100% - ${FADE}px)`);
+    stops.push(end ? "transparent 100%" : "#000 100%");
+    return `linear-gradient(to ${dir}, ${stops.join(", ")})`;
+  };
+  let mask = "";
+  // these containers each scroll a single axis — pick whichever actually overflows
+  if (xOver && el.scrollWidth - el.clientWidth >= el.scrollHeight - el.clientHeight) {
+    mask = build("right", el.scrollLeft > 1, el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  } else if (yOver) {
+    mask = build("bottom", el.scrollTop > 1, el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+  }
+  el.style.setProperty("-webkit-mask-image", mask);
+  el.style.setProperty("mask-image", mask);
+}
+const fadeCleanups = new WeakMap<HTMLElement, () => void>();
+const vFade = {
+  mounted(el: HTMLElement) {
+    const upd = () => updateFade(el);
+    el.addEventListener("scroll", upd, { passive: true });
+    const ro = new ResizeObserver(upd);
+    ro.observe(el);
+    fadeCleanups.set(el, () => { el.removeEventListener("scroll", upd); ro.disconnect(); });
+    requestAnimationFrame(upd);
+  },
+  updated(el: HTMLElement) { requestAnimationFrame(() => updateFade(el)); },
+  unmounted(el: HTMLElement) { fadeCleanups.get(el)?.(); fadeCleanups.delete(el); },
+};
+
 function onSet(id: string, note: string) { setNote(id, note); }
 function onRemove(id: string) { removeNote(id); }
 function onLand(id: string) { land(id); }
@@ -143,14 +180,14 @@ function onOpen(id: string) { open(id); }
       <!-- LEFT RAIL: MIA — every quiet, non-landed session (lost contact / dormant / done-ish) -->
       <aside v-if="mia.length" class="mia-rail">
         <div class="rail-h"><i class="ti ti-clock"></i> MIA — lost contact <span class="n">{{ mia.length }}</span></div>
-        <div class="rail-stack">
+        <div v-fade class="rail-stack">
           <Strip v-for="a in mia" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
         </div>
       </aside>
 
       <div class="main">
         <div class="band-h"><i class="ti ti-plane-inflight"></i>In-flight <span class="n">{{ inflight.length }}</span></div>
-        <div class="band inflight-band">
+        <div v-fade class="band inflight-band">
           <Strip v-for="a in inflight" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
           <div v-if="!inflight.length" class="empty">no active sessions</div>
         </div>
@@ -159,7 +196,7 @@ function onOpen(id: string) { open(id); }
         <div class="lanes">
           <section class="lane holding-lane">
             <div class="lane-h"><i class="ti ti-circle-filled" style="color: var(--amber)"></i>Holding <span class="n">{{ holding.length }}</span></div>
-            <div class="stack">
+            <div v-fade class="stack">
               <Strip v-for="a in holding" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
               <div v-if="!holding.length" class="empty">clear</div>
             </div>
@@ -167,7 +204,7 @@ function onOpen(id: string) { open(id); }
 
           <section class="lane">
             <div class="lane-h"><i class="ti ti-circle-filled" style="color: var(--blue)"></i>Approach <span class="n">{{ approach.length }}</span></div>
-            <div class="stack">
+            <div v-fade class="stack">
               <Strip v-for="a in approach" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
               <div v-if="!approach.length" class="empty">clear</div>
             </div>
@@ -182,7 +219,7 @@ function onOpen(id: string) { open(id); }
               <i class="ti ti-stack-2"></i> {{ cold.length }} cold
             </button>
           </div>
-          <div class="band landed-band" @wheel="onLandedWheel">
+          <div v-fade class="band landed-band" @wheel="onLandedWheel">
             <Strip v-for="a in landedVisible" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
           </div>
         </div>
@@ -196,7 +233,7 @@ function onOpen(id: string) { open(id); }
           <span><i class="ti ti-plane-arrival"></i> Cold — {{ cold.length }} older landed</span>
           <button class="icon" aria-label="close" @click="showCold = false"><i class="ti ti-x"></i></button>
         </div>
-        <div class="cold-panel-grid">
+        <div v-fade class="cold-panel-grid">
           <Strip v-for="a in cold" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
         </div>
       </div>
