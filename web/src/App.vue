@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { computed, onBeforeUpdate, onMounted, onUpdated, ref } from "vue";
 import Strip from "./components/Strip.vue";
+import FlightBoard from "./components/FlightBoard.vue";
 import { useBoard } from "./useBoard";
 import { laneOf, isFlashing } from "./format";
 
 const { aircraft, status, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify } = useBoard();
 onMounted(start);
+
+// SPIKE toggle: classic per-lane board vs the flight-layer (one coordinate space)
+const flight = ref(localStorage.getItem("fc-flight") === "1");
+function toggleFlight() {
+  flight.value = !flight.value;
+  localStorage.setItem("fc-flight", flight.value ? "1" : "0");
+}
 
 // Claude service-status banner (from status.claude.com, pushed over the WS)
 const statusColor = (s: string): string =>
@@ -55,11 +63,12 @@ const clock = computed(() => new Date(now.value).toLocaleTimeString());
 let firstRects = new Map<string, DOMRect>();
 const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 onBeforeUpdate(() => {
+  if (flight.value) return; // the flight-layer handles its own movement
   firstRects = new Map();
   document.querySelectorAll<HTMLElement>("[data-fid]").forEach((el) => firstRects.set(el.dataset.fid!, el.getBoundingClientRect()));
 });
 onUpdated(() => {
-  if (reduceMotion) return;
+  if (flight.value || reduceMotion) return;
   document.querySelectorAll<HTMLElement>("[data-fid]").forEach((el) => {
     const first = firstRects.get(el.dataset.fid!);
     if (!first) return;
@@ -160,6 +169,15 @@ function onOpen(id: string) { open(id); }
         <span><b style="color: var(--blue)">{{ approach.length }}</b> approach</span>
         <span v-if="landed.length"><b style="color: #4cc38a">{{ landed.length }}</b> landed</span>
         <button
+          class="bell"
+          :class="{ on: flight }"
+          :title="flight ? 'Flight-layer spike — click for classic board' : 'Try the flight-layer spike'"
+          aria-label="Toggle flight-layer board"
+          @click="toggleFlight"
+        >
+          <i class="ti ti-plane"></i>
+        </button>
+        <button
           v-if="notifySupported"
           class="bell"
           :class="{ on: notifyEnabled }"
@@ -176,7 +194,18 @@ function onOpen(id: string) { open(id); }
       </div>
     </header>
 
-    <div class="board">
+    <FlightBoard
+      v-if="flight"
+      :aircraft="aircraft"
+      :now="now"
+      @set-note="onSet"
+      @remove-note="onRemove"
+      @land="onLand"
+      @unland="onUnland"
+      @open="onOpen"
+    />
+
+    <div v-if="!flight" class="board">
       <!-- LEFT RAIL: MIA — every quiet, non-landed session (lost contact / dormant / done-ish) -->
       <aside v-if="mia.length" class="mia-rail">
         <div class="rail-h"><i class="ti ti-clock"></i> MIA — lost contact <span class="n">{{ mia.length }}</span></div>
