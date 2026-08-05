@@ -10,7 +10,6 @@ const emit = defineEmits<{
   land: [id: string];
   unland: [id: string];
   open: [id: string];
-  goAround: [id: string];
 }>();
 
 const meta = computed(() => STATE[props.aircraft.state]);
@@ -138,14 +137,6 @@ function commitNote() {
 
         <button v-if="!landed" class="ghost land" title="Mark landed" @click="emit('land', aircraft.id)">
           <i class="ti ti-plane-arrival"></i> land
-        </button>
-        <button
-          v-if="!landed && aircraft.approach && aircraft.pr && aircraft.pr.state === 'MERGED'"
-          class="ghost"
-          title="Ignore this merged PR — a follow-up is coming in the same session"
-          @click="emit('goAround', aircraft.id)"
-        >
-          <i class="ti ti-plane-departure"></i> go-around
         </button>
       </div>
     </div>

@@ -81,23 +81,7 @@ export class Store {
         id        TEXT PRIMARY KEY,
         landed_at INTEGER NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS pr_cleared (
-        id         TEXT NOT NULL,
-        pr_number  INTEGER NOT NULL,
-        cleared_at INTEGER NOT NULL,
-        PRIMARY KEY (id, pr_number)
-      );
     `);
-  }
-
-  /** go-around'd PRs as a set of "aircraftId:prNumber" — these are ignored for Approach */
-  getClearedPrs(): Set<string> {
-    const rows = this.db.prepare(`SELECT id, pr_number FROM pr_cleared`).all() as { id: string; pr_number: number }[];
-    return new Set(rows.map((r) => `${r.id}:${r.pr_number}`));
-  }
-
-  clearPr(id: string, prNumber: number): void {
-    this.db.prepare(`INSERT INTO pr_cleared (id, pr_number, cleared_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING`).run(id, prNumber, Date.now());
   }
 
   /** ids the user has marked landed (kept, not pruned with sessions) */
@@ -132,7 +116,8 @@ export class Store {
     this.db.prepare(`DELETE FROM notes WHERE id = ?`).run(id);
   }
 
-  /** upsert the current live set and prune sessions that disappeared */
+  /** upsert the current live set. Sessions are NEVER pruned — once tracked, a session
+   *  persists (so it survives restarts / vanished files and can still be shown). */
   syncSessions(list: DiscoveredSession[]): void {
     const now = Date.now();
     const upsert = this.db.prepare(`
@@ -174,13 +159,6 @@ export class Store {
           linked_cli_session_id: s.linkedCliSessionId,
           updated_at: now,
         });
-      }
-      const ids = rows.map((s) => s.id);
-      if (ids.length) {
-        const placeholders = ids.map(() => "?").join(",");
-        this.db.prepare(`DELETE FROM sessions WHERE id NOT IN (${placeholders})`).run(...ids);
-      } else {
-        this.db.prepare(`DELETE FROM sessions`).run();
       }
     });
     tx(list);

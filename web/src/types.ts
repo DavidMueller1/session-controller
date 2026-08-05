@@ -39,9 +39,10 @@ export interface Aircraft {
   contextPct?: number | null;
   pr?: PrInfo | null;
   approach?: boolean;
+  offline?: boolean;
 }
 
-export type Lane = "inflight" | "holding" | "approach" | "cold" | "landed";
+export type Lane = "inflight" | "mia" | "holding" | "approach" | "cold" | "landed";
 
 export interface WsMessage {
   type: "snapshot" | "update";

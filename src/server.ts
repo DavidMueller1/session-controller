@@ -7,7 +7,7 @@ import { CONFIG } from "./config.js";
 import { Engine } from "./engine.js";
 import { openAircraft } from "./open.js";
 import { Store } from "./store.js";
-import type { DiscoveredSession, PrInfo } from "./types.js";
+import type { ActivityState, DiscoveredSession } from "./types.js";
 
 /** the ws socket type, sourced from @fastify/websocket to avoid importing ws directly */
 type WebSocket = import("@fastify/websocket").WebSocket;
@@ -27,15 +27,29 @@ async function main(): Promise<void> {
 
   let notes = store.getNotes();
   let landed = new Set(store.getLanded());
-  let cleared = store.getClearedPrs();
+
   const decorate = (list: DiscoveredSession[]): DiscoveredSession[] =>
     list.map((a) => {
       const isLanded = landed.has(a.id);
-      // Approach = a merged PR the user hasn't go-around'd. Purely PR-driven; go-around
-      // clears the merge so a same-session follow-up doesn't get flagged. Landed wins.
-      const approach = !isLanded && a.pr?.state === "MERGED" && !cleared.has(`${a.id}:${a.pr.number}`);
+      // Approach = a merged PR, unless landed. A working session wins the lane on the
+      // client (working → In-flight), so a merged-but-active session shows In-flight.
+      const approach = !isLanded && a.pr?.state === "MERGED";
       return { ...a, note: notes[a.id] ?? null, landed: isLanded, approach };
     });
+
+  // Persistence: a tracked session with no live file right now is still shown from the
+  // store, floored to MIA (idle) so nothing you tracked disappears across restarts /
+  // vanished files.
+  const floorOffline = (s: ActivityState): ActivityState =>
+    s === "working" || s === "needs-input" || s === "unknown" ? "idle" : s;
+  function offlineSessions(): DiscoveredSession[] {
+    const live = new Set(engine.aircraft().map((a) => a.id));
+    return store
+      .getSessions()
+      .filter((s) => !live.has(s.id))
+      .map((s) => ({ ...s, state: floorOffline(s.state), offline: true }));
+  }
+  const fullList = (): DiscoveredSession[] => decorate([...engine.aircraft(), ...offlineSessions()]);
 
   const clients = new Set<WebSocket>();
   const broadcast = (msg: unknown) => {
@@ -44,57 +58,49 @@ async function main(): Promise<void> {
       if (c.readyState === 1) c.send(data);
     }
   };
-  const pushUpdate = () => broadcast({ type: "update", ts: Date.now(), aircraft: decorate(engine.aircraft()) });
+  const pushUpdate = () => broadcast({ type: "update", ts: Date.now(), aircraft: fullList() });
 
-  // auto go-around: when a session's branch switches away from a merged PR, it's a
-  // same-session follow-up — clear that PR so it doesn't keep nagging in Approach
-  // (persisted, so revisiting the old branch won't re-flag it either).
-  const lastBranch = new Map<string, string | null>();
-  const lastPr = new Map<string, PrInfo | null>();
-  function autoClearOnBranchSwitch(list: DiscoveredSession[]): void {
+  // landed auto-clears when a session works again — it "starts back up" on its own.
+  function autoUnlandOnWork(list: DiscoveredSession[]): void {
     let changed = false;
     for (const a of list) {
-      const pb = lastBranch.get(a.id);
-      const pp = lastPr.get(a.id);
-      if (pb && a.branch && pb !== a.branch && pp?.state === "MERGED" && !cleared.has(`${a.id}:${pp.number}`)) {
-        store.clearPr(a.id, pp.number);
+      if (a.state === "working" && landed.has(a.id)) {
+        store.unsetLanded(a.id);
         changed = true;
       }
-      lastBranch.set(a.id, a.branch ?? null);
-      lastPr.set(a.id, a.pr ?? null);
     }
-    if (changed) cleared = store.getClearedPrs();
+    if (changed) landed = new Set(store.getLanded());
   }
 
   // engine → persist sessions + push decorated update
   engine.on("update", (list: DiscoveredSession[]) => {
     store.syncSessions(list);
-    autoClearOnBranchSwitch(list);
-    broadcast({ type: "update", ts: Date.now(), aircraft: decorate(list) });
+    autoUnlandOnWork(list);
+    broadcast({ type: "update", ts: Date.now(), aircraft: fullList() });
     const summary = Object.entries(counts(list))
       .map(([k, v]) => `${k} ${v}`)
       .join(" · ");
-    process.stdout.write(`[${new Date().toLocaleTimeString()}] ${list.length} aircraft · ${summary} → ${clients.size} client(s)\n`);
+    process.stdout.write(`[${new Date().toLocaleTimeString()}] ${list.length} live · ${summary} → ${clients.size} client(s)\n`);
   });
 
   // REST
   app.get("/api/health", async () => ({
     ok: true,
-    aircraft: engine.aircraft().length,
+    aircraft: fullList().length,
     clients: clients.size,
     uptimeSec: Math.round(process.uptime()),
   }));
 
-  app.get("/api/aircraft", async () => decorate(engine.aircraft()));
+  app.get("/api/aircraft", async () => fullList());
 
   app.get<{ Params: { id: string } }>("/api/aircraft/:id", async (req, reply) => {
-    const hit = decorate(engine.aircraft()).find((a) => a.id === req.params.id);
+    const hit = fullList().find((a) => a.id === req.params.id);
     if (!hit) return reply.code(404).send({ error: "not found" });
     return hit;
   });
 
   app.get("/api/summary", async () => {
-    const list = engine.aircraft();
+    const list = fullList();
     return { total: list.length, byState: counts(list), ts: Date.now() };
   });
 
@@ -130,17 +136,6 @@ async function main(): Promise<void> {
     return { ok: true, id: req.params.id, landed: false };
   });
 
-  // go-around: ignore this session's currently-merged PR for Approach (a follow-up is
-  // coming in the same session). The next different merged PR re-flags Approach.
-  app.post<{ Params: { id: string } }>("/api/aircraft/:id/go-around", async (req, reply) => {
-    const a = engine.aircraft().find((x) => x.id === req.params.id);
-    if (!a?.pr || a.pr.state !== "MERGED") return reply.code(400).send({ error: "no merged PR to clear" });
-    store.clearPr(a.id, a.pr.number);
-    cleared = store.getClearedPrs();
-    pushUpdate();
-    return { ok: true, id: a.id, clearedPr: a.pr.number };
-  });
-
   // open/focus the session's host (PhpStorm project window, Claude app, or terminal)
   app.post<{ Params: { id: string } }>("/api/aircraft/:id/open", async (req, reply) => {
     const a = engine.aircraft().find((x) => x.id === req.params.id);
@@ -163,7 +158,7 @@ async function main(): Promise<void> {
   // WebSocket: snapshot on connect, then live updates
   app.get("/ws", { websocket: true }, (socket: WebSocket) => {
     clients.add(socket);
-    socket.send(JSON.stringify({ type: "snapshot", ts: Date.now(), aircraft: decorate(engine.aircraft()) }));
+    socket.send(JSON.stringify({ type: "snapshot", ts: Date.now(), aircraft: fullList() }));
     socket.on("close", () => clients.delete(socket));
     socket.on("error", () => clients.delete(socket));
   });

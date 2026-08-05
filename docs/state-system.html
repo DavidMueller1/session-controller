@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Feature Controller — state system</title>
+<style>
+  :root{
+    --bg:#0c1016; --panel:#151b23; --panel2:#10151c; --border:#232b35; --border-soft:#1c232c;
+    --text:#d7dde5; --hi:#e8edf3; --dim:#8b949e; --faint:#6e7681;
+    --green:#3fb950; --amber:#e0a92e; --blue:#58a6ff; --gray:#7d8590; --red:#f85149; --purple:#a371f7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1000px;margin:0 auto;padding:28px 22px 60px}
+  h1{font-size:20px;font-weight:600;margin:0 0 2px;display:flex;align-items:center;gap:10px}
+  .sub{color:var(--faint);font-size:13px;margin:0 0 22px}
+  .stage-lbl{font-size:12px;color:var(--faint);letter-spacing:.4px;text-transform:uppercase;margin:0 0 8px}
+  .arrow{text-align:center;color:var(--faint);font-size:20px;margin:8px 0}
+  .grid{display:grid;gap:10px}
+  .cards5{grid-template-columns:repeat(auto-fit,minmax(165px,1fr))}
+  .cards2{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+  .card{background:var(--panel);border:0.5px solid var(--border);border-radius:10px;padding:10px 12px}
+  .card b{font-weight:600;color:var(--hi);font-size:13px}
+  .card .d{font-size:12px;color:var(--dim);margin-top:3px}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px}
+  .chip{display:inline-flex;align-items:center;font-size:12px;padding:1px 8px;border-radius:6px;white-space:nowrap;font-weight:500}
+  .c-green{background:#12271a;color:var(--green)} .c-amber{background:#2b2410;color:var(--amber)}
+  .c-blue{background:#122031;color:var(--blue)} .c-gray{background:#1b2128;color:var(--gray)}
+  .c-purple{background:#1e162c;color:var(--purple)} .c-red{background:#2a1414;color:var(--red)}
+  .panel{background:var(--panel2);border:0.5px solid var(--border);border-radius:10px;padding:6px 12px}
+  .row{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:0.5px solid var(--border-soft);font-size:13px}
+  .row:first-child{border-top:0}
+  .k{flex:none;width:220px;color:var(--dim)}
+  .note{font-size:12px;color:var(--faint);margin-top:8px}
+  .lane{border-left:3px solid;padding:8px 12px;background:var(--panel);border-radius:0 8px 8px 0}
+  .lane b{font-weight:600;font-size:14px}
+  .lane .d{font-size:12px;color:var(--dim);margin-top:2px}
+  .seams{margin-top:14px;background:var(--panel2);border:0.5px solid var(--border);border-radius:12px;padding:6px 16px}
+  .seam{padding:12px 0;border-top:0.5px solid var(--border-soft);display:flex;gap:12px}
+  .seam:first-child{border-top:0}
+  .seam .n{flex:none;width:26px;height:26px;border-radius:50%;background:#2a1414;color:var(--red);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px}
+  .seam .t{font-weight:600;color:var(--hi)}
+  .seam .b{font-size:13px;color:var(--dim);margin-top:2px}
+  .tag{font-size:11px;padding:1px 7px;border-radius:5px;background:#20262e;color:var(--faint);margin-left:6px}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span class="dot" style="background:var(--green);width:14px;height:14px"></span> Feature Controller — state system</h1>
+  <p class="sub">How signals become an activity state, then a lane. Read top to bottom; first matching rule wins.</p>
+
+  <div class="stage-lbl">1 · Signals (read per session — no per-machine setup)</div>
+  <div class="grid cards5">
+    <div class="card"><b>Registry status</b><div class="d"><span class="mono">~/.claude/sessions</span> · <span class="mono">busy / idle</span> · live CLI, authoritative</div></div>
+    <div class="card"><b>Transcript tail + age</b><div class="d">ask · text · tool · you · none</div></div>
+    <div class="card"><b>Desktop metadata</b><div class="d">archived · last activity</div></div>
+    <div class="card"><b>GitHub PR</b><div class="d"><span class="mono">gh</span>, by branch · open / merged</div></div>
+    <div class="card"><b>You</b><div class="d">note · land · go-around</div></div>
+  </div>
+
+  <div class="arrow">↓</div>
+  <div class="stage-lbl">2 · Activity state — registry status wins for live CLI; else infer</div>
+  <div class="panel" style="margin-bottom:8px;background:#101d2b;border-color:#1c3550">
+    <div class="row"><span class="k" style="color:var(--blue)">Registry (live CLI, wins)</span>
+      <span><span class="mono">busy</span> → <span class="chip c-green">working</span>&nbsp;&nbsp;<span class="mono">idle</span> → <span class="chip c-amber">needs-input</span></span></div>
+  </div>
+  <div class="panel">
+    <div class="row"><span class="k">any tail · age &gt; 2h</span><span class="chip c-gray">dormant</span></div>
+    <div class="row"><span class="k">tail = ask <span style="color:var(--faint)">(AskUserQuestion / ExitPlanMode)</span></span><span><span class="chip c-amber">needs-input</span> <span style="color:var(--faint)">· immediate</span></span></div>
+    <div class="row"><span class="k">tail = assistant text</span><span>&gt; 8s → <span class="chip c-amber">needs-input</span> · else <span class="chip c-green">working</span></span></div>
+    <div class="row"><span class="k">tail = tool / result / you</span><span>&gt; 5m → <span class="chip c-gray">idle (MIA)</span> · else <span class="chip c-green">working</span></span></div>
+    <div class="row"><span class="k">tail = none</span><span class="chip c-gray">unknown</span></div>
+    <div class="row"><span class="k">desktop archived</span><span class="chip c-blue">suspected-done</span></div>
+  </div>
+  <div class="note">merge (CLI + desktop): trust the CLI state · a fresh desktop-<span class="mono">working</span> heartbeat rescues a stale CLI · <span style="color:var(--red)">the <span class="mono">error</span> state exists in code but is never produced</span></div>
+
+  <div class="arrow">↓</div>
+  <div class="stage-lbl">3 · Overlays (applied on top of the activity state)</div>
+  <div class="panel">
+    <div class="row"><span class="k">+ note</span><span><span class="chip c-amber">needs-input</span> renders as <b>Parked</b> — steady, no flash, no ping</span></div>
+    <div class="row"><span class="k">+ land (you)</span><span>→ <b>Landed</b> — and <b>auto-clears when the session works again</b> ("starts back up")</span></div>
+    <div class="row"><span class="k">PR merged</span><span>→ <b>Approach</b> flag (unless landed or working)</span></div>
+  </div>
+
+  <div class="arrow">↓</div>
+  <div class="stage-lbl">4 · Lane — resolved in this order, first match wins</div>
+  <div class="panel" style="margin-bottom:10px">
+    <div class="row"><span class="k" style="width:30px">1.</span><span>landed? → <span class="chip c-green">Landed</span> <span style="color:var(--faint)">(auto-clears when it works again)</span></span></div>
+    <div class="row"><span class="k" style="width:30px">2.</span><span><b>working? → <span class="chip c-green">In-flight</span></b> <span style="color:var(--faint)">— always, wins over Approach</span></span></div>
+    <div class="row"><span class="k" style="width:30px">3.</span><span>approach flag? (merged PR) → <span class="chip c-blue">Approach</span></span></div>
+    <div class="row"><span class="k" style="width:30px">4.</span><span>else map the activity state ↓</span></div>
+  </div>
+  <div class="grid cards2">
+    <div class="lane" style="border-color:var(--green)"><b style="color:var(--green)">In-flight</b><div class="d">← working (always)</div></div>
+    <div class="lane" style="border-color:var(--gray)"><b style="color:var(--gray)">MIA</b><div class="d">← idle · own small area, "lost contact"</div></div>
+    <div class="lane" style="border-color:var(--amber)"><b style="color:var(--amber)">Holding</b><div class="d">← needs-input · flashing, or Parked if note · pings on enter</div></div>
+    <div class="lane" style="border-color:var(--blue)"><b style="color:var(--blue)">Approach</b><div class="d">← merged PR, when not working / landed</div></div>
+    <div class="lane" style="border-color:var(--gray)"><b style="color:var(--gray)">Cold</b><div class="d">← dormant · suspected-done · unknown (collapsed footer)</div></div>
+    <div class="lane" style="border-color:var(--green)"><b style="color:var(--green)">Landed</b><div class="d">← you (× to undo · auto-clears when it works again)</div></div>
+  </div>
+
+  <div class="seams">
+    <div style="padding:12px 0 2px;font-size:12px;color:var(--faint);letter-spacing:.4px;text-transform:uppercase">Seams — #1, #2, #3 fixed this pass (working→in-flight · landed auto-clears · MIA its own lane); go-around removed. #5–#8 remain.</div>
+    <div class="seam"><div class="n">1</div><div><div class="t">Approach hides active work <span class="tag">precedence</span></div><div class="b">A busy session with a merged PR (same branch, before go-around) shows in Approach, not In-flight — looks done while it's running.</div></div></div>
+    <div class="seam"><div class="n">2</div><div><div class="t">Landed is sticky <span class="tag">precedence</span></div><div class="b">Land a session then keep working in it → it stays in the Landed row (dimmed) even while busy, until you hit ×.</div></div></div>
+    <div class="seam"><div class="n">3</div><div><div class="t">"idle" means two opposite things <span class="tag">overloaded</span></div><div class="b">Registry idle → Holding (your move). Transcript-inferred idle → In-flight/MIA (mid-work, quiet). Same word, opposite lanes.</div></div></div>
+    <div class="seam"><div class="n">4</div><div><div class="t">Three states collapse into Cold <span class="tag">ambiguous</span></div><div class="b">dormant / suspected-done / unknown all → Cold. A broken parse (unknown) hides among overnight-cold; archived desktop sessions vanish into the collapsed footer.</div></div></div>
+    <div class="seam"><div class="n">5</div><div><div class="t">Registry authority misses desktop sessions <span class="tag">coverage</span></div><div class="b">Desktop-run sessions (incl. the one you talk to me in) never get busy/idle — always the fuzzy transcript inference.</div></div></div>
+    <div class="seam"><div class="n">6</div><div><div class="t">Non-PR work has no "done" signal <span class="tag">coverage</span></div><div class="b">Approach is merged-PR-only. Work on main, or a session with no PR, can never reach Approach — it just fades to Cold.</div></div></div>
+    <div class="seam"><div class="n">7</div><div><div class="t">Holding pings on every turn-end <span class="tag">noise</span></div><div class="b">Registry idle → needs-input immediately + notify delay 0 → every live session finishing a turn flashes Holding and pings.</div></div></div>
+    <div class="seam"><div class="n">8</div><div><div class="t">Dead error state + inconsistent grace <span class="tag">cruft</span></div><div class="b">error is in the type/UI but never produced. The 8s grace only applies to the transcript path — registry idle snaps to Holding instantly.</div></div></div>
+  </div>
+</div>
+</body>
+</html>

@@ -2,10 +2,10 @@
 import { computed, onBeforeUpdate, onMounted, onUpdated, ref } from "vue";
 import Strip from "./components/Strip.vue";
 import { useBoard } from "./useBoard";
-import { laneOf, isFlashing, isMia } from "./format";
+import { laneOf, isFlashing } from "./format";
 import type { Aircraft } from "./types";
 
-const { aircraft, connected, now, start, setNote, removeNote, land, unland, open, goAround, notifySupported, notifyEnabled, toggleNotify } = useBoard();
+const { aircraft, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify } = useBoard();
 onMounted(start);
 
 // order by when each entered its state, so tool calls / thinking don't reshuffle the
@@ -15,10 +15,8 @@ const orderKey = (a: { stateSince?: number | null; lastActivityAt: number | null
 const byLane = (lane: string) =>
   aircraft.value.filter((a) => laneOf(a) === lane).sort((a, b) => orderKey(b) - orderKey(a));
 
-// in-flight: active first, MIA (lost contact) drifts to the end of the band
-const inflight = computed(() =>
-  byLane("inflight").sort((a, b) => Number(isMia(a)) - Number(isMia(b))),
-);
+const inflight = computed(() => byLane("inflight"));
+const mia = computed(() => byLane("mia"));
 const approach = computed(() => byLane("approach"));
 const cold = computed(() => byLane("cold"));
 const landed = computed(() => byLane("landed"));
@@ -54,7 +52,6 @@ function onRemove(id: string) { removeNote(id); }
 function onLand(id: string) { land(id); }
 function onUnland(id: string) { unland(id); }
 function onOpen(id: string) { open(id); }
-function onGoAround(id: string) { goAround(id); }
 </script>
 
 <template>
@@ -67,6 +64,7 @@ function onGoAround(id: string) { goAround(id); }
       <div class="stats">
         <span><b style="color: var(--amber)">{{ holding.length }}</b> holding</span>
         <span><b style="color: var(--green)">{{ inflight.length }}</b> in-flight</span>
+        <span v-if="mia.length"><b style="color: var(--gray)">{{ mia.length }}</b> mia</span>
         <span><b style="color: var(--blue)">{{ approach.length }}</b> approach</span>
         <span v-if="landed.length"><b style="color: #4cc38a">{{ landed.length }}</b> landed</span>
         <button
@@ -88,8 +86,15 @@ function onGoAround(id: string) { goAround(id); }
 
     <div class="band-h"><i class="ti ti-plane-inflight"></i>In-flight <span class="n">{{ inflight.length }}</span></div>
     <div class="band">
-      <Strip v-for="a in inflight" :key="a.id" :aircraft="a" :now="now" class="band-item" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" @go-around="onGoAround" />
+      <Strip v-for="a in inflight" :key="a.id" :aircraft="a" :now="now" class="band-item" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
       <div v-if="!inflight.length" class="empty">no active sessions</div>
+    </div>
+
+    <div v-if="mia.length" class="mia-area">
+      <div class="mia-h"><i class="ti ti-clock"></i> MIA — lost contact <span class="n">{{ mia.length }}</span></div>
+      <div class="mia-grid">
+        <Strip v-for="a in mia" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
+      </div>
     </div>
 
     <div class="horizon"><span></span><label>horizon</label><span></span></div>
@@ -98,7 +103,7 @@ function onGoAround(id: string) { goAround(id); }
       <section class="lane holding-lane">
         <div class="lane-h"><i class="ti ti-circle-filled" style="color: var(--amber)"></i>Holding <span class="n">{{ holding.length }}</span></div>
         <div class="stack">
-          <Strip v-for="a in holding" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" @go-around="onGoAround" />
+          <Strip v-for="a in holding" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
           <div v-if="!holding.length" class="empty">clear</div>
         </div>
       </section>
@@ -106,7 +111,7 @@ function onGoAround(id: string) { goAround(id); }
       <section class="lane">
         <div class="lane-h"><i class="ti ti-circle-filled" style="color: var(--blue)"></i>Approach <span class="n">{{ approach.length }}</span></div>
         <div class="stack">
-          <Strip v-for="a in approach" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" @go-around="onGoAround" />
+          <Strip v-for="a in approach" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
           <div v-if="!approach.length" class="empty">clear</div>
         </div>
       </section>
@@ -115,7 +120,7 @@ function onGoAround(id: string) { goAround(id); }
     <template v-if="landed.length">
       <div class="band-h landed-h"><i class="ti ti-plane-arrival"></i>Landed <span class="n">{{ landed.length }}</span></div>
       <div class="band">
-        <Strip v-for="a in landed" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" @go-around="onGoAround" />
+        <Strip v-for="a in landed" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
       </div>
     </template>
 
@@ -125,7 +130,7 @@ function onGoAround(id: string) { goAround(id); }
       {{ cold.length }} cold — no recent activity (overnight-safe, not landed)
     </div>
     <div v-if="showCold" class="cold-grid">
-      <Strip v-for="a in cold" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" @go-around="onGoAround" />
+      <Strip v-for="a in cold" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
     </div>
   </div>
 </template>
@@ -150,6 +155,10 @@ header { display: flex; align-items: center; justify-content: space-between; fle
 .band-h .n, .lane-h .n { color: var(--text-faint); font-weight: 400; }
 .lane-h i { font-size: 9px; }
 .band { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.mia-area { margin-top: 10px; border: 0.5px dashed var(--border); border-radius: 10px; padding: 8px 10px; }
+.mia-h { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--gray); margin-bottom: 8px; }
+.mia-h .n { color: var(--text-faint); font-weight: 400; }
+.mia-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
 .horizon { display: flex; align-items: center; gap: 8px; margin: 14px 0 12px; }
 .horizon span { flex: 1; height: 1px; background: var(--border-soft); }
 .horizon label { font-size: 10px; color: #4d5560; letter-spacing: 1px; }

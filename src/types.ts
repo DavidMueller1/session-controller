@@ -101,4 +101,6 @@ export interface DiscoveredSession {
   contextPct?: number | null;
   /** PR for the branch (via gh), attached by branch. null = none/unknown */
   pr?: PrInfo | null;
+  /** shown from the persisted store because it has no live file right now */
+  offline?: boolean;
 }
