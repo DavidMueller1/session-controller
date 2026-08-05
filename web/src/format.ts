@@ -27,8 +27,8 @@ export function isMia(a: Aircraft): boolean {
 export const LANDED_COLOR = "#2f6f4f";
 
 export function laneOf(a: Aircraft): Lane {
-  if (a.landed) return "landed"; // human decision (auto-clears when it works again)
-  if (a.state === "working") return "inflight"; // A: a working session is ALWAYS in-flight
+  if (a.state === "working") return "inflight"; // a thinking session is ALWAYS in-flight
+  if (a.landed) return "landed"; // human decision (server auto-clears it once it works again)
   if (a.approach) return "approach"; // merged PR → ready to land
   return STATE[a.state]?.lane ?? "cold"; // needs-input→holding · idle→mia · else cold
 }
