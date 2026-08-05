@@ -89,9 +89,13 @@ export class Engine extends EventEmitter {
     const seen = new Set<string>();
     const list = correlate([...this.facts.values()].map((f) => resolve(f, now))).map((a0) => {
       const entry = reg.get(a0.id);
-      // a terminal session's rename (registry `name`) is its callsign; desktop titles
-      // are left as-is (their metadata title is already good).
-      let a = entry?.name ? { ...a0, title: entry.name } : a0;
+      // Use the registry callsign only when it's a real rename. Newer desktop builds
+      // auto-derive names (nameSource:"derived", e.g. "feat-traffic-controller-af") —
+      // ignore those and keep the correlated ai-title / desktop title, which is far more
+      // meaningful. A user rename (nameSource "user", or older builds where it's absent)
+      // still wins.
+      const useCallsign = !!entry?.name && entry.nameSource !== "derived";
+      let a = useCallsign ? { ...a0, title: entry!.name } : a0;
 
       // Registry `status` is Claude Code's own live signal — authoritative for CLI
       // sessions, so we trust it over transcript-timing inference: busy => working,

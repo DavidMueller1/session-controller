@@ -10,6 +10,9 @@ import { CONFIG } from "./config.js";
 export interface RegistryEntry {
   sessionId: string;
   name: string | null;
+  /** how `name` was set: "user" (a real rename) vs "derived" (auto folder slug, newer
+   *  desktop builds). Absent on older builds, where `name` was always a user rename. */
+  nameSource: string | null;
   status: string | null;
   entrypoint: string | null;
   pid: number | null;
@@ -37,6 +40,7 @@ export async function parseRegistryFile(filePath: string): Promise<RegistryEntry
   return {
     sessionId: o.sessionId,
     name: typeof o.name === "string" && o.name.trim() ? o.name.trim() : null,
+    nameSource: typeof o.nameSource === "string" ? o.nameSource : null,
     status: typeof o.status === "string" ? o.status : null,
     entrypoint: typeof o.entrypoint === "string" ? o.entrypoint : null,
     pid: typeof o.pid === "number" ? o.pid : null,
