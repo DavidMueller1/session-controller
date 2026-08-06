@@ -41,6 +41,10 @@ export class Engine extends EventEmitter {
   private hookState = new Map<string, HookState>();
   /** per-aircraft: current state + when it was entered (drives the displayed timer) */
   private stateSince = new Map<string, { state: string; since: number }>();
+  /** last real user rename seen per session — kept so the title survives the session
+   *  exiting (Claude Code removes the registry entry on exit, which would otherwise
+   *  revert the title to the raw transcript-derived name) */
+  private lastCallsign = new Map<string, string>();
   /** PR status per aircraft id (via gh), refreshed on a slow poll */
   private prById = new Map<string, PrInfo | null>();
   private current: DiscoveredSession[] = [];
@@ -103,8 +107,12 @@ export class Engine extends EventEmitter {
       // ignore those and keep the correlated ai-title / desktop title, which is far more
       // meaningful. A user rename (nameSource "user", or older builds where it's absent)
       // still wins.
-      const useCallsign = !!entry?.name && entry.nameSource !== "derived";
-      let a = useCallsign ? { ...a0, title: entry!.name } : a0;
+      const liveCallsign = entry?.name && entry.nameSource !== "derived" ? entry.name : undefined;
+      if (liveCallsign) this.lastCallsign.set(a0.id, liveCallsign);
+      // Fall back to the last callsign we saw so an exited session (whose registry entry
+      // Claude Code has since removed) keeps its user-given name instead of reverting.
+      const callsign = liveCallsign ?? this.lastCallsign.get(a0.id);
+      let a = callsign ? { ...a0, title: callsign } : a0;
 
       // Track which signal actually decided `state`, in ascending priority. Starts as
       // the transcript-timing inference (the ~8s-grace fallback), then upgrades as a
@@ -127,7 +135,13 @@ export class Engine extends EventEmitter {
       // tool use regardless of desktop-vs-terminal or build (newer desktop builds no
       // longer publish registry `status`). A fresh hook state wins over both.
       const hs = this.hookState.get(a.id);
-      if (hs && now - hs.ts < CONFIG.hookStaleMs) {
+      if (hs?.state === "ended") {
+        // The session exited (SessionEnd hook). Terminal and authoritative regardless of
+        // age: drop it out of the active lanes ("wrapped up") rather than letting
+        // transcript inference keep a just-exited session in-flight.
+        a = { ...a, state: "suspected-done" };
+        stateSource = "hook";
+      } else if (hs && now - hs.ts < CONFIG.hookStaleMs) {
         if (hs.state === "working") {
           a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
           stateSource = "hook";
@@ -148,6 +162,7 @@ export class Engine extends EventEmitter {
       return { ...a, stateSource, stateSince: since, pr: this.prById.get(a.id) ?? null };
     });
     for (const id of [...this.stateSince.keys()]) if (!seen.has(id)) this.stateSince.delete(id);
+    for (const id of [...this.lastCallsign.keys()]) if (!seen.has(id)) this.lastCallsign.delete(id);
 
     const sig = signature(list);
     if (!force && sig === this.lastSig) return;

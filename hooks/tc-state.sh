@@ -18,9 +18,10 @@ if not sid:
     sys.exit(0)
 path = os.path.join(dirp, str(sid) + ".json")
 if state == "clear":
-    try: os.remove(path)
-    except OSError: pass
-    sys.exit(0)
+    # Session ended: persist a terminal "ended" marker rather than deleting. Deleting
+    # would drop the board back to transcript inference, which reads a just-exited
+    # session (last turn = the user saying bye) as still "working" → stuck in-flight.
+    state = "ended"
 tmp = path + ".tmp"
 with open(tmp, "w") as f:
     json.dump({"state": state, "ts": int(time.time() * 1000), "event": p.get("hook_event_name", "")}, f)

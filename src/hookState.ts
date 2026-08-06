@@ -5,7 +5,7 @@ import { CONFIG } from "./config.js";
 /** live state for a session, written by our Claude Code hooks (see hooks/tc-state.sh) */
 export interface HookState {
   sessionId: string;
-  /** "working" | "needs-input" */
+  /** "working" | "needs-input" | "ended" (terminal — the SessionEnd hook fired) */
   state: string;
   /** epoch ms the hook fired — used to ignore stale files (dead sessions) */
   ts: number;
