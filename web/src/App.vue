@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUpdate, onMounted, onUpdated, ref } from "vue";
+import { computed, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref } from "vue";
 import Strip from "./components/Strip.vue";
 import FlightBoard from "./components/FlightBoard.vue";
 import { useBoard } from "./useBoard";
@@ -16,8 +16,19 @@ function toggleFlight() {
   flight.value = !flight.value;
   localStorage.setItem("fc-flight", flight.value ? "1" : "0");
 }
-// transition debug mode (flight layer only) — client-side lane overrides for testing
+// transition debug mode (flight layer only) — client-side lane overrides for testing.
+// No visible control now that flight is the default board; toggle it with Shift+D (a dev
+// affordance that still works on the built dist, unlike an import.meta.env.DEV gate).
 const debug = ref(false);
+function onKey(e: KeyboardEvent) {
+  if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key.toLowerCase() !== "d") return;
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  debug.value = !debug.value;
+}
+onMounted(() => window.addEventListener("keydown", onKey));
+onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 
 // Claude service-status banner (from status.claude.com, pushed over the WS)
 const statusColor = (s: string): string =>
@@ -209,16 +220,6 @@ function onOpen(id: string) { open(id); }
           @click="toggleFlight"
         >
           <i class="ti" :class="flight ? 'ti-plane' : 'ti-layout-list'"></i>
-        </button>
-        <button
-          v-if="flight"
-          class="bell"
-          :class="{ on: debug }"
-          :title="debug ? 'Transition debug on — click to exit' : 'Debug transitions (force strips between lanes)'"
-          aria-label="Toggle transition debug mode"
-          @click="debug = !debug"
-        >
-          <i class="ti ti-bug"></i>
         </button>
         <button
           v-if="notifySupported"
