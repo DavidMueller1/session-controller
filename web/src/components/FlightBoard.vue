@@ -34,24 +34,27 @@ const approach = computed(() => byLane("approach"));
 const landed = computed(() => byLane("landed"));
 const mia = computed(() => byLane("mia"));
 
-const sky = ref<HTMLElement | null>(null);
+const stage = ref<HTMLElement | null>(null);
 const skyW = ref(1400);
 const skyH = ref(760);
 let ro: ResizeObserver | null = null;
 onMounted(() => {
   ro = new ResizeObserver(() => {
-    const el = sky.value;
+    const el = stage.value;
     if (el) { skyW.value = el.clientWidth; skyH.value = el.clientHeight; }
   });
-  if (sky.value) ro.observe(sky.value);
+  if (stage.value) ro.observe(stage.value);
 });
 onBeforeUnmount(() => ro?.disconnect());
 
-const travelMs = ref(1800);
+const travelMs = ref(800);
 
 // geometry (fixed, desktop)
-const GAP = 8;
-const HEAD = 22;
+const GAP = 8; // gap between strips within a lane (kept — this spacing is good)
+const TOP = 8; // top padding of the board content
+const LABEL_W = 14; // width of the vertical lane-label gutter on the left of each lane
+const LGAP = 4; // gap between a vertical label and its lane content
+const LANE_PAD = 6; // breathing room between the taxiways and the lane content
 const COR = 52; // corridor thickness — the real empty travel space between lanes
 const RAIL_W = 240; // permanent MIA column
 const CARD_W = 220;
@@ -68,18 +71,19 @@ const L = computed(() => {
   const W = skyW.value;
   const H = skyH.value;
   const contentX = RAIL_W + COR;
-  const contentW = Math.max(340, W - contentX);
-  const cols = Math.max(1, Math.floor((contentW + GAP) / (CARD_W + GAP)));
+  const contentW = Math.max(360, W - contentX);
+  const laneL = contentX + LANE_PAD; // left of a lane = its vertical-label gutter
+  const cardX = laneL + LABEL_W + LGAP; // where band/holding cards begin
+  const bandRight = contentX + contentW - LANE_PAD;
+  const cols = Math.max(1, Math.floor((bandRight - cardX + GAP) / (CARD_W + GAP)));
   const infRows = Math.max(1, Math.ceil(inflight.value.length / cols));
-  const corH1y = HEAD + infRows * (CARD_H + GAP);
-  const midTop = corH1y + COR + HEAD;
-  const landedTop = H - (HEAD + CARD_H);
-  const corH2y = landedTop - COR;
+  const corH1y = TOP + infRows * (CARD_H + GAP) + LANE_PAD;
+  const midTop = corH1y + COR + LANE_PAD;
+  const landedY = H - CARD_H - 6;
+  const corH2y = landedY - LANE_PAD - COR;
   const corV2x = contentX + contentW * 0.6 - COR / 2;
-  const holdW = corV2x - contentX;
   const appX = corV2x + COR;
-  const appW = contentX + contentW - appX;
-  return { W, H, contentX, contentW, cols, corH1y, midTop, landedTop, corH2y, corV2x, holdW, appX, appW };
+  return { W, H, contentX, contentW, laneL, cardX, bandRight, cols, corH1y, midTop, corH2y, corV2x, appX, landedY };
 });
 
 // corridor rail centerlines
@@ -91,22 +95,27 @@ const rail = computed(() => {
 const rects = computed<Record<string, Rect>>(() => {
   const l = L.value;
   const r: Record<string, Rect> = {};
-  inflight.value.forEach((a, i) => { r[a.id] = { x: l.contentX + (i % l.cols) * (CARD_W + GAP), y: HEAD + Math.floor(i / l.cols) * (CARD_H + GAP), w: CARD_W, h: CARD_H }; });
-  holding.value.forEach((a, i) => { r[a.id] = { x: l.contentX, y: l.midTop + i * ROW_H, w: l.holdW, h: ROW_H - GAP }; });
-  approach.value.forEach((a, i) => { r[a.id] = { x: l.appX, y: l.midTop + i * ROW_H, w: l.appW, h: ROW_H - GAP }; });
-  landed.value.forEach((a, i) => { r[a.id] = { x: l.contentX + i * (CARD_W + GAP), y: l.landedTop + HEAD, w: CARD_W, h: CARD_H }; });
-  mia.value.forEach((a, i) => { r[a.id] = { x: GAP, y: HEAD + i * (RAIL_H + GAP), w: RAIL_W - 2 * GAP, h: RAIL_H }; });
+  inflight.value.forEach((a, i) => { r[a.id] = { x: l.cardX + (i % l.cols) * (CARD_W + GAP), y: TOP + Math.floor(i / l.cols) * (CARD_H + GAP), w: CARD_W, h: CARD_H }; });
+  const holdW = l.corV2x - LANE_PAD - l.cardX;
+  holding.value.forEach((a, i) => { r[a.id] = { x: l.cardX, y: l.midTop + i * ROW_H, w: holdW, h: ROW_H - GAP }; });
+  const appCardX = l.appX + LANE_PAD + LABEL_W + LGAP;
+  const appW = l.bandRight - appCardX;
+  approach.value.forEach((a, i) => { r[a.id] = { x: appCardX, y: l.midTop + i * ROW_H, w: appW, h: ROW_H - GAP }; });
+  landed.value.forEach((a, i) => { r[a.id] = { x: l.cardX + i * (CARD_W + GAP), y: l.landedY, w: CARD_W, h: CARD_H }; });
+  const miaCardX = LABEL_W + LGAP;
+  mia.value.forEach((a, i) => { r[a.id] = { x: miaCardX, y: TOP + i * (RAIL_H + GAP), w: RAIL_W - LANE_PAD - miaCardX, h: RAIL_H }; });
   return r;
 });
 
 const zones = computed(() => {
   const l = L.value;
+  const midH = l.corH2y - LANE_PAD - l.midTop;
   return [
-    { k: "MIA", x: GAP, y: 0, c: "var(--gray)" },
-    { k: "In-flight", x: l.contentX, y: 0, c: "var(--green)" },
-    { k: "Holding", x: l.contentX, y: l.midTop - HEAD, c: "var(--amber)" },
-    { k: "Approach", x: l.appX, y: l.midTop - HEAD, c: "var(--blue)" },
-    { k: "Landed", x: l.contentX, y: l.landedTop, c: "#4cc38a" },
+    { k: "MIA", x: 0, y: TOP, h: l.H - TOP - 6, c: "var(--gray)" },
+    { k: "In-flight", x: l.laneL, y: TOP, h: l.corH1y - LANE_PAD - TOP, c: "var(--green)" },
+    { k: "Holding", x: l.laneL, y: l.midTop, h: midH, c: "var(--amber)" },
+    { k: "Approach", x: l.appX + LANE_PAD, y: l.midTop, h: midH, c: "var(--blue)" },
+    { k: "Landed", x: l.laneL, y: l.landedY, h: CARD_H, c: "#4cc38a" },
   ];
 });
 
@@ -115,9 +124,36 @@ const corridors = computed(() => {
   return [
     { x: RAIL_W, y: 0, w: COR, h: l.H },
     { x: l.contentX, y: l.corH1y, w: l.contentW, h: COR },
-    { x: l.corV2x, y: l.midTop - HEAD, w: COR, h: l.corH2y - (l.midTop - HEAD) },
+    { x: l.corV2x, y: l.corH1y, w: COR, h: l.corH2y + COR - l.corH1y },
     { x: l.contentX, y: l.corH2y, w: l.contentW, h: COR },
   ];
+});
+
+// solid taxiway centerlines drawn as one SVG path: the four straight rails plus
+// quarter-circle fillets at each junction so turns curve instead of crossing sharply.
+const taxiPath = computed(() => {
+  const l = L.value;
+  const g = rail.value;
+  const xR = g.xRailV;
+  const xM = g.xMidV;
+  const yT = g.yTop;
+  const yB = g.yBot;
+  const right = l.contentX + l.contentW;
+  const H = l.H;
+  const r = Math.min(24, COR * 0.45);
+  // fillet from the vertical rail to the horizontal rail in quadrant (dx,dy) of junction
+  const arc = (jx: number, jy: number, dx: number, dy: number) =>
+    `M ${jx} ${jy + dy * r} A ${r} ${r} 0 0 ${dx === dy ? 1 : 0} ${jx + dx * r} ${jy}`;
+  return [
+    `M ${xR} 0 L ${xR} ${H}`, // V-rail
+    `M ${xR} ${yT} L ${right} ${yT}`, // H-top
+    `M ${xM} ${yT} L ${xM} ${yB}`, // V-mid
+    `M ${xR} ${yB} L ${right} ${yB}`, // H-bot
+    arc(xR, yT, 1, 1), arc(xR, yT, 1, -1),
+    arc(xM, yT, -1, 1), arc(xM, yT, 1, 1),
+    arc(xR, yB, 1, 1), arc(xR, yB, 1, -1),
+    arc(xM, yB, -1, -1), arc(xM, yB, 1, -1),
+  ].join(" ");
 });
 
 const placed = computed(() => props.aircraft.filter((a) => rects.value[a.id]));
@@ -294,7 +330,7 @@ function fadeIn(el: HTMLElement): void {
 }
 
 function animateChanges(): void {
-  const root = sky.value;
+  const root = stage.value;
   if (!root) return;
   const cur = rects.value;
   const resized = prevW !== skyW.value || prevH !== skyH.value;
@@ -367,10 +403,12 @@ function reset(): void { override.value = {}; }
 </script>
 
 <template>
-  <div ref="sky" class="sky">
+  <div class="sky">
+    <div ref="stage" class="stage">
     <div v-for="(c, i) in corridors" :key="'c' + i" class="corridor" :style="{ transform: `translate(${c.x}px, ${c.y}px)`, width: c.w + 'px', height: c.h + 'px' }"></div>
+    <svg class="taxi-svg" :viewBox="`0 0 ${skyW} ${skyH}`" preserveAspectRatio="none"><path :d="taxiPath" /></svg>
 
-    <div v-for="z in zones" :key="z.k" class="zone-label" :style="{ transform: `translate(${z.x}px, ${z.y}px)`, color: z.c }">{{ z.k }}</div>
+    <div v-for="z in zones" :key="z.k" class="lane-label" :style="{ transform: `translate(${z.x}px, ${z.y}px)`, width: LABEL_W + 'px', height: z.h + 'px', color: z.c }"><span>{{ z.k }}</span></div>
 
     <div
       v-for="a in placed"
@@ -392,6 +430,7 @@ function reset(): void { override.value = {}; }
       />
       <div class="puck"><i class="ti ti-plane"></i></div>
     </div>
+    </div>
 
     <div v-if="debug" class="dbg-bar">
       <button @click="step"><i class="ti ti-arrow-move-right"></i> Step</button>
@@ -405,8 +444,16 @@ function reset(): void { override.value = {}; }
 
 <style scoped>
 .sky { position: relative; flex: 1; min-height: 0; overflow: hidden; margin-top: 8px; }
-.corridor { position: absolute; top: 0; left: 0; background: rgba(255, 255, 255, 0.02); border-radius: 6px; pointer-events: none; }
-.zone-label { position: absolute; top: 0; left: 0; font-size: 11px; font-weight: 500; letter-spacing: 0.3px; opacity: 0.85; pointer-events: none; z-index: 1; }
+/* inset the whole board so lanes/taxiways get breathing room from the edges */
+.stage { position: absolute; inset: 16px; }
+/* taxiways: darker "asphalt" — no border/rounding so abutting corridors merge into one
+   connected network; the solid yellow centreline (with curved junctions) is the SVG below */
+.corridor { position: absolute; top: 0; left: 0; background: rgba(0, 0, 0, 0.22); pointer-events: none; }
+.taxi-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+.taxi-svg path { fill: none; stroke: #d9a441; stroke-width: 1.5; stroke-linecap: round; opacity: 0.3; }
+/* vertical lane labels in a left-side gutter (frees the vertical space top labels used) */
+.lane-label { position: absolute; top: 0; left: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 3; }
+.lane-label span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 10px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: currentColor; white-space: nowrap; }
 .slot { position: absolute; top: 0; left: 0; overflow: hidden; z-index: 2; }
 .slot.debug-hit { cursor: pointer; }
 .slot :deep(.strip) { height: 100%; transition: opacity 0.18s ease; }
