@@ -1,6 +1,6 @@
 import { ref, shallowRef } from "vue";
 import { isFlashing, projectName } from "./format";
-import type { Aircraft, AnthropicStatus, WsMessage } from "./types";
+import type { Aircraft, AnthropicStatus, HooksHealth, WsMessage } from "./types";
 
 /** how long a strip must stay in holding before we notify. 0 = fire immediately.
  *  (A larger value would suppress the session you're actively replying to.) */
@@ -13,6 +13,7 @@ const HOLD_NOTIFY_DELAY = 0;
 export function useBoard() {
   const aircraft = shallowRef<Aircraft[]>([]);
   const status = ref<AnthropicStatus | null>(null);
+  const health = ref<HooksHealth | null>(null);
   const connected = ref(false);
   const now = ref(Date.now());
 
@@ -113,6 +114,8 @@ export function useBoard() {
         reconcileNotifications(msg.aircraft);
       } else if (msg.type === "status") {
         status.value = msg.status;
+      } else if (msg.type === "health") {
+        health.value = msg.health;
       }
     };
     ws.onclose = () => {
@@ -155,5 +158,5 @@ export function useBoard() {
     await fetch(`/api/aircraft/${encodeURIComponent(id)}/open`, { method: "POST" });
   }
 
-  return { aircraft, status, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify };
+  return { aircraft, status, health, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify };
 }

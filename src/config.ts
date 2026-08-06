@@ -23,6 +23,14 @@ export const CONFIG = {
   hookStateDir: path.join(home, ".claude", "tc-state"),
   hookStaleMs: 15 * 60_000,
 
+  /** user-level Claude Code settings files where our hooks are wired — read (not watched)
+   *  to verify the hooks are still installed (a Claude update can rewrite settings.json,
+   *  silently dropping the board back to transcript inference) */
+  claudeSettingsFiles: [
+    path.join(home, ".claude", "settings.json"),
+    path.join(home, ".claude", "settings.local.json"),
+  ],
+
   /** Claude Desktop (Cowork / local agent mode) session metadata */
   desktopSessionDirs: [
     path.join(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions"),
@@ -48,7 +56,7 @@ export const CONFIG = {
   apiPort: Number(process.env.PORT ?? 4317),
   apiHost: process.env.HOST ?? "127.0.0.1",
   /** SQLite database file */
-  dbPath: path.join(process.cwd(), "data", "traffic-controller.db"),
+  dbPath: process.env.DB_PATH ?? path.join(process.cwd(), "data", "traffic-controller.db"),
 
   /** default context window for the usage ring (1M-context mode).
    *  Set CONTEXT_WINDOW=200000 if you run Claude in standard 200k mode. */

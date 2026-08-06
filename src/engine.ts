@@ -62,6 +62,17 @@ export class Engine extends EventEmitter {
     return this.registryBySession().get(id);
   }
 
+  /** freshness of our hook-state writes — proof the hooks are actually firing */
+  hookStats(now = Date.now()): { fresh: number; lastAt: number | null } {
+    let fresh = 0;
+    let lastAt: number | null = null;
+    for (const h of this.hookState.values()) {
+      if (now - h.ts < CONFIG.hookStaleMs) fresh++;
+      if (lastAt === null || h.ts > lastAt) lastAt = h.ts;
+    }
+    return { fresh, lastAt };
+  }
+
   private async parseFile(p: string): Promise<SessionFacts | null> {
     if (isCliTranscript(p)) return parseCliTranscript(p);
     if (isDesktopSessionFile(p)) return parseDesktopSession(p);

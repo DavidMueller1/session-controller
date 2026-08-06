@@ -5,10 +5,11 @@ import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { CONFIG } from "./config.js";
 import { Engine } from "./engine.js";
+import { type HookSettings, assembleHealth, readHookSettings } from "./hooksHealth.js";
 import { openAircraft } from "./open.js";
 import { startStatusPolling } from "./status.js";
 import { Store } from "./store.js";
-import type { ActivityState, AnthropicStatus, DiscoveredSession } from "./types.js";
+import type { ActivityState, AnthropicStatus, DiscoveredSession, HooksHealth } from "./types.js";
 
 /** the ws socket type, sourced from @fastify/websocket to avoid importing ws directly */
 type WebSocket = import("@fastify/websocket").WebSocket;
@@ -68,6 +69,24 @@ async function main(): Promise<void> {
     broadcast({ type: "status", ts: Date.now(), status: s });
   });
 
+  // Hooks-health → second top banner. Settings integrity is read on a slow timer (a
+  // Claude update can rewrite settings.json and silently uninstall our hooks); the live
+  // write-freshness / fallback counts are recomputed on every board update.
+  let hookSettings: HookSettings = readHookSettings();
+  let hooksHealth: HooksHealth = assembleHealth(hookSettings, engine.aircraft(), engine.hookStats());
+  let hooksHealthSig = "";
+  const refreshHealth = (): void => {
+    hooksHealth = assembleHealth(hookSettings, engine.aircraft(), engine.hookStats());
+    const sig = `${hooksHealth.status}|${hooksHealth.detail}`;
+    if (sig === hooksHealthSig) return;
+    hooksHealthSig = sig;
+    broadcast({ type: "health", ts: Date.now(), health: hooksHealth });
+  };
+  const healthTimer = setInterval(() => {
+    hookSettings = readHookSettings(); // catch settings.json being rewritten
+    refreshHealth();
+  }, 30_000);
+
   // landed auto-clears when a session works again — it "starts back up" on its own.
   function autoUnlandOnWork(list: DiscoveredSession[]): void {
     let changed = false;
@@ -85,6 +104,7 @@ async function main(): Promise<void> {
     store.syncSessions(list);
     autoUnlandOnWork(list);
     broadcast({ type: "update", ts: Date.now(), aircraft: fullList() });
+    refreshHealth();
     const summary = Object.entries(counts(list))
       .map(([k, v]) => `${k} ${v}`)
       .join(" · ");
@@ -102,6 +122,8 @@ async function main(): Promise<void> {
   app.get("/api/aircraft", async () => fullList());
 
   app.get("/api/status", async () => anthropicStatus);
+
+  app.get("/api/hooks-health", async () => hooksHealth);
 
   // compact count for the macOS menu-bar app: strips in Holding that are NOT parked
   // (needs-input/error, not landed/approach, no note) — i.e. the ones flashing for you.
@@ -179,6 +201,7 @@ async function main(): Promise<void> {
     clients.add(socket);
     socket.send(JSON.stringify({ type: "snapshot", ts: Date.now(), aircraft: fullList() }));
     socket.send(JSON.stringify({ type: "status", ts: Date.now(), status: anthropicStatus }));
+    socket.send(JSON.stringify({ type: "health", ts: Date.now(), health: hooksHealth }));
     socket.on("close", () => clients.delete(socket));
     socket.on("error", () => clients.delete(socket));
   });
@@ -205,6 +228,7 @@ async function main(): Promise<void> {
 
   const shutdown = async () => {
     stopStatus();
+    clearInterval(healthTimer);
     await engine.stop();
     await app.close();
     store.close();

@@ -58,6 +58,22 @@ export interface AnthropicStatus {
   fetchedAt: number;
 }
 
+export type HooksHealthStatus = "healthy" | "degraded" | "down";
+export interface HooksHealth {
+  status: HooksHealthStatus;
+  settingsFound: boolean;
+  installedEvents: string[];
+  missingRequired: string[];
+  freshWrites: number;
+  lastWriteAt: number | null;
+  activeSessions: number;
+  activeCli: number;
+  onFallback: number;
+  detail: string;
+  checkedAt: number;
+}
+
 export type WsMessage =
   | { type: "snapshot" | "update"; ts: number; aircraft: Aircraft[] }
-  | { type: "status"; ts: number; status: AnthropicStatus | null };
+  | { type: "status"; ts: number; status: AnthropicStatus | null }
+  | { type: "health"; ts: number; health: HooksHealth | null };

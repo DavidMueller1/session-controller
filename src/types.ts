@@ -22,6 +22,29 @@ export interface AnthropicStatus {
   fetchedAt: number;
 }
 
+/** Health of the Claude Code hook pipeline that feeds live state to the board. */
+export type HooksHealthStatus = "healthy" | "degraded" | "down";
+export interface HooksHealth {
+  status: HooksHealthStatus;
+  /** at least one user-level settings file was found & parsed */
+  settingsFound: boolean;
+  /** our hook events actually wired in settings (reference tc-state.sh) */
+  installedEvents: string[];
+  /** required events NOT wired (drives "partially installed") */
+  missingRequired: string[];
+  /** tc-state files written within the stale window — proof the hooks are firing */
+  freshWrites: number;
+  lastWriteAt: number | null;
+  /** active (working/needs-input) sessions, and of those the CLI ones (hook-capable) */
+  activeSessions: number;
+  activeCli: number;
+  /** active sessions whose state came from transcript inference, not hook/registry */
+  onFallback: number;
+  /** human-readable one-liner for the banner */
+  detail: string;
+  checkedAt: number;
+}
+
 /** GitHub PR for a session's branch (via `gh`), attached by branch */
 export interface PrInfo {
   number: number;

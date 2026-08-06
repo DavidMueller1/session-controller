@@ -5,7 +5,7 @@ import FlightBoard from "./components/FlightBoard.vue";
 import { useBoard } from "./useBoard";
 import { laneOf, isFlashing } from "./format";
 
-const { aircraft, status, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify } = useBoard();
+const { aircraft, status, health, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify } = useBoard();
 onMounted(start);
 
 // SPIKE toggle: classic per-lane board vs the flight-layer (one coordinate space)
@@ -32,6 +32,17 @@ const showStatus = computed(() => {
 const statusSev = computed(() => {
   const i = status.value?.indicator;
   return i === "critical" || i === "major" ? "major" : i === "minor" ? "minor" : "info";
+});
+
+// Hooks-health banner — only surfaces when the tracking pipeline is degraded/down, so a
+// silent regression (e.g. a Claude update rewrites settings.json) becomes visible.
+const showHealth = computed(() => !!health.value && health.value.status !== "healthy");
+const healthSev = computed(() => (health.value?.status === "down" ? "major" : "minor"));
+const healthTitle = computed(() => {
+  const h = health.value;
+  if (!h) return "";
+  const last = h.lastWriteAt ? new Date(h.lastWriteAt).toLocaleTimeString() : "never";
+  return `installed: ${h.installedEvents.join(", ") || "none"} · fresh hook writes: ${h.freshWrites} · last: ${last}`;
 });
 
 // order by when each entered its state, so tool calls / thinking don't reshuffle the
@@ -158,6 +169,25 @@ function onOpen(id: string) { open(id); }
       </span>
       <span class="s-link">status.claude.com <i class="ti ti-external-link"></i></span>
     </a>
+
+    <div
+      v-if="showHealth && health"
+      class="status-bar health-bar"
+      :class="'sev-' + healthSev"
+      :title="healthTitle"
+    >
+      <i class="ti ti-webhook"></i>
+      <span class="s-desc">{{ health.detail }}</span>
+      <span class="s-chips">
+        <span
+          v-for="e in health.missingRequired"
+          :key="e"
+          class="s-badge"
+          :style="{ color: 'var(--red)', borderColor: 'var(--red)' }"
+        >missing: {{ e }}</span>
+      </span>
+      <span class="s-link">{{ health.installedEvents.length }} hook{{ health.installedEvents.length === 1 ? '' : 's' }} wired</span>
+    </div>
 
     <header>
       <div class="brand">
