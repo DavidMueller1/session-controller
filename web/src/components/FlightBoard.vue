@@ -63,7 +63,7 @@ const ROW_H = 132; // (row content = ROW_H - GAP)
 const RAIL_H = 124;
 const PUCK_W = 44; // travel token — fits inside a corridor in either orientation
 const PUCK_H = 34;
-const IN_MAX_ROWS = 2; // cap In-flight to N rows; extras go to its overflow drawer
+const IN_MAX_ROWS = 1; // cap In-flight to one row; extras go to its overflow drawer
 
 interface Rect { x: number; y: number; w: number; h: number }
 interface Pt { x: number; y: number }
@@ -136,11 +136,12 @@ const zones = computed(() => {
 
 const corridors = computed(() => {
   const l = L.value;
+  const R = 14; // rounding on the ends that go nowhere (dead ends)
   return [
-    { x: RAIL_W, y: 0, w: COR, h: l.H },
-    { x: l.contentX, y: l.corH1y, w: l.contentW, h: COR },
-    { x: l.corV2x, y: l.corH1y, w: COR, h: l.corH2y + COR - l.corH1y },
-    { x: l.contentX, y: l.corH2y, w: l.contentW, h: COR },
+    { x: RAIL_W, y: 0, w: COR, h: l.H, radius: `${R}px` }, // V-rail: top & bottom are dead ends
+    { x: l.contentX, y: l.corH1y, w: l.contentW, h: COR, radius: `0 ${R}px ${R}px 0` }, // H-top: right end dead
+    { x: l.corV2x, y: l.corH1y, w: COR, h: l.corH2y + COR - l.corH1y, radius: "0" }, // V-mid: both ends connect
+    { x: l.contentX, y: l.corH2y, w: l.contentW, h: COR, radius: `0 ${R}px ${R}px 0` }, // H-bot: right end dead
   ];
 });
 
@@ -156,18 +157,28 @@ const taxiPath = computed(() => {
   const right = l.contentX + l.contentW;
   const H = l.H;
   const r = Math.min(24, COR * 0.45);
+  const STOP = 16; // the centerline stops this far from a dead end
+  const CB = 11; // half-length of the little T crossbar that caps it
   // fillet from the vertical rail to the horizontal rail in quadrant (dx,dy) of junction
   const arc = (jx: number, jy: number, dx: number, dy: number) =>
     `M ${jx} ${jy + dy * r} A ${r} ${r} 0 0 ${dx === dy ? 1 : 0} ${jx + dx * r} ${jy}`;
   return [
-    `M ${xR} 0 L ${xR} ${H}`, // V-rail
-    `M ${xR} ${yT} L ${right} ${yT}`, // H-top
-    `M ${xM} ${yT} L ${xM} ${yB}`, // V-mid
-    `M ${xR} ${yB} L ${right} ${yB}`, // H-bot
+    // V-rail is the vertical through-route (straight up/down); its ends get T-caps below.
+    `M ${xR} ${STOP} L ${xR} ${H - STOP}`,
+    // H-top / H-bot are stems at the V-rail: a plane can't go straight, only curve up/down,
+    // so the straight line stops where the fillets start (xR + r). Right ends are dead T-caps.
+    `M ${xR + r} ${yT} L ${right - STOP} ${yT}`,
+    `M ${xM} ${yT + r} L ${xM} ${yB - r}`, // V-mid is a stem at BOTH ends → stop at the curves
+    `M ${xR + r} ${yB} L ${right - STOP} ${yB}`,
     arc(xR, yT, 1, 1), arc(xR, yT, 1, -1),
     arc(xM, yT, -1, 1), arc(xM, yT, 1, 1),
     arc(xR, yB, 1, 1), arc(xR, yB, 1, -1),
     arc(xM, yB, -1, -1), arc(xM, yB, 1, -1),
+    // T crossbars capping each dead end (same thin stroke as the centerline)
+    `M ${xR - CB} ${STOP} L ${xR + CB} ${STOP}`,
+    `M ${xR - CB} ${H - STOP} L ${xR + CB} ${H - STOP}`,
+    `M ${right - STOP} ${yT - CB} L ${right - STOP} ${yT + CB}`,
+    `M ${right - STOP} ${yB - CB} L ${right - STOP} ${yB + CB}`,
   ].join(" ");
 });
 
@@ -514,7 +525,7 @@ function reset(): void { override.value = {}; }
 <template>
   <div class="sky">
     <div ref="stage" class="stage">
-    <div v-for="(c, i) in corridors" :key="'c' + i" class="corridor" :style="{ transform: `translate(${c.x}px, ${c.y}px)`, width: c.w + 'px', height: c.h + 'px' }"></div>
+    <div v-for="(c, i) in corridors" :key="'c' + i" class="corridor" :style="{ transform: `translate(${c.x}px, ${c.y}px)`, width: c.w + 'px', height: c.h + 'px', borderRadius: c.radius }"></div>
     <svg class="taxi-svg" :viewBox="`0 0 ${skyW} ${skyH}`" preserveAspectRatio="none"><path :d="taxiPath" /></svg>
 
     <div v-for="z in zones" :key="z.k" class="lane-label" :style="{ transform: `translate(${z.x}px, ${z.y}px)`, width: LABEL_W + 'px', height: z.h + 'px', color: z.c }"><span>{{ z.k }}</span></div>
@@ -590,7 +601,8 @@ function reset(): void { override.value = {}; }
 .stage { position: absolute; inset: 16px; }
 /* taxiways: darker "asphalt" — no border/rounding so abutting corridors merge into one
    connected network; the solid yellow centreline (with curved junctions) is the SVG below */
-.corridor { position: absolute; top: 0; left: 0; background: rgba(0, 0, 0, 0.22); pointer-events: none; }
+/* solid (opaque) so overlapping corridor rects don't compound at intersections */
+.corridor { position: absolute; top: 0; left: 0; background: #090c11; pointer-events: none; }
 .taxi-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
 .taxi-svg path { fill: none; stroke: #d9a441; stroke-width: 1.5; stroke-linecap: round; opacity: 0.3; }
 /* vertical lane labels in a left-side gutter (frees the vertical space top labels used) */
