@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, onUpdated, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from "vue";
 import Strip from "./Strip.vue";
 import { laneOf, isFlashing } from "../format";
 import type { Aircraft, Lane } from "../types";
@@ -17,17 +17,19 @@ const emit = defineEmits<{
   land: [id: string];
   unland: [id: string];
   open: [id: string];
+  dbgCycle: [id: string];
+  dbgStep: [];
+  dbgShuffle: [];
+  dbgReset: [];
 }>();
 
-// --- debug: force strips between lanes on demand (client-side overrides only) ---
-const override = ref<Record<string, Lane>>({});
-watch(() => props.debug, (on) => { if (!on) override.value = {}; });
-const LANES: Lane[] = ["inflight", "holding", "approach", "landed", "mia"];
+// Debug (Shift+D) is owned by App: it rewrites each aircraft's STATE so the whole board
+// reacts — header counters, strip colours, and these lanes. The `aircraft` we receive
+// already carry the overrides; here we just render them and forward the debug controls up.
 const LANE_COLOR: Record<string, string> = { inflight: "#3fb950", holding: "#e0a92e", approach: "#58a6ff", landed: "#4cc38a", mia: "#7d8590", cold: "#4d5560" };
-const effectiveLane = (a: Aircraft): Lane => override.value[a.id] ?? laneOf(a);
 
 const orderKey = (a: Aircraft) => a.stateSince ?? a.lastActivityAt ?? 0;
-const byLane = (lane: string) => props.aircraft.filter((a) => effectiveLane(a) === lane).sort((a, b) => orderKey(b) - orderKey(a));
+const byLane = (lane: string) => props.aircraft.filter((a) => laneOf(a) === lane).sort((a, b) => orderKey(b) - orderKey(a));
 const inflight = computed(() => byLane("inflight"));
 const holding = computed(() => byLane("holding").sort((a, b) => Number(isFlashing(b)) - Number(isFlashing(a))));
 const approach = computed(() => byLane("approach"));
@@ -449,7 +451,7 @@ function animateChanges(): void {
     const from = prevRects[a.id];
     const to = cur[a.id];
     const pLane = prevLane[a.id];
-    const lane = effectiveLane(a);
+    const lane = laneOf(a);
     if (from && to && pLane && pLane !== lane) {
       arrived.add(lane);
       closeDelays.set(pLane, Math.max(closeDelays.get(pLane) ?? 0, exitClearTime(pLane, from, lane, to)));
@@ -463,7 +465,7 @@ function animateChanges(): void {
     const el = root.querySelector<HTMLElement>(`[data-fid="${a.id}"]`);
     if (!el) continue;
     const from = prevRects[a.id];
-    const lane = effectiveLane(a);
+    const lane = laneOf(a);
     const pLane = prevLane[a.id];
     if (!from) {
       if (!resized && prevOverflow[a.id]) flyFromDrawer(drawerAnchor(prevOverflow[a.id]), to, LANE_COLOR[lane] ?? "#7d8590", el);
@@ -489,37 +491,18 @@ function animateChanges(): void {
   }
 
   prevRects = { ...cur };
-  prevLane = Object.fromEntries(placed.value.map((a) => [a.id, effectiveLane(a)]));
+  prevLane = Object.fromEntries(placed.value.map((a) => [a.id, laneOf(a)]));
   prevOverflow = currentOverflow;
 }
 onUpdated(animateChanges);
 
 // ---- debug actions ----------------------------------------------------------------
-function cycle(id: string): void {
-  const a = props.aircraft.find((x) => x.id === id);
-  if (!a) return;
-  const next = LANES[(LANES.indexOf(effectiveLane(a)) + 1) % LANES.length];
-  override.value = { ...override.value, [id]: next };
-}
 function onSlotClick(id: string, e: Event): void {
   if (!props.debug) return;
   e.stopPropagation();
   e.preventDefault();
-  cycle(id);
+  emit("dbgCycle", id);
 }
-function step(): void {
-  const list = placed.value;
-  if (!list.length) return;
-  const a = list[Math.floor(Math.random() * list.length)];
-  const others = LANES.filter((l) => l !== effectiveLane(a));
-  override.value = { ...override.value, [a.id]: others[Math.floor(Math.random() * others.length)] };
-}
-function shuffle(): void {
-  const o: Record<string, Lane> = {};
-  for (const a of props.aircraft) o[a.id] = LANES[Math.floor(Math.random() * LANES.length)];
-  override.value = o;
-}
-function reset(): void { override.value = {}; }
 </script>
 
 <template>
@@ -586,9 +569,9 @@ function reset(): void { override.value = {}; }
     </div>
 
     <div v-if="debug" class="dbg-bar">
-      <button @click="step"><i class="ti ti-arrow-move-right"></i> Step</button>
-      <button @click="shuffle"><i class="ti ti-arrows-shuffle"></i> Shuffle</button>
-      <button @click="reset"><i class="ti ti-rotate"></i> Reset</button>
+      <button @click="emit('dbgStep')"><i class="ti ti-arrow-move-right"></i> Step</button>
+      <button @click="emit('dbgShuffle')"><i class="ti ti-arrows-shuffle"></i> Shuffle</button>
+      <button @click="emit('dbgReset')"><i class="ti ti-rotate"></i> Reset</button>
       <label class="dbg-speed">speed <input type="range" min="200" max="3000" step="100" v-model.number="travelMs" /> <span class="mono">{{ travelMs }}ms</span></label>
       <span class="dbg-tip">click a strip → next lane</span>
     </div>

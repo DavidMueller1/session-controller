@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref } from "vue";
+import { computed, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref, watch } from "vue";
 import Strip from "./components/Strip.vue";
 import FlightBoard from "./components/FlightBoard.vue";
 import FlipCounter from "./components/FlipCounter.vue";
 import { useBoard } from "./useBoard";
 import { laneOf, isFlashing } from "./format";
+import type { Aircraft } from "./types";
 
 const { aircraft, status, health, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify } = useBoard();
 onMounted(start);
@@ -30,6 +31,50 @@ function onKey(e: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener("keydown", onKey));
 onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
+
+// Debug rewrites each overridden aircraft's STATE (not just its position), so EVERYTHING
+// downstream reacts: the header split-flap counters roll, strip colours change, and the
+// flight-layer animates the moves. Actions are driven from the FlightBoard's debug bar
+// (Step/Shuffle/Reset) or by clicking a strip to cycle it.
+type DebugState = "working" | "needs-input" | "error" | "approach" | "landed" | "mia" | "wrapped";
+const DEBUG_STATES: DebugState[] = ["working", "needs-input", "error", "approach", "landed", "mia", "wrapped"];
+const debugOverride = ref<Record<string, DebugState>>({});
+watch(debug, (on) => { if (!on) debugOverride.value = {}; });
+
+function applyDebug(a: Aircraft, ds: DebugState): Aircraft {
+  const base = { ...a, landed: false, approach: false, note: null };
+  switch (ds) {
+    case "working": return { ...base, state: "working" };
+    case "needs-input": return { ...base, state: "needs-input" };
+    case "error": return { ...base, state: "error" };
+    case "approach": return { ...base, state: "needs-input", approach: true };
+    case "landed": return { ...base, state: "needs-input", landed: true };
+    case "mia": return { ...base, state: "idle" };
+    case "wrapped": return { ...base, state: "suspected-done" };
+  }
+}
+const effectiveAircraft = computed<Aircraft[]>(() =>
+  debug.value ? aircraft.value.map((a) => (debugOverride.value[a.id] ? applyDebug(a, debugOverride.value[a.id]) : a)) : aircraft.value,
+);
+
+function onDbgCycle(id: string) {
+  const cur = debugOverride.value[id];
+  const next = DEBUG_STATES[(cur ? DEBUG_STATES.indexOf(cur) + 1 : 0) % DEBUG_STATES.length];
+  debugOverride.value = { ...debugOverride.value, [id]: next };
+}
+function onDbgStep() {
+  const list = effectiveAircraft.value;
+  if (!list.length) return;
+  const a = list[Math.floor(Math.random() * list.length)];
+  const opts = DEBUG_STATES.filter((s) => s !== debugOverride.value[a.id]);
+  debugOverride.value = { ...debugOverride.value, [a.id]: opts[Math.floor(Math.random() * opts.length)] };
+}
+function onDbgShuffle() {
+  const o: Record<string, DebugState> = {};
+  for (const a of aircraft.value) o[a.id] = DEBUG_STATES[Math.floor(Math.random() * DEBUG_STATES.length)];
+  debugOverride.value = o;
+}
+function onDbgReset() { debugOverride.value = {}; }
 
 // Claude service-status banner (from status.claude.com, pushed over the WS)
 const statusColor = (s: string): string =>
@@ -64,7 +109,7 @@ const healthTitle = computed(() => {
 const orderKey = (a: { stateSince?: number | null; lastActivityAt: number | null }) =>
   a.stateSince ?? a.lastActivityAt ?? 0;
 const byLane = (lane: string) =>
-  aircraft.value.filter((a) => laneOf(a) === lane).sort((a, b) => orderKey(b) - orderKey(a));
+  effectiveAircraft.value.filter((a) => laneOf(a) === lane).sort((a, b) => orderKey(b) - orderKey(a));
 
 const inflight = computed(() => byLane("inflight"));
 const mia = computed(() => byLane("mia"));
@@ -241,7 +286,7 @@ function onOpen(id: string) { open(id); }
 
     <FlightBoard
       v-if="flight"
-      :aircraft="aircraft"
+      :aircraft="effectiveAircraft"
       :now="now"
       :debug="debug"
       @set-note="onSet"
@@ -249,6 +294,10 @@ function onOpen(id: string) { open(id); }
       @land="onLand"
       @unland="onUnland"
       @open="onOpen"
+      @dbg-cycle="onDbgCycle"
+      @dbg-step="onDbgStep"
+      @dbg-shuffle="onDbgShuffle"
+      @dbg-reset="onDbgReset"
     />
 
     <div v-if="!flight" class="board">
