@@ -63,6 +63,7 @@ const ROW_H = 132; // (row content = ROW_H - GAP)
 const RAIL_H = 124;
 const PUCK_W = 44; // travel token — fits inside a corridor in either orientation
 const PUCK_H = 34;
+const IN_MAX_ROWS = 2; // cap In-flight to N rows; extras go to its overflow drawer
 
 interface Rect { x: number; y: number; w: number; h: number }
 interface Pt { x: number; y: number }
@@ -76,14 +77,27 @@ const L = computed(() => {
   const cardX = laneL + LABEL_W + LGAP; // where band/holding cards begin
   const bandRight = contentX + contentW - LANE_PAD;
   const cols = Math.max(1, Math.floor((bandRight - cardX + GAP) / (CARD_W + GAP)));
-  const infRows = Math.max(1, Math.ceil(inflight.value.length / cols));
+  const infRows = Math.min(IN_MAX_ROWS, Math.max(1, Math.ceil(inflight.value.length / cols)));
   const corH1y = TOP + infRows * (CARD_H + GAP) + LANE_PAD;
   const midTop = corH1y + COR + LANE_PAD;
   const landedY = H - CARD_H - 6;
   const corH2y = landedY - LANE_PAD - COR;
   const corV2x = contentX + contentW * 0.6 - COR / 2;
   const appX = corV2x + COR;
-  return { W, H, contentX, contentW, laneL, cardX, bandRight, cols, corH1y, midTop, corH2y, corV2x, appX, landedY };
+  return { W, H, contentX, contentW, laneL, cardX, bandRight, cols, infRows, corH1y, midTop, corH2y, corV2x, appX, landedY };
+});
+
+// how many strips each lane can show before the rest go to its overflow drawer
+const cap = computed(() => {
+  const l = L.value;
+  const midCap = Math.max(1, Math.floor((l.corH2y - LANE_PAD - l.midTop + GAP) / ROW_H));
+  return {
+    inflight: l.infRows * l.cols,
+    holding: midCap,
+    approach: midCap,
+    landed: l.cols,
+    mia: Math.max(1, Math.floor((l.H - 6 - TOP + GAP) / (RAIL_H + GAP))),
+  };
 });
 
 // corridor rail centerlines
@@ -94,16 +108,17 @@ const rail = computed(() => {
 
 const rects = computed<Record<string, Rect>>(() => {
   const l = L.value;
+  const c = cap.value;
   const r: Record<string, Rect> = {};
-  inflight.value.forEach((a, i) => { r[a.id] = { x: l.cardX + (i % l.cols) * (CARD_W + GAP), y: TOP + Math.floor(i / l.cols) * (CARD_H + GAP), w: CARD_W, h: CARD_H }; });
+  inflight.value.slice(0, c.inflight).forEach((a, i) => { r[a.id] = { x: l.cardX + (i % l.cols) * (CARD_W + GAP), y: TOP + Math.floor(i / l.cols) * (CARD_H + GAP), w: CARD_W, h: CARD_H }; });
   const holdW = l.corV2x - LANE_PAD - l.cardX;
-  holding.value.forEach((a, i) => { r[a.id] = { x: l.cardX, y: l.midTop + i * ROW_H, w: holdW, h: ROW_H - GAP }; });
+  holding.value.slice(0, c.holding).forEach((a, i) => { r[a.id] = { x: l.cardX, y: l.midTop + i * ROW_H, w: holdW, h: ROW_H - GAP }; });
   const appCardX = l.appX + LANE_PAD + LABEL_W + LGAP;
   const appW = l.bandRight - appCardX;
-  approach.value.forEach((a, i) => { r[a.id] = { x: appCardX, y: l.midTop + i * ROW_H, w: appW, h: ROW_H - GAP }; });
-  landed.value.forEach((a, i) => { r[a.id] = { x: l.cardX + i * (CARD_W + GAP), y: l.landedY, w: CARD_W, h: CARD_H }; });
+  approach.value.slice(0, c.approach).forEach((a, i) => { r[a.id] = { x: appCardX, y: l.midTop + i * ROW_H, w: appW, h: ROW_H - GAP }; });
+  landed.value.slice(0, c.landed).forEach((a, i) => { r[a.id] = { x: l.cardX + i * (CARD_W + GAP), y: l.landedY, w: CARD_W, h: CARD_H }; });
   const miaCardX = LABEL_W + LGAP;
-  mia.value.forEach((a, i) => { r[a.id] = { x: miaCardX, y: TOP + i * (RAIL_H + GAP), w: RAIL_W - LANE_PAD - miaCardX, h: RAIL_H }; });
+  mia.value.slice(0, c.mia).forEach((a, i) => { r[a.id] = { x: miaCardX, y: TOP + i * (RAIL_H + GAP), w: RAIL_W - LANE_PAD - miaCardX, h: RAIL_H }; });
   return r;
 });
 
@@ -158,6 +173,38 @@ const taxiPath = computed(() => {
 
 const placed = computed(() => props.aircraft.filter((a) => rects.value[a.id]));
 
+// ---- overflow drawers: strips beyond a lane's capacity live in an openable drawer ----
+const overflow = computed<Record<string, Aircraft[]>>(() => {
+  const c = cap.value;
+  return {
+    inflight: inflight.value.slice(c.inflight),
+    holding: holding.value.slice(c.holding),
+    approach: approach.value.slice(c.approach),
+    landed: landed.value.slice(c.landed),
+    mia: mia.value.slice(c.mia),
+  };
+});
+
+// where a lane's drawer chip sits (and where its tokens fly to/from)
+function drawerAnchor(k: string): Pt {
+  const l = L.value;
+  const c = cap.value;
+  if (k === "holding") return { x: l.cardX + 30, y: l.midTop + c.holding * ROW_H + 4 };
+  if (k === "approach") return { x: l.appX + LANE_PAD + LABEL_W + LGAP + 30, y: l.midTop + c.approach * ROW_H + 4 };
+  if (k === "mia") return { x: LABEL_W + LGAP + 30, y: TOP + c.mia * (RAIL_H + GAP) + 4 };
+  if (k === "landed") return { x: Math.min(l.cardX + c.landed * (CARD_W + GAP), l.bandRight - 52), y: l.landedY + CARD_H / 2 };
+  return { x: l.bandRight - 52, y: TOP + (l.infRows - 1) * (CARD_H + GAP) + CARD_H / 2 }; // inflight
+}
+
+const drawers = computed(() =>
+  (["inflight", "holding", "approach", "landed", "mia"] as const)
+    .filter((k) => overflow.value[k].length)
+    .map((k) => ({ k, n: overflow.value[k].length, ...drawerAnchor(k), color: LANE_COLOR[k] })),
+);
+
+const openDrawer = ref<string | null>(null);
+const drawerItems = computed<Aircraft[]>(() => (openDrawer.value ? overflow.value[openDrawer.value] ?? [] : []));
+
 // ---- corridor router: dock each lane to its rail, shortest path over the rail graph ----
 function dock(lane: Lane, r: Rect): { p: Pt; railName: string } {
   const g = rail.value;
@@ -210,6 +257,7 @@ function routeCenters(sLane: Lane, s: Rect, dLane: Lane, d: Rect): Pt[] {
 // ---- animation --------------------------------------------------------------------
 let prevRects: Record<string, Rect> = {};
 let prevLane: Record<string, Lane> = {};
+let prevOverflow: Record<string, string> = {}; // id → the lane whose drawer it was in
 let prevW = 0;
 let prevH = 0;
 
@@ -329,17 +377,61 @@ function fadeIn(el: HTMLElement): void {
   el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: "ease-out" });
 }
 
+// a transient token used for drawer in/out (the real strip element isn't around for both
+// ends of these transitions, so we animate a standalone ghost)
+function makeGhost(color: string): HTMLElement {
+  const g = document.createElement("div");
+  g.className = "puck-ghost";
+  g.style.setProperty("--puck", color);
+  g.innerHTML = '<i class="ti ti-plane"></i>';
+  stage.value?.appendChild(g);
+  return g;
+}
+function flyToDrawer(from: Rect, anchor: Pt, color: string): void {
+  const g = makeGhost(color);
+  const a = g.animate(
+    [
+      { transform: `translate(${from.x}px, ${from.y}px)`, width: `${from.w}px`, height: `${from.h}px`, borderRadius: "8px", opacity: 1, offset: 0, easing: "cubic-bezier(.5,.1,.3,1)" },
+      { transform: `translate(${anchor.x - PUCK_W / 2}px, ${anchor.y - PUCK_H / 2}px)`, width: `${PUCK_W}px`, height: `${PUCK_H}px`, borderRadius: "8px", opacity: 1, offset: 0.72, easing: "ease-in" },
+      { transform: `translate(${anchor.x - 7}px, ${anchor.y - 7}px)`, width: "14px", height: "14px", borderRadius: "50%", opacity: 0, offset: 1 },
+    ],
+    { duration: morphMs() + 260, fill: "forwards" },
+  );
+  const done = () => g.remove();
+  a.onfinish = done;
+  a.oncancel = done;
+}
+function flyFromDrawer(anchor: Pt, to: Rect, color: string, el: HTMLElement): void {
+  el.style.opacity = "0";
+  const g = makeGhost(color);
+  const a = g.animate(
+    [
+      { transform: `translate(${anchor.x - 7}px, ${anchor.y - 7}px)`, width: "14px", height: "14px", borderRadius: "50%", opacity: 0, offset: 0, easing: "ease-out" },
+      { transform: `translate(${anchor.x - PUCK_W / 2}px, ${anchor.y - PUCK_H / 2}px)`, width: `${PUCK_W}px`, height: `${PUCK_H}px`, borderRadius: "8px", opacity: 1, offset: 0.28, easing: "cubic-bezier(.5,.1,.3,1)" },
+      { transform: `translate(${to.x}px, ${to.y}px)`, width: `${to.w}px`, height: `${to.h}px`, borderRadius: "8px", opacity: 1, offset: 1 },
+    ],
+    { duration: morphMs() + 260, fill: "forwards" },
+  );
+  const done = () => { g.remove(); el.style.opacity = ""; };
+  a.onfinish = done;
+  a.oncancel = done;
+}
+
 function animateChanges(): void {
   const root = stage.value;
   if (!root) return;
   const cur = rects.value;
+  const currentIds = new Set(Object.keys(cur));
+  const ovf = overflow.value;
+  const currentOverflow: Record<string, string> = {};
+  for (const k of Object.keys(ovf)) for (const a of ovf[k]) currentOverflow[a.id] = k;
+
   const resized = prevW !== skyW.value || prevH !== skyH.value;
   prevW = skyW.value;
   prevH = skyH.value;
 
-  // classify this cycle's lane changes. A lane that lost a strip only closes its gap once
-  // that strip has cleared onto the taxiway (per-departure time); a lane that gained one
-  // makes way immediately. Track the longest clear-time per source lane.
+  // lane-change gap-close timing: a lane that lost a strip only closes its gap once that
+  // strip has cleared onto the taxiway; a lane that gained one makes way immediately.
   const arrived = new Set<Lane>();
   const closeDelays = new Map<Lane, number>();
   for (const a of placed.value) {
@@ -353,6 +445,7 @@ function animateChanges(): void {
     }
   }
 
+  // moves + enters (incl. pulled out of a drawer)
   for (const a of placed.value) {
     const to = cur[a.id];
     if (!to) continue;
@@ -361,16 +454,32 @@ function animateChanges(): void {
     const from = prevRects[a.id];
     const lane = effectiveLane(a);
     const pLane = prevLane[a.id];
-    if (!from) fadeIn(el);
-    else if (resized) continue;
-    else if (pLane && pLane !== lane) puckTravel(el, pLane, from, lane, to);
-    else if (from.x !== to.x || from.y !== to.y || from.w !== to.w || from.h !== to.h) {
+    if (!from) {
+      if (!resized && prevOverflow[a.id]) flyFromDrawer(drawerAnchor(prevOverflow[a.id]), to, LANE_COLOR[lane] ?? "#7d8590", el);
+      else fadeIn(el);
+    } else if (resized) {
+      continue;
+    } else if (pLane && pLane !== lane) {
+      puckTravel(el, pLane, from, lane, to);
+    } else if (from.x !== to.x || from.y !== to.y || from.w !== to.w || from.h !== to.h) {
       const closing = closeDelays.has(lane) && !arrived.has(lane);
       glide(el, from, to, closing ? (closeDelays.get(lane) ?? 0) : 0);
     }
   }
+
+  // leaves → a strip pushed into its lane's drawer flies there (its slot is already gone,
+  // so we animate a ghost from the last known rect)
+  if (!resized) {
+    for (const id of Object.keys(prevRects)) {
+      if (currentIds.has(id)) continue;
+      const laneNow = currentOverflow[id];
+      if (laneNow) flyToDrawer(prevRects[id], drawerAnchor(laneNow), LANE_COLOR[laneNow] ?? "#7d8590");
+    }
+  }
+
   prevRects = { ...cur };
   prevLane = Object.fromEntries(placed.value.map((a) => [a.id, effectiveLane(a)]));
+  prevOverflow = currentOverflow;
 }
 onUpdated(animateChanges);
 
@@ -430,6 +539,39 @@ function reset(): void { override.value = {}; }
       />
       <div class="puck"><i class="ti ti-plane"></i></div>
     </div>
+
+    <button
+      v-for="d in drawers"
+      :key="'dw' + d.k"
+      class="drawer-chip"
+      :style="{ transform: `translate(${d.x}px, ${d.y}px)`, color: d.color }"
+      :title="d.n + ' more'"
+      @click="openDrawer = d.k"
+    >
+      <i class="ti ti-layers-subtract"></i> {{ d.n }}
+    </button>
+    </div>
+
+    <div v-if="openDrawer && drawerItems.length" class="drawer-overlay" @click.self="openDrawer = null">
+      <div class="drawer-panel">
+        <div class="drawer-panel-h">
+          <span><i class="ti ti-layers-subtract"></i> {{ openDrawer }} — {{ drawerItems.length }} more</span>
+          <button class="icon" aria-label="close" @click="openDrawer = null"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="drawer-panel-grid">
+          <Strip
+            v-for="a in drawerItems"
+            :key="a.id"
+            :aircraft="a"
+            :now="now"
+            @set-note="(id, n) => emit('setNote', id, n)"
+            @remove-note="(id) => emit('removeNote', id)"
+            @land="(id) => emit('land', id)"
+            @unland="(id) => emit('unland', id)"
+            @open="(id) => emit('open', id)"
+          />
+        </div>
+      </div>
     </div>
 
     <div v-if="debug" class="dbg-bar">
@@ -462,6 +604,20 @@ function reset(): void { override.value = {}; }
 .slot.traveling { z-index: 5; }
 .slot.traveling .puck { opacity: 1; }
 .slot.traveling :deep(.strip) { opacity: 0; }
+
+/* transient token for flying strips into / out of a lane's overflow drawer */
+.puck-ghost { position: absolute; top: 0; left: 0; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: color-mix(in srgb, var(--puck, #7d8590) 22%, var(--strip)); border: 1px solid color-mix(in srgb, var(--puck, #7d8590) 55%, transparent); color: color-mix(in srgb, var(--puck, #7d8590) 80%, var(--text)); font-size: 15px; z-index: 5; pointer-events: none; }
+
+/* per-lane overflow drawer chip + its opened list */
+.drawer-chip { position: absolute; top: 0; left: 0; z-index: 4; all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; color: currentColor; background: var(--panel); border: 0.5px solid var(--border); border-radius: 999px; padding: 2px 9px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); }
+.drawer-chip:hover { border-color: currentColor; }
+.drawer-chip i { font-size: 12px; }
+.drawer-overlay { position: absolute; inset: 0; z-index: 40; background: rgba(6, 9, 13, 0.66); display: flex; align-items: center; justify-content: center; padding: 28px; }
+.drawer-panel { width: min(1100px, 92%); max-height: 84%; display: flex; flex-direction: column; background: var(--panel); border: 0.5px solid var(--border); border-radius: 12px; box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5); overflow: hidden; }
+.drawer-panel-h { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; border-bottom: 0.5px solid var(--border-soft); font-size: 13px; font-weight: 500; color: var(--text); text-transform: capitalize; }
+.drawer-panel-h .icon { all: unset; cursor: pointer; display: inline-flex; padding: 4px; border-radius: 6px; color: var(--text-faint); font-size: 15px; }
+.drawer-panel-h .icon:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-dim); }
+.drawer-panel-grid { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); grid-auto-rows: 132px; gap: 8px; padding: 12px 14px; align-content: start; }
 
 .dbg-bar { position: absolute; top: 0; right: 0; z-index: 6; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; background: var(--panel); border: 0.5px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 12px; }
 .dbg-bar button { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; color: var(--text-dim); border: 0.5px dashed var(--border); border-radius: 6px; padding: 2px 8px; }
