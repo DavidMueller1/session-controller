@@ -10,6 +10,7 @@
     "dev": "tsx watch src/server.ts",
     "board": "tsx src/console-app.ts",
     "once": "tsx src/console-app.ts --once",
+    "doctor": "tsx src/doctor.ts",
     "ui": "pnpm --dir web dev",
     "ui:build": "pnpm --dir web build",
     "typecheck": "tsc --noEmit"
