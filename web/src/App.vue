@@ -8,8 +8,10 @@ import { laneOf, isFlashing } from "./format";
 const { aircraft, status, health, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify } = useBoard();
 onMounted(start);
 
-// SPIKE toggle: classic per-lane board vs the flight-layer (one coordinate space)
-const flight = ref(localStorage.getItem("fc-flight") === "1");
+// Board layout: the flight-layer (one animated coordinate space) is the default; the
+// toggle drops to the simple per-lane list. Only an explicit "0" opts out of flight,
+// so a fresh visitor (no stored preference) gets the flight board.
+const flight = ref(localStorage.getItem("fc-flight") !== "0");
 function toggleFlight() {
   flight.value = !flight.value;
   localStorage.setItem("fc-flight", flight.value ? "1" : "0");
@@ -202,12 +204,11 @@ function onOpen(id: string) { open(id); }
         <span v-if="landed.length"><b style="color: #4cc38a">{{ landed.length }}</b> landed</span>
         <button
           class="bell"
-          :class="{ on: flight }"
-          :title="flight ? 'Flight-layer spike — click for classic board' : 'Try the flight-layer spike'"
-          aria-label="Toggle flight-layer board"
+          :title="flight ? 'Flight board — switch to the simple list' : 'Simple list — switch to the flight board'"
+          aria-label="Toggle board layout"
           @click="toggleFlight"
         >
-          <i class="ti ti-plane"></i>
+          <i class="ti" :class="flight ? 'ti-plane' : 'ti-layout-list'"></i>
         </button>
         <button
           v-if="flight"
