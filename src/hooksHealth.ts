@@ -70,10 +70,10 @@ export function assembleHealth(
   let detail: string;
   if (!s.settingsFound || s.installedEvents.length === 0) {
     status = "down";
-    detail = "Session-tracking hooks aren't installed — states fall back to transcript inference (~8s lag, exits can stick). Run `pnpm doctor` to install.";
+    detail = "Session-tracking hooks aren't installed — states fall back to transcript inference (~8s lag, exits can stick). Run `pnpm run doctor` to install.";
   } else if (s.missingRequired.length > 0) {
     status = "degraded";
-    detail = `Session-tracking hooks partially installed — missing ${s.missingRequired.join(", ")}. Run \`pnpm doctor\` to repair.`;
+    detail = `Session-tracking hooks partially installed — missing ${s.missingRequired.join(", ")}. Run \`pnpm run doctor\` to repair.`;
   } else if (activeCli > 0 && writes.fresh === 0) {
     status = "degraded";
     detail = "Session-tracking hooks are installed but not firing — no recent state writes from any active session.";

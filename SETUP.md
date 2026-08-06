@@ -20,7 +20,7 @@ pnpm run setup
 1. `pnpm install` — backend deps
 2. `pnpm --dir web install` — frontend deps
 3. `pnpm ui:build` — build the Vue board into `web/dist` (served by the backend)
-4. `pnpm doctor` — install the session-tracking hooks (see below)
+4. `pnpm run doctor` — install the session-tracking hooks (see below)
 
 > Use `pnpm run setup`, not `pnpm setup` — the latter is pnpm's own built-in command.
 
@@ -38,11 +38,11 @@ waits, or exits. They give **near-instant, exact** state for both terminal and d
 sessions. Without them the board falls back to transcript inference — roughly an 8-second
 lag, and an exited session can briefly stick "In-flight".
 
-`pnpm doctor` wires them into `~/.claude/settings.json` idempotently:
+`pnpm run doctor` wires them into `~/.claude/settings.json` idempotently:
 
 ```bash
-pnpm doctor          # (re)install the hooks — safe to run anytime
-pnpm doctor --check  # report what's wired; exit 1 if anything is missing
+pnpm run doctor          # (re)install the hooks — safe to run anytime
+pnpm run doctor --check  # report what's wired; exit 1 if anything is missing
 ```
 
 It **backs up** your existing settings first, **preserves** every other hook you have
@@ -53,7 +53,7 @@ still works if you move the repo. Running it twice never duplicates anything.
 
 The board watches its own tracking pipeline. If the hooks ever go missing or stop firing
 (a Claude update can rewrite `settings.json`), a banner appears at the top of the board
-telling you what's wrong and to run `pnpm doctor`. No banner = healthy.
+telling you what's wrong and to run `pnpm run doctor`. No banner = healthy.
 
 You can also check from the terminal:
 
@@ -74,7 +74,7 @@ menubar/build.sh
 
 | Symptom | Fix |
 | --- | --- |
-| Red/amber banner at the top of the board | `pnpm doctor` |
+| Red/amber banner at the top of the board | `pnpm run doctor` |
 | `better-sqlite3` / `NODE_MODULE_VERSION` error | `nvm use` (Node 22), then `pnpm install` |
 | Board loads but is empty | you have no live Claude sessions yet — start one |
-| A session lags ~8s or is stuck In-flight after exit | its hooks aren't active — `pnpm doctor`, then restart that session |
+| A session lags ~8s or is stuck In-flight after exit | its hooks aren't active — `pnpm run doctor`, then restart that session |

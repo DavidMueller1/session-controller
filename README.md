@@ -30,7 +30,7 @@ See [CONCEPT.md](CONCEPT.md) for the full design and the locked decisions, and
   merged PR so a same-session follow-up isn't flagged — the next *different* merged PR re-flags
   Approach.
 - **Phase 7 — hooks + health ✅** — optional Claude Code hooks give near-instant, exact state
-  for CLI *and* desktop sessions (working / needs-input / wrapped-up on exit). `pnpm doctor`
+  for CLI *and* desktop sessions (working / needs-input / wrapped-up on exit). `pnpm run doctor`
   installs them idempotently, and a top-of-board banner flags if they ever go missing or stop
   firing. See **[SETUP.md](SETUP.md)**.
 
