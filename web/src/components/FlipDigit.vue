@@ -32,33 +32,37 @@ watch(
 
 <style scoped>
 .fd {
+  --fd-h: 1.16em;      /* digit box height */
+  --fd-seam: 0.13em;   /* slice removed at the split so the halves read as two flaps */
+  --fd-half: 130ms;    /* half of a flip; total flip = 2× (top flips, then bottom) */
   position: relative;
   display: inline-block;
   width: 0.66em;
-  height: 1.16em;
+  height: var(--fd-h);
   margin: 0 0.03em;
   perspective: 90px;
   font-family: "SF Mono", "Menlo", "Consolas", ui-monospace, monospace;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   border-radius: 2.5px;
+  background: #05070a; /* shows through the seam as a crisp dark divider */
   box-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.5);
 }
 .card {
   position: absolute;
   left: 0;
   width: 100%;
-  height: 50%;
+  height: calc(var(--fd-h) / 2 - var(--fd-seam) / 2);
   overflow: hidden;
   background: #171d26;
 }
-.card.top { top: 0; border-radius: 2.5px 2.5px 0 0; border-bottom: 0.5px solid rgba(0, 0, 0, 0.6); }
-.card.bottom { bottom: 0; border-radius: 0 0 2.5px 2.5px; }
+.card.top { top: 0; border-radius: 2.5px 2.5px 0 0; }
+.card.bottom { top: calc(var(--fd-h) / 2 + var(--fd-seam) / 2); border-radius: 0 0 2.5px 2.5px; }
 .g {
   position: absolute;
   left: 0;
   width: 100%;
-  height: 200%;
+  height: var(--fd-h);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -66,7 +70,7 @@ watch(
   line-height: 1;
 }
 .card.top .g { top: 0; }
-.card.bottom .g { top: -100%; }
+.card.bottom .g { top: calc(-1 * (var(--fd-h) / 2 + var(--fd-seam) / 2)); }
 .leaves { position: absolute; inset: 0; }
 .leaf { z-index: 2; }
 .leaf.top {

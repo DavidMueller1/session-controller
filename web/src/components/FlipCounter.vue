@@ -8,7 +8,7 @@ import FlipDigit from "./FlipDigit.vue";
 const props = defineProps<{ value: number; color?: string }>();
 
 const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-const STEP_MS = 140;
+const STEP_MS = 280; // one step per flip; must exceed the flip total (2 × --fd-half = 260ms)
 const clamp = (n: number) => Math.max(0, Math.min(99, Math.round(n))); // two-digit for now
 
 const shown = ref(clamp(props.value));
