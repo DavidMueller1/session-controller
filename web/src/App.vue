@@ -251,7 +251,7 @@ function onOpen(id: string) { open(id); }
     <header>
       <div class="brand">
         <img src="/logo.svg" class="brand-logo" alt="" />
-        <span class="name">SESSION CONTROLLER</span>
+        <span class="name"><span class="w1">Session</span><span class="w2">Controller</span></span>
       </div>
       <div class="stats">
         <span class="stat"><FlipCounter :value="holding.length" color="var(--amber)" /> holding</span>
@@ -384,7 +384,10 @@ function onOpen(id: string) { open(id); }
 header { flex: none; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft); }
 .brand { display: flex; align-items: center; gap: 9px; }
 .brand-logo { width: 26px; height: 26px; display: block; }
-.name { font-size: 15px; font-weight: 500; letter-spacing: 0.4px; }
+/* airport-signage wordmark: wide tracking + a light/bold weight pairing (transit-brand look) */
+.name { display: inline-flex; align-items: baseline; gap: 0.5em; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; text-transform: uppercase; font-size: 15px; line-height: 1; }
+.name .w1 { font-weight: 300; letter-spacing: 0.34em; color: var(--text-dim); }
+.name .w2 { font-weight: 700; letter-spacing: 0.34em; color: var(--text-hi); }
 .stats { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--text-dim); }
 .stats b { font-weight: 500; }
 .stat { display: inline-flex; align-items: center; gap: 6px; }
