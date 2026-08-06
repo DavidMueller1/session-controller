@@ -22,6 +22,11 @@ export const CONFIG = {
    *  registry `status` field), as long as it's fresher than hookStaleMs. */
   hookStateDir: path.join(home, ".claude", "tc-state"),
   hookStaleMs: 15 * 60_000,
+  /** our own tc-state files accumulate (one terminal `ended` marker per exited session);
+   *  prune any older than this so the dir stays tidy. Well beyond dormantMs so a pruned
+   *  session has long since settled into MIA/offline and can't pop back to In-flight. */
+  hookStateGcMs: 12 * 60 * 60_000,
+  hookGcMs: 60 * 60_000, // how often to run that prune
 
   /** user-level Claude Code settings files where our hooks are wired — read (not watched)
    *  to verify the hooks are still installed (a Claude update can rewrite settings.json,

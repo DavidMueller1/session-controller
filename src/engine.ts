@@ -17,6 +17,22 @@ function isCliTranscript(p: string): boolean {
 }
 
 /**
+ * Is a process still running? Used to detect a hard-killed session: Claude Code names its
+ * registry file `<pid>.json` and removes it on a clean exit, but a SIGKILL / force-close
+ * leaves the file orphaned with a dead pid. `kill(pid, 0)` sends no signal — it just
+ * probes: no error or EPERM => alive, ESRCH => gone. Never wrongly reports a live session
+ * as dead (a running process always has a live pid), so retiring on `false` is safe.
+ */
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException)?.code === "EPERM";
+  }
+}
+
+/**
  * What's on the board, as a string. Includes everything a consumer renders, so the
  * engine only emits `update` when something observably changed — not on every tick.
  */
@@ -113,6 +129,9 @@ export class Engine extends EventEmitter {
     const seen = new Set<string>();
     const list = correlate([...this.facts.values()].map((f) => resolve(f, now))).map((a0) => {
       const entry = reg.get(a0.id);
+      // A registry entry whose process is gone = a hard-killed / force-closed session
+      // (SessionEnd never fired). We must not trust its live signals below.
+      const pidDead = !!entry && entry.pid != null && !isPidAlive(entry.pid);
       // Use the registry callsign only when it's a real rename. Newer desktop builds
       // auto-derive names (nameSource:"derived", e.g. "feat-traffic-controller-af") —
       // ignore those and keep the correlated ai-title / desktop title, which is far more
@@ -134,10 +153,10 @@ export class Engine extends EventEmitter {
       // sessions, so we trust it over transcript-timing inference: busy => working,
       // idle => waiting on you. Desktop-run sessions report null status; those fall
       // back to the inferred state. This is what makes states exact without hooks.
-      if (entry?.status === "busy") {
+      if (!pidDead && entry?.status === "busy") {
         a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
         stateSource = "registry";
-      } else if (entry?.status === "idle") {
+      } else if (!pidDead && entry?.status === "idle") {
         a = { ...a, state: "needs-input" };
         stateSource = "registry";
       }
@@ -160,6 +179,14 @@ export class Engine extends EventEmitter {
           a = { ...a, state: "needs-input" };
           stateSource = "hook";
         }
+      }
+
+      // Hard-kill safety net: the process is gone but it still looks active (a stale
+      // `working` hook, or a transcript that ends mid-tool, would otherwise pin it
+      // In-flight for up to hookStaleMs). Retire it straight to MIA — "lost contact".
+      if (pidDead && (a.state === "working" || a.state === "needs-input")) {
+        a = { ...a, state: "idle" };
+        stateSource = "registry";
       }
 
       // stateSince: the moment this aircraft entered its current state. It drives the
@@ -213,6 +240,35 @@ export class Engine extends EventEmitter {
     await Promise.all(targets.map((p) => this.upsert(p)));
   }
 
+  /** Prune our own tc-state files once they're older than hookStateGcMs, so terminal
+   *  `ended` markers and stale hook writes don't pile up. Only touches OUR directory —
+   *  never Claude's registry/transcript files (the app stays read-only to those). */
+  private async gcHookState(): Promise<void> {
+    const now = Date.now();
+    let entries: string[];
+    try {
+      entries = await fs.readdir(CONFIG.hookStateDir);
+    } catch {
+      return;
+    }
+    await Promise.all(
+      entries
+        .filter((e) => e.endsWith(".json") && !e.endsWith(".tmp"))
+        .map(async (e) => {
+          const p = path.join(CONFIG.hookStateDir, e);
+          try {
+            const o = JSON.parse(await fs.readFile(p, "utf8"));
+            if (typeof o?.ts === "number" && now - o.ts > CONFIG.hookStateGcMs) {
+              await fs.unlink(p);
+              this.hookState.delete(path.basename(e, ".json"));
+            }
+          } catch {
+            /* unparseable — leave it; a live session may be mid-write */
+          }
+        }),
+    );
+  }
+
   /** one-shot: full scan + derive, no watchers or timers (used by `once`) */
   async scan(): Promise<void> {
     const roots = [CONFIG.cliProjectsDir, CONFIG.sessionsDir, CONFIG.hookStateDir, ...CONFIG.desktopSessionDirs];
@@ -255,6 +311,10 @@ export class Engine extends EventEmitter {
     // PR status: initial poll + slow refresh
     this.pollPrs();
     this.intervals.push(setInterval(() => this.pollPrs(), CONFIG.prPollMs));
+
+    // prune stale tc-state files: once now, then on a slow timer
+    void this.gcHookState();
+    this.intervals.push(setInterval(() => void this.gcHookState(), CONFIG.hookGcMs));
   }
 
   async stop(): Promise<void> {
