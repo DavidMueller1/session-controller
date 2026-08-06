@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref } from "vue";
 import Strip from "./components/Strip.vue";
 import FlightBoard from "./components/FlightBoard.vue";
+import FlipCounter from "./components/FlipCounter.vue";
 import { useBoard } from "./useBoard";
 import { laneOf, isFlashing } from "./format";
 
@@ -208,11 +209,11 @@ function onOpen(id: string) { open(id); }
         <span class="name">SESSION CONTROLLER</span>
       </div>
       <div class="stats">
-        <span><b style="color: var(--amber)">{{ holding.length }}</b> holding</span>
-        <span><b style="color: var(--green)">{{ inflight.length }}</b> in-flight</span>
-        <span v-if="mia.length"><b style="color: var(--gray)">{{ mia.length }}</b> mia</span>
-        <span><b style="color: var(--blue)">{{ approach.length }}</b> approach</span>
-        <span v-if="landed.length"><b style="color: #4cc38a">{{ landed.length }}</b> landed</span>
+        <span class="stat"><FlipCounter :value="holding.length" color="var(--amber)" /> holding</span>
+        <span class="stat"><FlipCounter :value="inflight.length" color="var(--green)" /> in-flight</span>
+        <span v-if="mia.length" class="stat"><FlipCounter :value="mia.length" color="var(--gray)" /> mia</span>
+        <span class="stat"><FlipCounter :value="approach.length" color="var(--blue)" /> approach</span>
+        <span v-if="landed.length" class="stat"><FlipCounter :value="landed.length" color="#4cc38a" /> landed</span>
         <button
           class="bell"
           :title="flight ? 'Flight board — switch to the simple list' : 'Simple list — switch to the flight board'"
@@ -337,6 +338,7 @@ header { flex: none; display: flex; align-items: center; justify-content: space-
 .name { font-size: 15px; font-weight: 500; letter-spacing: 0.4px; }
 .stats { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--text-dim); }
 .stats b { font-weight: 500; }
+.stat { display: inline-flex; align-items: center; gap: 6px; }
 .dot { display: inline-flex; align-items: center; gap: 5px; }
 .dot i { font-size: 8px; }
 .clock { color: var(--text-faint); }
