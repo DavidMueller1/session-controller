@@ -58,9 +58,9 @@ const LANE_PAD = 6; // breathing room between the taxiways and the lane content
 const COR = 52; // corridor thickness — the real empty travel space between lanes
 const RAIL_W = 240; // permanent MIA column
 const CARD_W = 220;
-const CARD_H = 112;
-const ROW_H = 104;
-const RAIL_H = 100;
+const CARD_H = 134; // taller slots so title + chips + summary + PR/footer + buttons all fit
+const ROW_H = 132; // (row content = ROW_H - GAP)
+const RAIL_H = 124;
 const PUCK_W = 44; // travel token — fits inside a corridor in either orientation
 const PUCK_H = 34;
 
