@@ -13,7 +13,8 @@ export const STATE: Record<ActivityState, StateMeta> = {
   error: { lane: "holding", color: "#f85149", label: "Go-around" },
   // archived desktop sessions are done-ish; the Approach lane is now driven by the
   // server's `approach` flag (merged PR), not by this state.
-  "suspected-done": { lane: "mia", color: "#58a6ff", label: "Wrapped up" },
+  // lives in the MIA rail → wears the muted MIA gray like its dormant/unknown neighbors
+  "suspected-done": { lane: "mia", color: "#6b7688", label: "Wrapped up" },
   // idle = mid-work but gone quiet → the MIA rail ("lost contact").
   idle: { lane: "mia", color: "#6b7688", label: "MIA" },
   // Cold is no longer a state — it's the Landed overflow (see App.vue). Everything that
