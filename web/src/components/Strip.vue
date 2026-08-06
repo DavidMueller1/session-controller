@@ -104,21 +104,25 @@ function commitNote() {
         </svg>
       </div>
 
-      <div class="chips">
-        <span class="chip mono">{{ projectName(aircraft.project) }}</span>
-        <span v-if="aircraft.branch" class="chip mono"><i class="ti ti-git-branch"></i> {{ aircraft.branch }}</span>
-        <span v-if="aircraft.model" class="chip mono">{{ aircraft.model }}</span>
-      </div>
+      <!-- middle content clips first when the strip is height-constrained (flight layer),
+           so the title (above) and the action buttons (below) are always visible -->
+      <div class="mid">
+        <div class="chips">
+          <span class="chip mono">{{ projectName(aircraft.project) }}</span>
+          <span v-if="aircraft.branch" class="chip mono"><i class="ti ti-git-branch"></i> {{ aircraft.branch }}</span>
+          <span v-if="aircraft.model" class="chip mono">{{ aircraft.model }}</span>
+        </div>
 
-      <div class="act">{{ aircraft.lastEventSummary }}</div>
+        <div class="act">{{ aircraft.lastEventSummary }}</div>
 
-      <div class="foot">
-        <i v-if="surfaces.includes('cli')" class="ti ti-terminal-2" title="terminal"></i>
-        <i v-if="surfaces.includes('desktop')" class="ti ti-device-desktop" title="desktop"></i>
-        <a v-if="pr" class="pr" :href="pr.url" target="_blank" rel="noreferrer" :style="{ color: prColor, borderColor: prColor }" :title="prTitle">
-          <i class="ti" :class="prIcon"></i>#{{ pr.number }}
-        </a>
-        <span class="age" :style="{ color: landed ? LANDED_COLOR : meta.color }">{{ age }}</span>
+        <div class="foot">
+          <i v-if="surfaces.includes('cli')" class="ti ti-terminal-2" title="terminal"></i>
+          <i v-if="surfaces.includes('desktop')" class="ti ti-device-desktop" title="desktop"></i>
+          <a v-if="pr" class="pr" :href="pr.url" target="_blank" rel="noreferrer" :style="{ color: prColor, borderColor: prColor }" :title="prTitle">
+            <i class="ti" :class="prIcon"></i>#{{ pr.number }}
+          </a>
+          <span class="age" :style="{ color: landed ? LANDED_COLOR : meta.color }">{{ age }}</span>
+        </div>
       </div>
 
       <div class="actions">
@@ -155,8 +159,11 @@ function commitNote() {
 .strip.landed { opacity: 0.9; }
 .strip.mia { opacity: 0.7; }
 .spine { width: 4px; flex: none; }
-.body { flex: 1; min-width: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
-.cs { display: flex; align-items: center; gap: 6px; }
+.body { flex: 1; min-width: 0; min-height: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+.cs { display: flex; align-items: center; gap: 6px; flex: none; }
+/* the variable-length middle; it (not the buttons) clips when the strip is height-capped */
+.mid { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 4px; }
+.actions { flex: none; }
 .title { font-size: 13px; font-weight: 500; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; min-width: 0; }
 .ctx { width: 16px; height: 16px; flex: none; margin-left: auto; }
 .title:hover { text-decoration: underline; }
