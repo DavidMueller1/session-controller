@@ -16,6 +16,12 @@ except Exception:
 sid = p.get("session_id") or p.get("sessionId")
 if not sid:
     sys.exit(0)
+# Some tools fire PreToolUse (which we treat as "working") but then block waiting on the
+# user — AskUserQuestion, plan approval. The session is actually waiting on you, not
+# in-flight, so flip those to needs-input.
+tool = p.get("tool_name") or p.get("toolName") or ""
+if state == "working" and tool in ("AskUserQuestion", "ExitPlanMode"):
+    state = "needs-input"
 path = os.path.join(dirp, str(sid) + ".json")
 if state == "clear":
     # Session ended: persist a terminal "ended" marker rather than deleting. Deleting
