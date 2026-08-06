@@ -11,6 +11,7 @@
     "board": "tsx src/console-app.ts",
     "once": "tsx src/console-app.ts --once",
     "doctor": "tsx src/doctor.ts",
+    "setup": "pnpm install && pnpm --dir web install && pnpm ui:build && pnpm doctor",
     "ui": "pnpm --dir web dev",
     "ui:build": "pnpm --dir web build",
     "typecheck": "tsc --noEmit"

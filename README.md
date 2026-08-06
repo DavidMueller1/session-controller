@@ -5,7 +5,8 @@ Each feature is an "aircraft"; each Claude session working on it is tracked auto
 whether it runs in the **PHPStorm terminal (Claude Code CLI)** or the **Claude Desktop app
 (Cowork / local agent mode)**.
 
-See [CONCEPT.md](CONCEPT.md) for the full design and the locked decisions.
+See [CONCEPT.md](CONCEPT.md) for the full design and the locked decisions, and
+**[SETUP.md](SETUP.md)** to get it running (`nvm use && pnpm run setup`).
 
 ## Status
 
@@ -20,14 +21,18 @@ See [CONCEPT.md](CONCEPT.md) for the full design and the locked decisions.
 - **Phase 5 — registry status ✅** — for live CLI sessions the state comes from Claude Code's
   own `status` (busy → In-flight, idle → Holding), read from `~/.claude/sessions` — authoritative,
   no transcript guesswork, and crucially **zero per-machine setup** (the reason this is
-  shareable). Desktop-run sessions fall back to inference. **Hooks are deliberately not used** —
-  they'd require editing each colleague's `settings.json` and only cover CLI sessions anyway.
+  shareable). Desktop-run sessions fall back to inference. _(Newer Claude builds dropped the
+  registry `status` field, which is why hooks were added later — see Phase 7.)_
 - **Phase 6 — PR integration ✅** — each strip shows its branch's GitHub PR (via `gh`, polled
   ~60s for non-cold sessions): a clickable pill coloured by state (draft / open / review /
   merged / closed). A **merged** PR moves the strip to **Approach** (ready to land). **Landing**
   stays a manual click (Landed badge has an **×** to undo). **Go-around** ignores the current
   merged PR so a same-session follow-up isn't flagged — the next *different* merged PR re-flags
   Approach.
+- **Phase 7 — hooks + health ✅** — optional Claude Code hooks give near-instant, exact state
+  for CLI *and* desktop sessions (working / needs-input / wrapped-up on exit). `pnpm doctor`
+  installs them idempotently, and a top-of-board banner flags if they ever go missing or stop
+  firing. See **[SETUP.md](SETUP.md)**.
 
 ### What's tracked
 
@@ -112,11 +117,11 @@ action to send a *landed* aircraft back into the pattern.)
 
 ```bash
 nvm use                     # Node 22
-pnpm install                # backend deps
-pnpm --dir web install      # frontend deps
 
-# production-ish: build the UI, then the server serves it at http://127.0.0.1:4317/
-pnpm ui:build
+# first run: deps + build UI + install tracking hooks (see SETUP.md)
+pnpm run setup              # NB: `pnpm run setup`, not `pnpm setup` (a pnpm builtin)
+
+# production-ish: the server serves the built UI at http://127.0.0.1:4317/
 pnpm serve
 
 # dev: backend + Vite dev server (HMR) in two terminals
