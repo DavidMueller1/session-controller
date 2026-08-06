@@ -1,5 +1,8 @@
 export type SessionSource = "cli" | "desktop";
 
+/** where an aircraft's live `state` came from (hook = best, inferred = slow fallback) */
+export type StateSource = "hook" | "registry" | "inferred";
+
 export interface PrInfo {
   number: number;
   state: "OPEN" | "MERGED" | "CLOSED";
@@ -30,6 +33,7 @@ export interface Aircraft {
   firstSeenAt: number | null;
   lastActivityAt: number | null;
   state: ActivityState;
+  stateSource?: StateSource;
   stateSince?: number | null;
   lastEventSummary: string;
   linkedCliSessionId: string | null;

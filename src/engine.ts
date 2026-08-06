@@ -22,7 +22,7 @@ function isCliTranscript(p: string): boolean {
  */
 function signature(list: DiscoveredSession[]): string {
   return list
-    .map((a) => `${a.id}:${a.state}:${a.lastActivityAt ?? 0}:${a.title ?? ""}:${a.lastEventSummary}:${a.pr?.state ?? ""}:${a.pr?.number ?? ""}:${a.pr?.isDraft ? 1 : 0}:${a.pr?.reviewDecision ?? ""}`)
+    .map((a) => `${a.id}:${a.state}:${a.stateSource ?? ""}:${a.lastActivityAt ?? 0}:${a.title ?? ""}:${a.lastEventSummary}:${a.pr?.state ?? ""}:${a.pr?.number ?? ""}:${a.pr?.isDraft ? 1 : 0}:${a.pr?.reviewDecision ?? ""}`)
     .sort()
     .join("|");
 }
@@ -106,20 +106,35 @@ export class Engine extends EventEmitter {
       const useCallsign = !!entry?.name && entry.nameSource !== "derived";
       let a = useCallsign ? { ...a0, title: entry!.name } : a0;
 
+      // Track which signal actually decided `state`, in ascending priority. Starts as
+      // the transcript-timing inference (the ~8s-grace fallback), then upgrades as a
+      // more authoritative source overrides it below.
+      let stateSource: "hook" | "registry" | "inferred" = "inferred";
+
       // Registry `status` is Claude Code's own live signal — authoritative for CLI
       // sessions, so we trust it over transcript-timing inference: busy => working,
       // idle => waiting on you. Desktop-run sessions report null status; those fall
       // back to the inferred state. This is what makes states exact without hooks.
-      if (entry?.status === "busy") a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
-      else if (entry?.status === "idle") a = { ...a, state: "needs-input" };
+      if (entry?.status === "busy") {
+        a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
+        stateSource = "registry";
+      } else if (entry?.status === "idle") {
+        a = { ...a, state: "needs-input" };
+        stateSource = "registry";
+      }
 
       // Hooks are the most reliable live signal — they fire on Stop / UserPromptSubmit /
       // tool use regardless of desktop-vs-terminal or build (newer desktop builds no
       // longer publish registry `status`). A fresh hook state wins over both.
       const hs = this.hookState.get(a.id);
       if (hs && now - hs.ts < CONFIG.hookStaleMs) {
-        if (hs.state === "working") a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
-        else if (hs.state === "needs-input") a = { ...a, state: "needs-input" };
+        if (hs.state === "working") {
+          a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
+          stateSource = "hook";
+        } else if (hs.state === "needs-input") {
+          a = { ...a, state: "needs-input" };
+          stateSource = "hook";
+        }
       }
 
       // stateSince: the moment this aircraft entered its current state. It drives the
@@ -130,7 +145,7 @@ export class Engine extends EventEmitter {
       const prev = this.stateSince.get(a.id);
       const since = prev && prev.state === a.state ? prev.since : prev ? now : a.lastActivityAt ?? now;
       this.stateSince.set(a.id, { state: a.state, since });
-      return { ...a, stateSince: since, pr: this.prById.get(a.id) ?? null };
+      return { ...a, stateSource, stateSince: since, pr: this.prById.get(a.id) ?? null };
     });
     for (const id of [...this.stateSince.keys()]) if (!seen.has(id)) this.stateSince.delete(id);
 

@@ -23,6 +23,19 @@ const age = computed(() => {
   return formatAge(since ? props.now - since : null);
 });
 const surfaces = computed(() => props.aircraft.surfaces ?? [props.aircraft.source]);
+
+// signal source → a *very* subtle tint on the surface icons, so you can spot at a glance
+// which sessions are on the slow inferred path vs. the live hook/registry signals.
+const SOURCE_TINT: Record<string, { hue: string; mix: string; label: string }> = {
+  hook: { hue: "#3fb950", mix: "26%", label: "live via hooks" },
+  registry: { hue: "#58a6ff", mix: "26%", label: "live via Claude Code registry" },
+  inferred: { hue: "#e0a92e", mix: "24%", label: "inferred from transcript (≈8s delay)" },
+};
+const sourceTint = computed(() => SOURCE_TINT[props.aircraft.stateSource ?? "inferred"] ?? null);
+const surfaceColor = computed(() =>
+  sourceTint.value ? `color-mix(in srgb, ${sourceTint.value.hue} ${sourceTint.value.mix}, var(--text-faint))` : "var(--text-faint)",
+);
+const surfaceTitle = computed(() => (sourceTint.value ? `state ${sourceTint.value.label}` : ""));
 const spineColor = computed(() => (landed.value ? LANDED_COLOR : parked.value ? "var(--amber-deep)" : meta.value.color));
 
 // context-usage ring
@@ -116,8 +129,8 @@ function commitNote() {
         <div class="act">{{ aircraft.lastEventSummary }}</div>
 
         <div class="foot">
-          <i v-if="surfaces.includes('cli')" class="ti ti-terminal-2" title="terminal"></i>
-          <i v-if="surfaces.includes('desktop')" class="ti ti-device-desktop" title="desktop"></i>
+          <i v-if="surfaces.includes('cli')" class="ti ti-terminal-2" :style="{ color: surfaceColor }" :title="'terminal · ' + surfaceTitle"></i>
+          <i v-if="surfaces.includes('desktop')" class="ti ti-device-desktop" :style="{ color: surfaceColor }" :title="'desktop · ' + surfaceTitle"></i>
           <a v-if="pr" class="pr" :href="pr.url" target="_blank" rel="noreferrer" :style="{ color: prColor, borderColor: prColor }" :title="prTitle">
             <i class="ti" :class="prIcon"></i>#{{ pr.number }}
           </a>

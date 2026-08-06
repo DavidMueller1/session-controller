@@ -1,5 +1,14 @@
 export type SessionSource = "cli" | "desktop";
 
+/**
+ * Where an aircraft's live `state` actually came from, in priority order:
+ * - "hook"     → our Claude Code hooks (most reliable, near-instant)
+ * - "registry" → Claude Code's own live busy/idle signal
+ * - "inferred" → transcript-timing inference (the ~8s-grace fallback path)
+ * Surfaced so the UI can flag which sessions are on the slow inferred path.
+ */
+export type StateSource = "hook" | "registry" | "inferred";
+
 /** Anthropic/Claude service status, from the public Statuspage API (status.claude.com) */
 export interface AnthropicStatus {
   /** overall: none | minor | major | critical */
@@ -85,6 +94,8 @@ export interface DiscoveredSession {
   /** timestamp of the last transcript event — used INTERNALLY for MIA/dormant timing, not shown */
   lastActivityAt: number | null;
   state: ActivityState;
+  /** where `state` came from (hook / registry / inferred) — drives the signal-source tint */
+  stateSource?: StateSource;
   /** when the aircraft entered its current state — drives the displayed timer + ordering
    *  (so tool calls / thinking don't reset the clock or reshuffle the board) */
   stateSince?: number | null;
