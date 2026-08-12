@@ -17,6 +17,9 @@ export interface RegistryEntry {
   entrypoint: string | null;
   pid: number | null;
   cwd: string | null;
+  /** file mtime — when Claude Code last wrote this entry; used to tell whether the
+   *  transcript has since moved on past a stale `idle` status */
+  mtimeMs: number;
 }
 
 export function isRegistryFile(p: string): boolean {
@@ -37,6 +40,12 @@ export async function parseRegistryFile(filePath: string): Promise<RegistryEntry
     return null;
   }
   if (!o || typeof o.sessionId !== "string") return null;
+  let mtimeMs = 0;
+  try {
+    mtimeMs = (await fs.stat(filePath)).mtimeMs;
+  } catch {
+    /* fall back to 0 (treated as "no fresh write" — never suppresses the transcript) */
+  }
   return {
     sessionId: o.sessionId,
     name: typeof o.name === "string" && o.name.trim() ? o.name.trim() : null,
@@ -45,5 +54,6 @@ export async function parseRegistryFile(filePath: string): Promise<RegistryEntry
     entrypoint: typeof o.entrypoint === "string" ? o.entrypoint : null,
     pid: typeof o.pid === "number" ? o.pid : null,
     cwd: typeof o.cwd === "string" ? o.cwd : null,
+    mtimeMs,
   };
 }

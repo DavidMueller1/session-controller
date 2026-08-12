@@ -149,6 +149,16 @@ export class Engine extends EventEmitter {
       // more authoritative source overrides it below.
       let stateSource: "hook" | "registry" | "inferred" = "inferred";
 
+      // Has the user acted since a "waiting on you" signal fired? A `needs-input` hook or
+      // `idle` status keeps pinning Holding for the several seconds between your answer and
+      // Claude's next tool call. But the transcript already knows: once it has an event
+      // NEWER than that signal that reads as active work (a tool result / new turn →
+      // deriveCli returns "working"), stop trusting the stale waiting-signal and let the
+      // transcript flip the strip back to In-flight immediately.
+      const txnWorking = a0.state === "working";
+      const movedOnPast = (signalTs: number | undefined): boolean =>
+        txnWorking && a0.lastActivityAt != null && signalTs != null && a0.lastActivityAt > signalTs + 250;
+
       // Registry `status` is Claude Code's own live signal — authoritative for CLI
       // sessions, so we trust it over transcript-timing inference: busy => working,
       // idle => waiting on you. Desktop-run sessions report null status; those fall
@@ -156,7 +166,7 @@ export class Engine extends EventEmitter {
       if (!pidDead && entry?.status === "busy") {
         a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
         stateSource = "registry";
-      } else if (!pidDead && entry?.status === "idle") {
+      } else if (!pidDead && entry?.status === "idle" && !movedOnPast(entry.mtimeMs)) {
         a = { ...a, state: "needs-input" };
         stateSource = "registry";
       }
@@ -175,7 +185,7 @@ export class Engine extends EventEmitter {
         if (hs.state === "working") {
           a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
           stateSource = "hook";
-        } else if (hs.state === "needs-input") {
+        } else if (hs.state === "needs-input" && !movedOnPast(hs.ts)) {
           a = { ...a, state: "needs-input" };
           stateSource = "hook";
         }
