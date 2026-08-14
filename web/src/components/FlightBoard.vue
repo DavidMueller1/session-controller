@@ -26,7 +26,7 @@ const emit = defineEmits<{
 // Debug (Shift+D) is owned by App: it rewrites each aircraft's STATE so the whole board
 // reacts — header counters, strip colours, and these lanes. The `aircraft` we receive
 // already carry the overrides; here we just render them and forward the debug controls up.
-const LANE_COLOR: Record<string, string> = { inflight: "#3fb950", holding: "#e0a92e", parked: "#3fb5aa", landed: "#4cc38a", mia: "#7d8590", cold: "#4d5560" };
+const LANE_COLOR: Record<string, string> = { inflight: "#3fb950", holding: "#e0a92e", parked: "#e0823c", landed: "#4cc38a", mia: "#7d8590", cold: "#4d5560" };
 
 const orderKey = (a: Aircraft) => a.stateSince ?? a.lastActivityAt ?? 0;
 const byLane = (lane: string) => props.aircraft.filter((a) => laneOf(a) === lane).sort((a, b) => orderKey(b) - orderKey(a));

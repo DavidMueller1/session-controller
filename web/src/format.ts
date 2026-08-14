@@ -28,7 +28,7 @@ export function isMia(a: Aircraft): boolean {
 }
 
 export const LANDED_COLOR = "#2f6f4f";
-export const PARKED_COLOR = "#3fb5aa"; // keep in sync with --parked in style.css
+export const PARKED_COLOR = "#e0823c"; // keep in sync with --parked in style.css
 
 export function laneOf(a: Aircraft): Lane {
   if (a.state === "working") return "inflight"; // a thinking session is ALWAYS in-flight
