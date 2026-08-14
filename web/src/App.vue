@@ -36,8 +36,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 // downstream reacts: the header split-flap counters roll, strip colours change, and the
 // flight-layer animates the moves. Actions are driven from the FlightBoard's debug bar
 // (Step/Shuffle/Reset) or by clicking a strip to cycle it.
-type DebugState = "working" | "needs-input" | "error" | "approach" | "landed" | "mia" | "wrapped";
-const DEBUG_STATES: DebugState[] = ["working", "needs-input", "error", "approach", "landed", "mia", "wrapped"];
+type DebugState = "working" | "needs-input" | "error" | "parked" | "approach" | "landed" | "mia" | "wrapped";
+const DEBUG_STATES: DebugState[] = ["working", "needs-input", "error", "parked", "approach", "landed", "mia", "wrapped"];
 const debugOverride = ref<Record<string, DebugState>>({});
 watch(debug, (on) => { if (!on) debugOverride.value = {}; });
 
@@ -47,7 +47,8 @@ function applyDebug(a: Aircraft, ds: DebugState): Aircraft {
     case "working": return { ...base, state: "working" };
     case "needs-input": return { ...base, state: "needs-input" };
     case "error": return { ...base, state: "error" };
-    case "approach": return { ...base, state: "needs-input", approach: true };
+    case "parked": return { ...base, state: "needs-input", note: "parked (debug)" };
+    case "approach": return { ...base, state: "needs-input", approach: true }; // Needs you + Approach badge
     case "landed": return { ...base, state: "needs-input", landed: true };
     case "mia": return { ...base, state: "idle" };
     case "wrapped": return { ...base, state: "suspected-done" };
@@ -113,9 +114,9 @@ const byLane = (lane: string) =>
 
 const inflight = computed(() => byLane("inflight"));
 const mia = computed(() => byLane("mia"));
-const approach = computed(() => byLane("approach"));
+const parked = computed(() => byLane("parked"));
 const landed = computed(() => byLane("landed"));
-// holding: flashing "needs you" strips first, parked ones after
+// holding: everything actively flashing "needs you" (parked ones live in their own lane now)
 const holding = computed(() =>
   byLane("holding").sort((a, b) => Number(isFlashing(b)) - Number(isFlashing(a))),
 );
@@ -256,8 +257,8 @@ function onOpen(id: string) { open(id); }
       <div class="stats">
         <span class="stat"><FlipCounter :value="holding.length" color="var(--amber)" /> holding</span>
         <span class="stat"><FlipCounter :value="inflight.length" color="var(--green)" /> in-flight</span>
+        <span v-if="parked.length" class="stat"><FlipCounter :value="parked.length" color="var(--parked)" /> parked</span>
         <span v-if="mia.length" class="stat"><FlipCounter :value="mia.length" color="var(--gray)" /> mia</span>
-        <span class="stat"><FlipCounter :value="approach.length" color="var(--blue)" /> approach</span>
         <span v-if="landed.length" class="stat"><FlipCounter :value="landed.length" color="#4cc38a" /> landed</span>
         <button
           class="bell"
@@ -316,7 +317,7 @@ function onOpen(id: string) { open(id); }
           <div v-if="!inflight.length" class="empty">no active sessions</div>
         </div>
 
-        <!-- flexible middle: holding / approach absorb the height and scroll internally -->
+        <!-- flexible middle: holding / parked absorb the height and scroll internally -->
         <div class="lanes">
           <section class="lane holding-lane">
             <div class="lane-h"><i class="ti ti-circle-filled" style="color: var(--amber)"></i>Holding <span class="n">{{ holding.length }}</span></div>
@@ -327,10 +328,10 @@ function onOpen(id: string) { open(id); }
           </section>
 
           <section class="lane">
-            <div class="lane-h"><i class="ti ti-circle-filled" style="color: var(--blue)"></i>Approach <span class="n">{{ approach.length }}</span></div>
+            <div class="lane-h"><i class="ti ti-circle-filled" style="color: var(--parked)"></i>Parked <span class="n">{{ parked.length }}</span></div>
             <div v-fade class="stack">
-              <Strip v-for="a in approach" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
-              <div v-if="!approach.length" class="empty">clear</div>
+              <Strip v-for="a in parked" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
+              <div v-if="!parked.length" class="empty">clear</div>
             </div>
           </section>
         </div>

@@ -28,17 +28,21 @@ export function isMia(a: Aircraft): boolean {
 }
 
 export const LANDED_COLOR = "#2f6f4f";
+export const PARKED_COLOR = "#3fb5aa"; // keep in sync with --parked in style.css
 
 export function laneOf(a: Aircraft): Lane {
   if (a.state === "working") return "inflight"; // a thinking session is ALWAYS in-flight
   if (a.landed) return "landed"; // human decision (App splits Landed→Cold by what fits on screen)
-  if (a.approach) return "approach"; // merged PR → ready to land
-  return STATE[a.state]?.lane ?? "mia"; // needs-input→holding · everything else quiet→MIA rail
+  if (isParked(a)) return "parked"; // a "needs you" strip you've triaged (added a note) → set aside
+  return STATE[a.state]?.lane ?? "mia"; // needs-input/error→holding · everything else quiet→MIA rail
+  // NB: approach (merged PR) is no longer a lane — it's a badge (see Strip.vue) that can ride
+  // on any strip, e.g. a Holding strip that's also "Approach".
 }
 
-/** a needs-input aircraft with a note is "parked" (steady, triaged) rather than flashing */
+/** a "needs you" aircraft you've triaged (added a note) is "parked" — set aside in its own
+ *  lane, steady rather than flashing for attention */
 export function isParked(a: Aircraft): boolean {
-  return a.state === "needs-input" && !!a.note;
+  return (a.state === "needs-input" || a.state === "error") && !!a.note && !a.landed;
 }
 
 export function isFlashing(a: Aircraft): boolean {

@@ -8,7 +8,7 @@ import type { Aircraft, Lane } from "../types";
 // between lanes. A lane change shrinks the strip into a small target-coloured travel token
 // sized to fit the taxiway, routes it ALONG the corridor rails (never over resting strips)
 // and expands it into the destination lane — while that lane's strips reflow to make way.
-// Holding/Approach dock to the SIDE (vertical corridors); In-flight/Landed dock top/bottom.
+// Holding/Parked dock to the SIDE (vertical corridors); In-flight/Landed dock top/bottom.
 
 const props = defineProps<{ aircraft: Aircraft[]; now: number; debug?: boolean }>();
 const emit = defineEmits<{
@@ -26,13 +26,13 @@ const emit = defineEmits<{
 // Debug (Shift+D) is owned by App: it rewrites each aircraft's STATE so the whole board
 // reacts — header counters, strip colours, and these lanes. The `aircraft` we receive
 // already carry the overrides; here we just render them and forward the debug controls up.
-const LANE_COLOR: Record<string, string> = { inflight: "#3fb950", holding: "#e0a92e", approach: "#58a6ff", landed: "#4cc38a", mia: "#7d8590", cold: "#4d5560" };
+const LANE_COLOR: Record<string, string> = { inflight: "#3fb950", holding: "#e0a92e", parked: "#3fb5aa", landed: "#4cc38a", mia: "#7d8590", cold: "#4d5560" };
 
 const orderKey = (a: Aircraft) => a.stateSince ?? a.lastActivityAt ?? 0;
 const byLane = (lane: string) => props.aircraft.filter((a) => laneOf(a) === lane).sort((a, b) => orderKey(b) - orderKey(a));
 const inflight = computed(() => byLane("inflight"));
 const holding = computed(() => byLane("holding").sort((a, b) => Number(isFlashing(b)) - Number(isFlashing(a))));
-const approach = computed(() => byLane("approach"));
+const parked = computed(() => byLane("parked"));
 const landed = computed(() => byLane("landed"));
 const mia = computed(() => byLane("mia"));
 
@@ -96,7 +96,7 @@ const cap = computed(() => {
   return {
     inflight: l.infRows * l.cols,
     holding: midCap,
-    approach: midCap,
+    parked: midCap,
     landed: l.cols,
     mia: Math.max(1, Math.floor((l.H - 6 - TOP + GAP) / (RAIL_H + GAP))),
   };
@@ -117,7 +117,7 @@ const rects = computed<Record<string, Rect>>(() => {
   holding.value.slice(0, c.holding).forEach((a, i) => { r[a.id] = { x: l.cardX, y: l.midTop + i * ROW_H, w: holdW, h: ROW_H - GAP }; });
   const appCardX = l.appX + LANE_PAD + LABEL_W + LGAP;
   const appW = l.bandRight - appCardX;
-  approach.value.slice(0, c.approach).forEach((a, i) => { r[a.id] = { x: appCardX, y: l.midTop + i * ROW_H, w: appW, h: ROW_H - GAP }; });
+  parked.value.slice(0, c.parked).forEach((a, i) => { r[a.id] = { x: appCardX, y: l.midTop + i * ROW_H, w: appW, h: ROW_H - GAP }; });
   landed.value.slice(0, c.landed).forEach((a, i) => { r[a.id] = { x: l.cardX + i * (CARD_W + GAP), y: l.landedY, w: CARD_W, h: CARD_H }; });
   const miaCardX = LABEL_W + LGAP;
   mia.value.slice(0, c.mia).forEach((a, i) => { r[a.id] = { x: miaCardX, y: TOP + i * (RAIL_H + GAP), w: RAIL_W - LANE_PAD - miaCardX, h: RAIL_H }; });
@@ -131,7 +131,7 @@ const zones = computed(() => {
     { k: "MIA", x: 0, y: TOP, h: l.H - TOP - 6, c: "var(--gray)" },
     { k: "In-flight", x: l.laneL, y: TOP, h: l.corH1y - LANE_PAD - TOP, c: "var(--green)" },
     { k: "Holding", x: l.laneL, y: l.midTop, h: midH, c: "var(--amber)" },
-    { k: "Approach", x: l.appX + LANE_PAD, y: l.midTop, h: midH, c: "var(--blue)" },
+    { k: "Parked", x: l.appX + LANE_PAD, y: l.midTop, h: midH, c: "var(--parked)" },
     { k: "Landed", x: l.laneL, y: l.landedY, h: CARD_H, c: "#4cc38a" },
   ];
 });
@@ -192,7 +192,7 @@ const overflow = computed<Record<string, Aircraft[]>>(() => {
   return {
     inflight: inflight.value.slice(c.inflight),
     holding: holding.value.slice(c.holding),
-    approach: approach.value.slice(c.approach),
+    parked: parked.value.slice(c.parked),
     landed: landed.value.slice(c.landed),
     mia: mia.value.slice(c.mia),
   };
@@ -203,14 +203,14 @@ function drawerAnchor(k: string): Pt {
   const l = L.value;
   const c = cap.value;
   if (k === "holding") return { x: l.cardX + 30, y: l.midTop + c.holding * ROW_H + 4 };
-  if (k === "approach") return { x: l.appX + LANE_PAD + LABEL_W + LGAP + 30, y: l.midTop + c.approach * ROW_H + 4 };
+  if (k === "parked") return { x: l.appX + LANE_PAD + LABEL_W + LGAP + 30, y: l.midTop + c.parked * ROW_H + 4 };
   if (k === "mia") return { x: LABEL_W + LGAP + 30, y: TOP + c.mia * (RAIL_H + GAP) + 4 };
   if (k === "landed") return { x: Math.min(l.cardX + c.landed * (CARD_W + GAP), l.bandRight - 52), y: l.landedY + CARD_H / 2 };
   return { x: l.bandRight - 52, y: TOP + (l.infRows - 1) * (CARD_H + GAP) + CARD_H / 2 }; // inflight
 }
 
 const drawers = computed(() =>
-  (["inflight", "holding", "approach", "landed", "mia"] as const)
+  (["inflight", "holding", "parked", "landed", "mia"] as const)
     .filter((k) => overflow.value[k].length)
     .map((k) => ({ k, n: overflow.value[k].length, ...drawerAnchor(k), color: LANE_COLOR[k] })),
 );
@@ -225,7 +225,7 @@ function dock(lane: Lane, r: Rect): { p: Pt; railName: string } {
   const cy = r.y + r.h / 2;
   if (lane === "inflight") return { p: { x: cx, y: g.yTop }, railName: "hTop" };
   if (lane === "landed") return { p: { x: cx, y: g.yBot }, railName: "hBot" };
-  if (lane === "approach") return { p: { x: g.xMidV, y: cy }, railName: "vMid" };
+  if (lane === "parked") return { p: { x: g.xMidV, y: cy }, railName: "vMid" };
   return { p: { x: g.xRailV, y: cy }, railName: "vRail" }; // holding + mia dock to the V-rail
 }
 

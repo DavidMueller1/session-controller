@@ -46,7 +46,7 @@ export interface Aircraft {
   offline?: boolean;
 }
 
-export type Lane = "inflight" | "mia" | "holding" | "approach" | "cold" | "landed";
+export type Lane = "inflight" | "mia" | "holding" | "parked" | "cold" | "landed";
 
 export interface AnthropicStatus {
   indicator: string;

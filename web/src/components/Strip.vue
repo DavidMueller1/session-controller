@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, nextTick } from "vue";
 import type { Aircraft } from "../types";
-import { STATE, LANDED_COLOR, isParked, isFlashing, isMia, formatAge, projectName } from "../format";
+import { STATE, LANDED_COLOR, PARKED_COLOR, isParked, isFlashing, isMia, formatAge, projectName } from "../format";
 
 const props = defineProps<{ aircraft: Aircraft; now: number }>();
 const emit = defineEmits<{
@@ -17,6 +17,9 @@ const landed = computed(() => !!props.aircraft.landed);
 const parked = computed(() => isParked(props.aircraft) && !landed.value);
 const flashing = computed(() => isFlashing(props.aircraft) && !landed.value);
 const mia = computed(() => isMia(props.aircraft));
+// "Approach" is now a flag (merged PR → ready to land), not a lane — a badge that can ride
+// on any non-landed strip, alongside its state badge (e.g. Needs you + Approach).
+const approaching = computed(() => !!props.aircraft.approach && !landed.value);
 // time in current state (reset only on state change), not time since last event
 const age = computed(() => {
   const since = props.aircraft.stateSince ?? props.aircraft.lastActivityAt;
@@ -32,7 +35,7 @@ const SOURCE_LABEL: Record<string, string> = {
   inferred: "inferred from transcript (≈8s delay)",
 };
 const surfaceTitle = computed(() => `state ${SOURCE_LABEL[props.aircraft.stateSource ?? "inferred"]}`);
-const spineColor = computed(() => (landed.value ? LANDED_COLOR : parked.value ? "var(--amber-deep)" : meta.value.color));
+const spineColor = computed(() => (landed.value ? LANDED_COLOR : parked.value ? PARKED_COLOR : meta.value.color));
 
 // context-usage ring
 const ctxPct = computed(() => props.aircraft.contextPct ?? null);
@@ -95,7 +98,7 @@ function commitNote() {
         <span class="title" role="button" tabindex="0" title="Open this session's window" @click="emit('open', aircraft.id)" @keydown.enter="emit('open', aircraft.id)">{{ aircraft.title || aircraft.id }}</span>
         <span v-if="landed" class="badge" style="background: #16301f; color: #4cc38a"><i class="ti ti-check"></i> Landed<button class="badge-x" aria-label="undo landing" title="undo landing" @click="emit('unland', aircraft.id)"><i class="ti ti-x"></i></button></span>
         <span v-else-if="mia" class="badge" style="background: #1c222c; color: #8b98a8" title="no activity for 5+ min — still flying, but lost contact"><i class="ti ti-clock"></i> MIA</span>
-        <span v-else-if="parked" class="badge" style="background: var(--amber-bg); color: var(--amber)">Parked</span>
+        <span v-else-if="parked" class="badge" style="background: var(--parked-bg); color: var(--parked)"><i class="ti ti-parking"></i> Parked</span>
         <span
           v-else-if="aircraft.state === 'needs-input' || aircraft.state === 'error'"
           class="badge"
@@ -106,6 +109,8 @@ function commitNote() {
           class="badge dim"
           :title="'lost contact — ' + meta.label.toLowerCase()"
         >{{ meta.label }}</span>
+        <!-- Approach rides alongside the state badge: a merged PR ready to land -->
+        <span v-if="approaching" class="badge" style="background: rgba(88,166,255,0.14); color: var(--blue)" title="merged PR — cleared to land"><i class="ti ti-plane-inflight"></i> Approach</span>
         <svg v-if="ctxPct != null" class="ctx" viewBox="0 0 18 18" :aria-label="ctxTitle"><title>{{ ctxTitle }}</title>
           <circle cx="9" cy="9" :r="CTX_R" fill="none" stroke="var(--border)" stroke-width="2.5" />
           <circle cx="9" cy="9" :r="CTX_R" fill="none" :stroke="ctxColor" stroke-width="2.5" stroke-linecap="round"
