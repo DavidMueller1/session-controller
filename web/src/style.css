@@ -2,7 +2,8 @@
   --bg: #0c1016;
   --panel: #10151c;
   --strip: #151b23;
-  --strip-parked: #1a1c18;
+  /* parked strips get a subtle warm wash of the Parked colour (tracks --parked) */
+  --strip-parked: color-mix(in srgb, var(--parked) 9%, var(--strip));
   --border: #232b35;
   --border-soft: #1c232c;
   --text: #d7dde5;

@@ -135,7 +135,7 @@ function commitNote() {
           <a v-if="pr" class="pr" :href="pr.url" target="_blank" rel="noreferrer" :style="{ color: prColor, borderColor: prColor }" :title="prTitle">
             <i class="ti" :class="prIcon"></i>#{{ pr.number }}
           </a>
-          <span class="age" :style="{ color: landed ? LANDED_COLOR : meta.color }">{{ age }}</span>
+          <span class="age" :style="{ color: landed ? LANDED_COLOR : parked ? PARKED_COLOR : meta.color }">{{ age }}</span>
         </div>
       </div>
 
