@@ -1,11 +1,10 @@
 import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import path from "node:path";
-import chokidar, { type FSWatcher } from "chokidar";
 import { CONFIG } from "./config.js";
 import { correlate } from "./correlate.js";
 import { resolve } from "./deriveState.js";
-import { parseCliTranscript } from "./parseCli.js";
+import { type CliCursor, parseCliIncremental } from "./parseCli.js";
 import { isDesktopSessionFile, parseDesktopSession } from "./parseDesktop.js";
 import { fetchPr } from "./pr.js";
 import { type HookState, isHookStateFile, parseHookStateFile } from "./hookState.js";
@@ -51,6 +50,15 @@ function signature(list: DiscoveredSession[]): string {
  */
 export class Engine extends EventEmitter {
   private facts = new Map<string, SessionFacts>();
+  /** last (size, mtimeMs) we PARSED per file. Lets us skip re-reading an unchanged file:
+   *  a `stat` is cheap, but a `read` triggers synchronous AV content-scanning of the whole
+   *  file — and on a home dir that isn't AV-excluded that scan dominates CPU. Without this,
+   *  `reconcile` re-reads every transcript (hundreds of MB) each minute even when idle.
+   *  Only set after a successful parse, so a failed read is retried. */
+  private fileMeta = new Map<string, { size: number; mtimeMs: number }>();
+  /** per-transcript incremental-parse cursor, so a `change` reads only appended bytes
+   *  instead of re-reading the whole (often tens-of-MB) file — the dominant scan cost */
+  private cliCursors = new Map<string, CliCursor>();
   /** live session registry, keyed by file path (a few running sessions) */
   private registry = new Map<string, RegistryEntry>();
   /** live per-session state from our Claude Code hooks, keyed by sessionId */
@@ -65,8 +73,6 @@ export class Engine extends EventEmitter {
   private prById = new Map<string, PrInfo | null>();
   private current: DiscoveredSession[] = [];
   private lastSig = "";
-  private watcher?: FSWatcher;
-  private debounce?: NodeJS.Timeout;
   private intervals: NodeJS.Timeout[] = [];
 
   aircraft(): DiscoveredSession[] {
@@ -90,7 +96,12 @@ export class Engine extends EventEmitter {
   }
 
   private async parseFile(p: string): Promise<SessionFacts | null> {
-    if (isCliTranscript(p)) return parseCliTranscript(p);
+    if (isCliTranscript(p)) {
+      const res = await parseCliIncremental(p, this.cliCursors.get(p) ?? null);
+      if (!res) return null;
+      this.cliCursors.set(p, res.cursor);
+      return res.facts;
+    }
     if (isDesktopSessionFile(p)) return parseDesktopSession(p);
     return null;
   }
@@ -106,13 +117,37 @@ export class Engine extends EventEmitter {
       if (h) this.hookState.set(h.sessionId, h);
       return;
     }
+    // Skip the read entirely when the file is unchanged since we last parsed it. This is
+    // the hot path: `reconcile` re-visits every transcript each minute and, without this,
+    // re-reads them all (hundreds of MB) even when nothing changed.
+    const meta = await this.statIfChanged(p);
+    if (!meta) return; // unchanged (or vanished) → keep cached facts, no content read
     const f = await this.parseFile(p);
-    if (f) this.facts.set(p, f);
+    if (f) {
+      this.facts.set(p, f);
+      this.fileMeta.set(p, meta);
+    }
+  }
+
+  /** current (size, mtimeMs) if the file changed since our last parse (or is new), else
+   *  null meaning "unchanged — don't read it". A missing/unreadable file also returns null
+   *  (the unlink watcher handles removal). */
+  private async statIfChanged(p: string): Promise<{ size: number; mtimeMs: number } | null> {
+    try {
+      const st = await fs.stat(p);
+      const prev = this.fileMeta.get(p);
+      if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return null;
+      return { size: st.size, mtimeMs: st.mtimeMs };
+    } catch {
+      return null;
+    }
   }
 
   private forget(p: string): void {
     this.facts.delete(p);
     this.registry.delete(p);
+    this.fileMeta.delete(p);
+    this.cliCursors.delete(p);
     if (isHookStateFile(p)) this.hookState.delete(path.basename(p, ".json"));
   }
 
@@ -232,22 +267,38 @@ export class Engine extends EventEmitter {
     this.recompute(true);
   }
 
-  private scheduleRecompute(): void {
-    if (this.debounce) clearTimeout(this.debounce);
-    this.debounce = setTimeout(() => this.recompute(), CONFIG.renderDebounceMs);
+  private underAny(p: string, roots: string[]): boolean {
+    return roots.some((r) => p === r || p.startsWith(r.endsWith(path.sep) ? r : r + path.sep));
   }
 
-  private async scanDir(dir: string): Promise<void> {
-    let entries: string[];
-    try {
-      entries = await fs.readdir(dir, { recursive: true } as any);
-    } catch {
-      return; // dir may not exist (e.g. desktop app never used)
-    }
-    const targets = entries
-      .map((e) => path.join(dir, e))
-      .filter((p) => isCliTranscript(p) || isDesktopSessionFile(p) || isRegistryFile(p) || isHookStateFile(p));
-    await Promise.all(targets.map((p) => this.upsert(p)));
+  /**
+   * Poll a set of source dirs: enumerate matching files, upsert each (the stat-guard makes
+   * unchanged files free and reads are incremental), then forget anything we tracked under
+   * these roots that has since vanished — e.g. a registry file removed on session exit.
+   * This replaces a recursive fs-watcher, which on an AV-scanned home dir pegged the
+   * on-access scanner by re-touching the whole tree on every write.
+   */
+  private async syncRoots(roots: string[]): Promise<void> {
+    const present = new Set<string>();
+    await Promise.all(
+      roots.map(async (dir) => {
+        let entries: string[];
+        try {
+          entries = await fs.readdir(dir, { recursive: true } as any);
+        } catch {
+          return; // dir may not exist (e.g. desktop app never used)
+        }
+        const targets = entries
+          .map((e) => path.join(dir, e))
+          .filter((p) => isCliTranscript(p) || isDesktopSessionFile(p) || isRegistryFile(p) || isHookStateFile(p));
+        for (const p of targets) present.add(p);
+        await Promise.all(targets.map((p) => this.upsert(p)));
+      }),
+    );
+    // prune vanished files we still track under these roots (hookState is keyed by id → path)
+    const tracked = new Set<string>([...this.facts.keys(), ...this.registry.keys()]);
+    for (const id of this.hookState.keys()) tracked.add(path.join(CONFIG.hookStateDir, `${id}.json`));
+    for (const p of tracked) if (this.underAny(p, roots) && !present.has(p)) this.forget(p);
   }
 
   /** Prune our own tc-state files once they're older than hookStateGcMs, so terminal
@@ -279,44 +330,29 @@ export class Engine extends EventEmitter {
     );
   }
 
-  /** one-shot: full scan + derive, no watchers or timers (used by `once`) */
+  /** live source dirs, split by how fast they need polling */
+  private static readonly LIVE_ROOTS = [CONFIG.hookStateDir, CONFIG.sessionsDir]; // tiny + latency-sensitive
+  private static readonly FILE_ROOTS = [CONFIG.cliProjectsDir, ...CONFIG.desktopSessionDirs]; // big transcript trees
+
+  /** one-shot: full scan + derive, no timers (used by `once`) */
   async scan(): Promise<void> {
-    const roots = [CONFIG.cliProjectsDir, CONFIG.sessionsDir, CONFIG.hookStateDir, ...CONFIG.desktopSessionDirs];
-    await Promise.all(roots.map((r) => this.scanDir(r)));
+    await this.syncRoots([...Engine.LIVE_ROOTS, ...Engine.FILE_ROOTS]);
     this.recompute(true);
   }
 
-  /** long-running: scan, then watch + tick for live updates */
+  /** long-running: scan, then POLL + tick for live updates. We poll (stat, then read only
+   *  changed/appended bytes) rather than watch: a recursive fs-watcher over the AV-scanned
+   *  home dir pegs the on-access scanner as active sessions constantly write transcripts. */
   async start(): Promise<void> {
-    // make sure the hook-state dir exists so chokidar watches it from the start
     await fs.mkdir(CONFIG.hookStateDir, { recursive: true }).catch(() => {});
     await this.scan();
 
-    const roots = [CONFIG.cliProjectsDir, CONFIG.sessionsDir, CONFIG.hookStateDir, ...CONFIG.desktopSessionDirs];
-    this.watcher = chokidar.watch(roots, {
-      ignoreInitial: true,
-      persistent: true,
-      depth: 8,
-      // chokidar v4 dropped glob support — filter files by shape here instead
-      ignored: (p: string, stats?: { isFile(): boolean }) =>
-        stats?.isFile() === true && !isCliTranscript(p) && !isDesktopSessionFile(p) && !isRegistryFile(p) && !isHookStateFile(p),
-    });
-    this.watcher
-      .on("add", (p) => this.upsert(p).then(() => this.scheduleRecompute()))
-      .on("change", (p) => this.upsert(p).then(() => this.scheduleRecompute()))
-      .on("unlink", (p) => {
-        this.forget(p);
-        this.scheduleRecompute();
-      });
-
-    // fast tick: re-derive time-based state without disk I/O
+    // hook-state + registry: small + latency-sensitive (live state) → poll fast
+    this.intervals.push(setInterval(() => this.syncRoots(Engine.LIVE_ROOTS).then(() => this.recompute()), CONFIG.livePollMs));
+    // transcripts + desktop: the big trees → poll a little slower
+    this.intervals.push(setInterval(() => this.syncRoots(Engine.FILE_ROOTS).then(() => this.recompute()), CONFIG.filePollMs));
+    // fast tick: re-derive time-based state from cached facts, no disk I/O
     this.intervals.push(setInterval(() => this.recompute(), CONFIG.fastTickMs));
-    // safety net: occasionally re-read all files in case an fs event was missed
-    this.intervals.push(
-      setInterval(() => {
-        Promise.all([...this.facts.keys(), ...this.registry.keys()].map((p) => this.upsert(p))).then(() => this.recompute());
-      }, CONFIG.reconcileMs),
-    );
 
     // PR status: initial poll + slow refresh
     this.pollPrs();
@@ -330,7 +366,5 @@ export class Engine extends EventEmitter {
   async stop(): Promise<void> {
     this.intervals.forEach(clearInterval);
     this.intervals = [];
-    if (this.debounce) clearTimeout(this.debounce);
-    await this.watcher?.close();
   }
 }

@@ -20,7 +20,6 @@
     "@fastify/static": "^8.0.4",
     "@fastify/websocket": "^11.0.2",
     "better-sqlite3": "^11.8.1",
-    "chokidar": "^4.0.3",
     "fastify": "^5.2.1"
   },
   "devDependencies": {
@@ -30,6 +29,9 @@
     "typescript": "^5.7.2"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
   }
 }

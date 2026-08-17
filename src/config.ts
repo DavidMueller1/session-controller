@@ -50,12 +50,15 @@ export const CONFIG = {
   /** no activity for this long => "cold" (dormant). NOT landed. Overnight-safe. */
   dormantMs: 2 * 60 * 60_000,
 
-  /** coalesce filesystem bursts before re-rendering */
-  renderDebounceMs: 150,
   /** re-derive time-based state (no disk I/O) this often — the key to snappy transitions */
   fastTickMs: 1_000,
-  /** safety-net full re-read of all files, in case a filesystem event was missed */
-  reconcileMs: 60_000,
+  /** We POLL the source dirs rather than watch them: a recursive fs-watcher over the
+   *  AV-scanned ~/.claude tree pegs the on-access scanner as active sessions write
+   *  transcripts. Polling with `stat` is cheap and reads are guarded + incremental.
+   *  Small live dirs (hook-state + registry) poll fast for snappy state; the big
+   *  transcript trees poll a little slower. */
+  livePollMs: 1_000,
+  filePollMs: 3_000,
 
   /** API server (Phase 2) */
   apiPort: Number(process.env.PORT ?? 4317),

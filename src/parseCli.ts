@@ -74,71 +74,145 @@ function cleanUserText(s: string): string {
   return oneLine.replace(/^Caveat:.*?\.\s*/i, "").trim();
 }
 
-export async function parseCliTranscript(filePath: string): Promise<SessionFacts | null> {
-  let raw: string;
+/**
+ * Incremental parse state for one transcript. Transcripts are append-only JSONL, and the
+ * derived facts depend only on first-seen fields + the running tail — so we keep a byte
+ * cursor and, on each update, read ONLY the appended bytes instead of the whole file.
+ * That matters a lot when the file (and the AV scan it triggers on every read) is tens of
+ * MB and an active session appends constantly. `carry` holds a not-yet-terminated trailing
+ * line, kept in memory so we never re-read it from disk.
+ */
+export interface CliCursor {
+  /** byte position just past the last fully-consumed (newline-terminated) line */
+  offset: number;
+  /** decoded partial line after `offset` (no trailing newline yet) */
+  carry: string;
+  sessionId: string | null;
+  cwd: string | null;
+  branch: string | null;
+  aiTitle: string | null;
+  firstUserText: string | null;
+  firstTs: number | null;
+  contextTokens: number | null;
+  lastActivityAt: number | null;
+  tail: NormEvent | null;
+}
+
+function emptyCursor(): CliCursor {
+  return {
+    offset: 0,
+    carry: "",
+    sessionId: null,
+    cwd: null,
+    branch: null,
+    aiTitle: null,
+    firstUserText: null,
+    firstTs: null,
+    contextTokens: null,
+    lastActivityAt: null,
+    tail: null,
+  };
+}
+
+/** fold one transcript line into the running cursor (first-wins ids, last-wins tail) */
+function ingestLine(c: CliCursor, s: string): void {
+  let o: any;
   try {
-    raw = await fs.readFile(filePath, "utf8");
+    o = JSON.parse(s);
   } catch {
-    return null;
+    return; // defensive: never crash on a malformed/partial line
   }
+  if (o.sessionId && !c.sessionId) c.sessionId = o.sessionId;
+  if (typeof o.cwd === "string" && o.cwd) c.cwd = o.cwd;
+  if (typeof o.gitBranch === "string" && o.gitBranch) c.branch = o.gitBranch;
+  if (o.type === "ai-title" && o.aiTitle) c.aiTitle = String(o.aiTitle);
 
-  const events: NormEvent[] = [];
-  let sessionId: string | null = null;
-  let cwd: string | null = null;
-  let branch: string | null = null;
-  let aiTitle: string | null = null;
-  let firstUserText: string | null = null;
-  let firstTs: number | null = null;
-  let contextTokens: number | null = null;
+  // context = prompt tokens of the most recent assistant turn (last one wins)
+  const u = o.type === "assistant" ? o.message?.usage : null;
+  if (u) c.contextTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
 
-  for (const line of raw.split("\n")) {
-    const s = line.trim();
-    if (!s) continue;
-    let o: any;
-    try {
-      o = JSON.parse(s);
-    } catch {
-      continue; // defensive: never crash on a malformed/partial line
-    }
-    if (o.sessionId && !sessionId) sessionId = o.sessionId;
-    if (typeof o.cwd === "string" && o.cwd) cwd = o.cwd;
-    if (typeof o.gitBranch === "string" && o.gitBranch) branch = o.gitBranch;
-    if (o.type === "ai-title" && o.aiTitle) aiTitle = String(o.aiTitle);
-
-    // context = prompt tokens of the most recent assistant turn (last one wins)
-    const u = o.type === "assistant" ? o.message?.usage : null;
-    if (u) {
-      contextTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
-    }
-
-    const ev = classify(o);
-    if (ev.ts != null && firstTs == null) firstTs = ev.ts;
-    if (ev.kind === "human" && !firstUserText) firstUserText = ev.summary.replace(/^you:\s*/, "");
-    events.push(ev);
+  const ev = classify(o);
+  if (ev.ts != null) {
+    if (c.firstTs == null) c.firstTs = ev.ts;
+    c.lastActivityAt = ev.ts; // last timed event wins
   }
+  if (ev.kind === "human" && !c.firstUserText) c.firstUserText = ev.summary.replace(/^you:\s*/, "");
+  if (CONVERSATIONAL.has(ev.kind)) c.tail = ev; // last conversational event wins
+}
 
-  if (!sessionId) sessionId = path.basename(filePath).replace(/\.jsonl$/, "");
-  const title = aiTitle ?? (firstUserText ? truncate(firstUserText, 60) : sessionId);
-
-  const timed = events.filter((e) => e.ts != null);
-  const lastActivityAt = timed.length ? timed[timed.length - 1].ts! : null;
-  const tail = events.filter((e) => CONVERSATIONAL.has(e.kind)).at(-1);
-  const tailKind: TailKind = (tail?.kind as TailKind) ?? "none";
-
+function cursorToFacts(filePath: string, c: CliCursor): SessionFacts {
+  const sessionId = c.sessionId ?? path.basename(filePath).replace(/\.jsonl$/, "");
+  const title = c.aiTitle ?? (c.firstUserText ? truncate(c.firstUserText, 60) : sessionId);
+  const tailKind: TailKind = (c.tail?.kind as TailKind) ?? "none";
   return {
     id: sessionId,
     source: "cli",
     path: filePath,
-    project: cwd,
-    branch,
+    project: c.cwd,
+    branch: c.branch,
     title,
     model: null,
-    firstSeenAt: firstTs,
-    lastActivityAt,
+    firstSeenAt: c.firstTs,
+    lastActivityAt: c.lastActivityAt,
     linkedCliSessionId: null,
     tailKind,
-    tailIsError: tail?.isError ?? false,
-    tailSummary: tail?.summary || "no conversation yet",
-    contextTokens,
+    tailIsError: c.tail?.isError ?? false,
+    tailSummary: c.tail?.summary || "no conversation yet",
+    contextTokens: c.contextTokens,
   };
+}
+
+/**
+ * Parse a transcript incrementally: given the cursor from the previous parse, read only
+ * the bytes appended since, and return the updated facts + a new cursor. Pass `prev = null`
+ * for a full read (first time). Resets to a full read if the file shrank (truncated /
+ * rotated). Reads nothing when there are no new bytes.
+ */
+export async function parseCliIncremental(
+  filePath: string,
+  prev: CliCursor | null,
+): Promise<{ facts: SessionFacts; cursor: CliCursor } | null> {
+  let fh: fs.FileHandle;
+  try {
+    fh = await fs.open(filePath, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const { size } = await fh.stat();
+    // fresh parse, or reset when the file got smaller than we'd already consumed
+    let cursor = prev && size >= prev.offset ? { ...prev } : emptyCursor();
+    const readFrom = cursor.offset + Buffer.byteLength(cursor.carry, "utf8");
+
+    if (size > readFrom) {
+      const len = size - readFrom;
+      const buf = Buffer.allocUnsafe(len);
+      let read = 0;
+      while (read < len) {
+        const { bytesRead } = await fh.read(buf, read, len - read, readFrom + read);
+        if (bytesRead === 0) break;
+        read += bytesRead;
+      }
+      const text = cursor.carry + buf.toString("utf8", 0, read);
+      const parts = text.split("\n");
+      const newCarry = parts.pop() ?? "";
+      for (const line of parts) {
+        const s = line.trim();
+        if (s) ingestLine(cursor, s);
+      }
+      cursor.offset = cursor.offset + Buffer.byteLength(cursor.carry, "utf8") + read - Buffer.byteLength(newCarry, "utf8");
+      cursor.carry = newCarry;
+    }
+
+    return { facts: cursorToFacts(filePath, cursor), cursor };
+  } catch {
+    return null;
+  } finally {
+    await fh.close();
+  }
+}
+
+/** one-shot full parse (kept for callers that don't track a cursor) */
+export async function parseCliTranscript(filePath: string): Promise<SessionFacts | null> {
+  return (await parseCliIncremental(filePath, null))?.facts ?? null;
 }
