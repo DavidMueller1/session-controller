@@ -12,6 +12,30 @@ export interface PrInfo {
   title: string | null;
 }
 
+/** one listening port attributed to a strip's folder, with a best-effort description */
+export interface DevPort {
+  port: number;
+  pid: number;
+  addr: string;
+  proc: string;
+  role: "app" | "api" | "hmr" | "storybook" | "unknown";
+  label: string;
+}
+
+/** dev servers detected listening in this strip's folder (Phase 1: detection-only) */
+export interface DevServerInfo {
+  /** best-guess app port — drives the pill + its URL */
+  port: number;
+  pid: number;
+  /** every listening port in the folder, best-guess first, each described */
+  candidates: DevPort[];
+  managed: boolean;
+  repoKey: string;
+  repoName: string;
+  /** per-repo dev URL template with a {port} placeholder; null = default localhost */
+  urlTemplate: string | null;
+}
+
 export type ActivityState =
   | "working"
   | "needs-input"
@@ -43,6 +67,7 @@ export interface Aircraft {
   contextPct?: number | null;
   pr?: PrInfo | null;
   approach?: boolean;
+  devServer?: DevServerInfo | null;
   offline?: boolean;
 }
 

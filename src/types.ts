@@ -45,6 +45,47 @@ export interface HooksHealth {
   checkedAt: number;
 }
 
+/** one listening port attributed to a strip's folder, with a best-effort description */
+export interface DevPort {
+  port: number;
+  /** owning process pid */
+  pid: number;
+  /** bind interface as lsof reports it: "127.0.0.1" | "::1" | "*" */
+  addr: string;
+  /** short process label, e.g. "Vite", "node", "php" */
+  proc: string;
+  /** coarse role guess used for ranking + the list description */
+  role: "app" | "api" | "hmr" | "storybook" | "unknown";
+  /** human-readable one-liner, e.g. "Vite dev server", "Vite HMR", "NestJS (API)" */
+  label: string;
+}
+
+/**
+ * A dev server detected running in an aircraft's folder. Phase 1 is detection-only:
+ * we find listening TCP ports owned by processes whose working directory is inside the
+ * strip's git root — so a server you started by hand in a terminal shows up here
+ * automatically. The port number alone can't tell us which is "the app" (real apps often
+ * bind random high ports), so we carry every candidate + a scored best guess. (Phase 2
+ * will add app-managed start/stop, which is why `managed` exists now.)
+ */
+export interface DevServerInfo {
+  /** best-guess app port — drives the pill + its URL */
+  port: number;
+  /** pid owning the best-guess port */
+  pid: number;
+  /** every listening port in the folder, best-guess first, each described */
+  candidates: DevPort[];
+  /** true once the tower started it itself (Phase 2). Detection-only = false. */
+  managed: boolean;
+  /** the strip's repo identity (shared git dir), used to look up per-repo config */
+  repoKey: string;
+  /** friendly repo name (basename), for the settings list */
+  repoName: string;
+  /** per-repo dev URL template with a {port} placeholder; null = default localhost.
+   *  Set by the server from project_config, not by the scanner. */
+  urlTemplate: string | null;
+}
+
 /** GitHub PR for a session's branch (via `gh`), attached by branch */
 export interface PrInfo {
   number: number;
@@ -150,6 +191,8 @@ export interface DiscoveredSession {
   pr?: PrInfo | null;
   /** merged-PR overlay (added by the server's decorate). Drives the Approach lane. */
   approach?: boolean;
+  /** dev server detected running in this strip's folder (added by the server's decorate) */
+  devServer?: DevServerInfo | null;
   /** shown from the persisted store because it has no live file right now */
   offline?: boolean;
 }

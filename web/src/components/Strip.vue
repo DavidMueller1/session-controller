@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, nextTick } from "vue";
+import { computed, ref, nextTick, onBeforeUnmount } from "vue";
 import type { Aircraft } from "../types";
-import { STATE, LANDED_COLOR, PARKED_COLOR, isParked, isFlashing, isMia, formatAge, projectName } from "../format";
+import { STATE, LANDED_COLOR, PARKED_COLOR, isParked, isFlashing, isMia, formatAge, projectName, devUrl } from "../format";
 
 const props = defineProps<{ aircraft: Aircraft; now: number }>();
 const emit = defineEmits<{
@@ -64,6 +64,60 @@ const prColor = computed(() => {
   return "#58a6ff";
 });
 const prIcon = computed(() => (pr.value?.state === "MERGED" ? "ti-git-merge" : "ti-git-pull-request"));
+
+// dev server(s) detected listening in this strip's folder (Phase 1: detection-only)
+const dev = computed(() => props.aircraft.devServer ?? null);
+const candidates = computed(() => dev.value?.candidates ?? []);
+const hasMenu = computed(() => candidates.value.length > 1);
+const portUrl = (p: number) => devUrl(dev.value?.urlTemplate, p);
+const devTitle = computed(() => {
+  const d = dev.value;
+  if (!d) return "";
+  return hasMenu.value
+    ? `best guess :${d.port} — ${candidates.value.length} servers in this folder · click to list`
+    : `dev server on :${d.port} → ${portUrl(d.port)} · click to open`;
+});
+// a coloured dot per role, matching the popover legend
+const roleColor: Record<string, string> = {
+  app: "var(--green)",
+  api: "var(--blue)",
+  hmr: "var(--text-faint)",
+  storybook: "var(--text-faint)",
+  unknown: "var(--gray)",
+};
+
+// candidate popover — teleported to body so the strip's overflow:hidden can't clip it
+const menu = ref(false);
+const menuPos = ref({ x: 0, y: 0 });
+function toggleMenu(e: MouseEvent) {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  menuPos.value = { x: Math.round(r.left), y: Math.round(r.bottom + 4) };
+  menu.value = !menu.value;
+  if (menu.value) nextTick(() => addDismiss());
+  else removeDismiss();
+}
+function openPort(p: number) {
+  window.open(portUrl(p), "_blank", "noreferrer");
+  closeMenu();
+}
+function closeMenu() {
+  menu.value = false;
+  removeDismiss();
+}
+function onDocClick(e: MouseEvent) {
+  if (!(e.target as HTMLElement).closest(".dev-menu, .dev")) closeMenu();
+}
+function addDismiss() {
+  document.addEventListener("click", onDocClick, true);
+  window.addEventListener("scroll", closeMenu, true);
+  window.addEventListener("resize", closeMenu, true);
+}
+function removeDismiss() {
+  document.removeEventListener("click", onDocClick, true);
+  window.removeEventListener("scroll", closeMenu, true);
+  window.removeEventListener("resize", closeMenu, true);
+}
+onBeforeUnmount(removeDismiss);
 const prTitle = computed(() => {
   const p = pr.value;
   if (!p) return "";
@@ -135,6 +189,12 @@ function commitNote() {
           <a v-if="pr" class="pr" :href="pr.url" target="_blank" rel="noreferrer" :style="{ color: prColor, borderColor: prColor }" :title="prTitle">
             <i class="ti" :class="prIcon"></i>#{{ pr.number }}
           </a>
+          <a v-if="dev && !hasMenu" class="dev" :href="portUrl(dev.port)" target="_blank" rel="noreferrer" :title="devTitle">
+            <span class="dot"></span>:{{ dev.port }}
+          </a>
+          <button v-else-if="dev" class="dev" :title="devTitle" @click.stop="toggleMenu">
+            <span class="dot"></span>:{{ dev.port }}<span class="more">+{{ candidates.length - 1 }}</span><i class="ti ti-chevron-down caret"></i>
+          </button>
           <span class="age" :style="{ color: landed ? LANDED_COLOR : parked ? PARKED_COLOR : meta.color }">{{ age }}</span>
         </div>
       </div>
@@ -164,6 +224,19 @@ function commitNote() {
       </div>
     </div>
   </div>
+
+  <Teleport to="body">
+    <div v-if="menu && dev" class="dev-menu" :style="{ left: menuPos.x + 'px', top: menuPos.y + 'px' }">
+      <div class="dev-menu-h">dev servers in this folder</div>
+      <button v-for="c in candidates" :key="c.port" class="dev-row" :class="{ best: c.port === dev.port }" @click="openPort(c.port)">
+        <span class="rdot" :style="{ background: roleColor[c.role] }"></span>
+        <span class="rp">:{{ c.port }}</span>
+        <span class="rl">{{ c.label }}</span>
+        <span v-if="c.port === dev.port" class="rbest">best guess</span>
+        <i class="ti ti-external-link rx"></i>
+      </button>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -191,6 +264,11 @@ function commitNote() {
 .foot { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-faint); }
 .foot .age { margin-left: auto; font-weight: 500; }
 .pr { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; border: 0.5px solid; border-radius: 6px; padding: 0 5px; text-decoration: none; }
+.dev { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; color: var(--green); border: 0.5px solid color-mix(in srgb, var(--green) 40%, transparent); border-radius: 6px; padding: 0 5px; text-decoration: none; background: transparent; cursor: pointer; }
+.dev:hover { border-color: var(--green); }
+.dev .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 5px color-mix(in srgb, var(--green) 70%, transparent); }
+.dev .more { color: var(--text-faint); }
+.dev .caret { font-size: 12px; margin-left: -1px; opacity: 0.7; }
 .actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 /* a note is what parks a strip, so the pill wears the Parked colour */
 .note { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; background: var(--parked-bg); color: var(--parked); border-radius: 6px; padding: 2px 4px 2px 7px; }
@@ -203,4 +281,16 @@ function commitNote() {
 @media (prefers-reduced-motion: reduce) {
   .strip.flash { animation: none; background: var(--amber-bg); }
 }
+
+/* teleported to <body> — fixed so the strip's overflow:hidden can't clip it */
+.dev-menu { position: fixed; z-index: 50; min-width: 210px; max-width: 320px; background: var(--panel); border: 0.5px solid var(--border); border-radius: 8px; padding: 4px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+.dev-menu-h { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); padding: 4px 7px 5px; }
+.dev-row { display: flex; align-items: center; gap: 7px; width: 100%; background: transparent; border: 0; border-radius: 6px; padding: 5px 7px; cursor: pointer; text-align: left; color: var(--text); }
+.dev-row:hover { background: var(--chip); }
+.dev-row .rdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.dev-row .rp { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12px; color: var(--text-hi); }
+.dev-row .rl { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; }
+.dev-row .rbest { font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--green); border: 0.5px solid color-mix(in srgb, var(--green) 45%, transparent); border-radius: 5px; padding: 1px 4px; flex: none; }
+.dev-row .rx { font-size: 12px; color: var(--text-faint); flex: none; opacity: 0; }
+.dev-row:hover .rx { opacity: 1; }
 </style>

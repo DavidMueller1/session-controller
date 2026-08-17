@@ -4,12 +4,13 @@ import staticPlugin from "@fastify/static";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { CONFIG } from "./config.js";
+import { DevServerScanner } from "./devServers.js";
 import { Engine } from "./engine.js";
 import { type HookSettings, assembleHealth, readHookSettings } from "./hooksHealth.js";
 import { openAircraft } from "./open.js";
 import { startStatusPolling } from "./status.js";
 import { Store } from "./store.js";
-import type { ActivityState, AnthropicStatus, DiscoveredSession, HooksHealth } from "./types.js";
+import type { ActivityState, AnthropicStatus, DevServerInfo, DiscoveredSession, HooksHealth } from "./types.js";
 
 /** the ws socket type, sourced from @fastify/websocket to avoid importing ws directly */
 type WebSocket = import("@fastify/websocket").WebSocket;
@@ -29,6 +30,10 @@ async function main(): Promise<void> {
 
   let notes = store.getNotes();
   let landed = new Set(store.getLanded());
+  // per-repo config (keyed by shared git dir) — currently just the dev URL template
+  let projectConfig = store.getProjectConfigs();
+  // dev servers detected running in each strip's folder (id → info), refreshed on a timer
+  let devByAircraft = new Map<string, DevServerInfo>();
 
   const decorate = (list: DiscoveredSession[]): DiscoveredSession[] =>
     list.map((a) => {
@@ -36,7 +41,10 @@ async function main(): Promise<void> {
       // Approach = a merged PR, unless landed. A working session wins the lane on the
       // client (working → In-flight), so a merged-but-active session shows In-flight.
       const approach = !isLanded && a.pr?.state === "MERGED";
-      return { ...a, note: notes[a.id] ?? null, landed: isLanded, approach };
+      // attach the detected dev server, resolving its per-repo URL template from config
+      const ds = devByAircraft.get(a.id);
+      const devServer = ds ? { ...ds, urlTemplate: projectConfig[ds.repoKey]?.urlTemplate || null } : null;
+      return { ...a, note: notes[a.id] ?? null, landed: isLanded, approach, devServer };
     });
 
   // Persistence: a tracked session with no live file right now is still shown from the
@@ -51,7 +59,8 @@ async function main(): Promise<void> {
       .filter((s) => !live.has(s.id))
       .map((s) => ({ ...s, state: floorOffline(s.state), offline: true }));
   }
-  const fullList = (): DiscoveredSession[] => decorate([...engine.aircraft(), ...offlineSessions()]);
+  const baseList = (): DiscoveredSession[] => [...engine.aircraft(), ...offlineSessions()];
+  const fullList = (): DiscoveredSession[] => decorate(baseList());
 
   const clients = new Set<WebSocket>();
   const broadcast = (msg: unknown) => {
@@ -86,6 +95,34 @@ async function main(): Promise<void> {
     hookSettings = readHookSettings(); // catch settings.json being rewritten
     refreshHealth();
   }, 30_000);
+
+  // Dev-server detection: scan the user's listening ports on a timer, attribute each to
+  // the strip whose folder owns it, and push an update only when the mapping changes.
+  const devScanner = new DevServerScanner();
+  let devSig = "";
+  let devScanning = false;
+  const refreshDevServers = async (): Promise<void> => {
+    if (devScanning) return; // a scan can outlast the 3s tick — don't pile them up
+    devScanning = true;
+    let map: Map<string, DevServerInfo>;
+    try {
+      map = await devScanner.scan(baseList());
+    } catch {
+      return; // lsof/git hiccup — keep the last known mapping
+    } finally {
+      devScanning = false;
+    }
+    const sig = [...map.entries()]
+      .map(([id, d]) => `${id}:${d.port}:${d.candidates.map((c) => c.port).join(",")}`)
+      .sort()
+      .join("|");
+    if (sig === devSig) return;
+    devSig = sig;
+    devByAircraft = map;
+    pushUpdate();
+  };
+  void refreshDevServers();
+  const devTimer = setInterval(() => void refreshDevServers(), CONFIG.devScanMs);
 
   // landed auto-clears when a session works again — it "starts back up" on its own.
   function autoUnlandOnWork(list: DiscoveredSession[]): void {
@@ -177,6 +214,31 @@ async function main(): Promise<void> {
     return { ok: true, id: req.params.id, landed: false };
   });
 
+  // repos the tower has strips for, with their per-repo config — drives the Settings modal
+  app.get("/api/repos", async () => {
+    const projects = [...new Set(fullList().map((a) => a.project).filter((p): p is string => !!p))];
+    const repos = new Map<string, { key: string; name: string; urlTemplate: string }>();
+    await Promise.all(
+      projects.map(async (p) => {
+        const r = await devScanner.resolveRepo(p);
+        if (r && !repos.has(r.key)) repos.set(r.key, { key: r.key, name: r.name, urlTemplate: projectConfig[r.key]?.urlTemplate ?? "" });
+      }),
+    );
+    return [...repos.values()].sort((a, b) => a.name.localeCompare(b.name));
+  });
+
+  // set (or clear) a repo's dev URL template; links refresh live via pushUpdate
+  app.put<{ Body: { key?: string; name?: string; urlTemplate?: string } }>("/api/repos", async (req, reply) => {
+    const key = (req.body?.key ?? "").trim();
+    if (!key) return reply.code(400).send({ error: "key required" });
+    const tmpl = (req.body?.urlTemplate ?? "").trim();
+    if (tmpl) store.setProjectConfig(key, req.body?.name ?? null, tmpl);
+    else store.deleteProjectConfig(key);
+    projectConfig = store.getProjectConfigs();
+    pushUpdate();
+    return { ok: true, key, urlTemplate: tmpl };
+  });
+
   // open/focus the session's host (PhpStorm project window, Claude app, or terminal)
   app.post<{ Params: { id: string } }>("/api/aircraft/:id/open", async (req, reply) => {
     const a = engine.aircraft().find((x) => x.id === req.params.id);
@@ -229,6 +291,7 @@ async function main(): Promise<void> {
   const shutdown = async () => {
     stopStatus();
     clearInterval(healthTimer);
+    clearInterval(devTimer);
     await engine.stop();
     await app.close();
     store.close();

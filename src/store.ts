@@ -81,7 +81,36 @@ export class Store {
         id        TEXT PRIMARY KEY,
         landed_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS project_config (
+        repo_key         TEXT PRIMARY KEY,
+        repo_name        TEXT,
+        dev_url_template TEXT,
+        updated_at       INTEGER NOT NULL
+      );
     `);
+  }
+
+  /** per-repo config, keyed by the shared git dir (so it's set once for all worktrees) */
+  getProjectConfigs(): Record<string, { name: string | null; urlTemplate: string }> {
+    const rows = this.db.prepare(`SELECT repo_key, repo_name, dev_url_template FROM project_config`).all() as {
+      repo_key: string;
+      repo_name: string | null;
+      dev_url_template: string | null;
+    }[];
+    return Object.fromEntries(rows.map((r) => [r.repo_key, { name: r.repo_name, urlTemplate: r.dev_url_template ?? "" }]));
+  }
+
+  setProjectConfig(key: string, name: string | null, urlTemplate: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO project_config (repo_key, repo_name, dev_url_template, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(repo_key) DO UPDATE SET repo_name = excluded.repo_name, dev_url_template = excluded.dev_url_template, updated_at = excluded.updated_at`,
+      )
+      .run(key, name, urlTemplate, Date.now());
+  }
+
+  deleteProjectConfig(key: string): void {
+    this.db.prepare(`DELETE FROM project_config WHERE repo_key = ?`).run(key);
   }
 
   /** ids the user has marked landed (kept, not pruned with sessions) */

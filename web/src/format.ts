@@ -60,6 +60,17 @@ export function formatAge(ms: number | null): string {
   return `${Math.round(h / 24)}d`;
 }
 
+/**
+ * Build a dev-server link for a port from a per-repo template. `{port}` is substituted;
+ * a template with no scheme gets `http://`; empty/null falls back to localhost. A template
+ * without `{port}` is treated as a fixed URL (used as-is for every candidate).
+ */
+export function devUrl(template: string | null | undefined, port: number): string {
+  let t = (template ?? "").trim() || "http://localhost:{port}";
+  if (!/^https?:\/\//i.test(t)) t = "http://" + t;
+  return t.includes("{port}") ? t.replace(/\{port\}/g, String(port)) : t;
+}
+
 export function projectName(p: string | null): string {
   if (!p) return "—";
   const parts = p.split("/").filter(Boolean);
