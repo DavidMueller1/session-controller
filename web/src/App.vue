@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref, w
 import Strip from "./components/Strip.vue";
 import FlightBoard from "./components/FlightBoard.vue";
 import FlipCounter from "./components/FlipCounter.vue";
+import Settings from "./components/Settings.vue";
 import { useBoard } from "./useBoard";
 import { laneOf, isFlashing } from "./format";
 import type { Aircraft } from "./types";
@@ -131,6 +132,8 @@ const cold = computed(() => landed.value.filter((a) => landedAge(a) > TEN_DAYS))
 const showCold = ref(false);
 
 const clock = computed(() => new Date(now.value).toLocaleTimeString());
+
+const settingsOpen = ref(false);
 
 // cross-column FLIP: measure before patch, tween from old → new screen position
 let firstRects = new Map<string, DOMRect>();
@@ -268,6 +271,9 @@ function onOpen(id: string) { open(id); }
         >
           <i class="ti" :class="flight ? 'ti-plane' : 'ti-layout-list'"></i>
         </button>
+        <button class="bell" title="Settings" aria-label="Settings" @click="settingsOpen = true">
+          <i class="ti ti-settings"></i>
+        </button>
         <button
           v-if="notifySupported"
           class="bell"
@@ -350,6 +356,8 @@ function onOpen(id: string) { open(id); }
         </div>
       </div>
     </div>
+
+    <Settings v-if="settingsOpen" @close="settingsOpen = false" />
 
     <!-- COLD: older landed, opened on demand and scrolled through -->
     <div v-if="showCold" class="cold-overlay" @click.self="showCold = false">
