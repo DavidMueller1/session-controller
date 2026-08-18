@@ -3,6 +3,7 @@ import { computed, ref, nextTick, onBeforeUnmount } from "vue";
 import type { Aircraft } from "../types";
 import { STATE, LANDED_COLOR, PARKED_COLOR, isParked, isFlashing, isMia, formatAge, projectName, devUrl } from "../format";
 import DevLogs from "./DevLogs.vue";
+import StripDetail from "./StripDetail.vue";
 
 const props = defineProps<{ aircraft: Aircraft; now: number }>();
 const emit = defineEmits<{
@@ -26,17 +27,14 @@ const age = computed(() => {
   const since = props.aircraft.stateSince ?? props.aircraft.lastActivityAt;
   return formatAge(since ? props.now - since : null);
 });
-const surfaces = computed(() => props.aircraft.surfaces ?? [props.aircraft.source]);
-
-// signal source → a plain-English label, surfaced only on hover of the surface icons
-// so you can tell which sessions are on the slow inferred path vs. the live signals.
-const SOURCE_LABEL: Record<string, string> = {
-  hook: "live via hooks",
-  registry: "live via Claude Code registry",
-  inferred: "inferred from transcript (≈8s delay)",
-};
-const surfaceTitle = computed(() => `state ${SOURCE_LABEL[props.aircraft.stateSource ?? "inferred"]}`);
 const spineColor = computed(() => (landed.value ? LANDED_COLOR : parked.value ? PARKED_COLOR : meta.value.color));
+
+// clicking the strip body (anywhere that isn't a control) opens the detail view
+const detailOpen = ref(false);
+function onStripClick(e: MouseEvent) {
+  if ((e.target as HTMLElement).closest("button, a, input")) return; // let controls act
+  detailOpen.value = true;
+}
 
 // context-usage ring
 const ctxPct = computed(() => props.aircraft.contextPct ?? null);
@@ -195,11 +193,11 @@ function commitNote() {
 </script>
 
 <template>
-  <div class="strip" :class="{ flash: flashing, parked, landed, mia }" :data-fid="aircraft.id">
+  <div class="strip" :class="{ flash: flashing, parked, landed, mia }" :data-fid="aircraft.id" title="Click for details" @click="onStripClick">
     <div class="spine" :style="{ background: spineColor }"></div>
     <div class="body">
       <div class="cs">
-        <span class="title" role="button" tabindex="0" title="Open this session's window" @click="emit('open', aircraft.id)" @keydown.enter="emit('open', aircraft.id)">{{ aircraft.title || aircraft.id }}</span>
+        <span class="title">{{ aircraft.title || aircraft.id }}</span>
         <span v-if="landed" class="badge" style="background: #16301f; color: #4cc38a"><i class="ti ti-check"></i> Landed<button class="badge-x" aria-label="undo landing" title="undo landing" @click="emit('unland', aircraft.id)"><i class="ti ti-x"></i></button></span>
         <span v-else-if="mia" class="badge" style="background: #1c222c; color: #8b98a8" title="no activity for 5+ min — still flying, but lost contact"><i class="ti ti-clock"></i> MIA</span>
         <span v-else-if="parked" class="badge" style="background: var(--parked-bg); color: var(--parked)"><i class="ti ti-parking"></i> Parked</span>
@@ -228,14 +226,9 @@ function commitNote() {
         <div class="chips">
           <span class="chip mono">{{ projectName(aircraft.project) }}</span>
           <span v-if="aircraft.branch" class="chip mono"><i class="ti ti-git-branch"></i> {{ aircraft.branch }}</span>
-          <span v-if="aircraft.model" class="chip mono">{{ aircraft.model }}</span>
         </div>
 
-        <div class="act">{{ aircraft.lastEventSummary }}</div>
-
         <div class="foot">
-          <i v-if="surfaces.includes('cli')" class="ti ti-terminal-2" :title="'terminal · ' + surfaceTitle"></i>
-          <i v-if="surfaces.includes('desktop')" class="ti ti-device-desktop" :title="'desktop · ' + surfaceTitle"></i>
           <a v-if="pr" class="pr" :href="pr.url" target="_blank" rel="noreferrer" :style="{ color: prColor, borderColor: prColor }" :title="prTitle">
             <i class="ti" :class="prIcon"></i>#{{ pr.number }}
           </a>
@@ -297,6 +290,8 @@ function commitNote() {
     @close="logs = null"
   />
 
+  <StripDetail v-if="detailOpen" :aircraft="aircraft" :now="now" @close="detailOpen = false" @open="emit('open', aircraft.id)" />
+
   <Teleport to="body">
     <div v-if="portMenu && dev" class="dev-menu" :style="{ left: portMenuPos.x + 'px', top: portMenuPos.y + 'px' }">
       <div class="dev-menu-h">dev servers in this folder</div>
@@ -340,7 +335,7 @@ function commitNote() {
 </template>
 
 <style scoped>
-.strip { display: flex; background: var(--strip); border: 0.5px solid var(--border); border-radius: 8px; overflow: hidden; animation: strip-in 0.3s ease; }
+.strip { display: flex; background: var(--strip); border: 0.5px solid var(--border); border-radius: 8px; overflow: hidden; animation: strip-in 0.3s ease; cursor: pointer; }
 .strip.parked { background: var(--strip-parked); }
 .strip.flash { animation: flash 1s ease-in-out infinite; }
 .strip.landed { opacity: 0.9; }
@@ -351,16 +346,14 @@ function commitNote() {
 /* the variable-length middle; it (not the buttons) clips when the strip is height-capped */
 .mid { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 4px; }
 .actions { flex: none; }
-.title { font-size: 13px; font-weight: 500; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; min-width: 0; }
+.title { font-size: 13px; font-weight: 500; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ctx { width: 16px; height: 16px; flex: none; margin-left: auto; }
-.title:hover { text-decoration: underline; }
 .badge { font-size: 10px; padding: 1px 6px; border-radius: 6px; white-space: nowrap; flex: none; display: inline-flex; align-items: center; gap: 3px; }
 .badge.dim { background: #1c222c; color: #8b98a8; }
 .badge-x { all: unset; cursor: pointer; display: inline-flex; margin-left: 3px; opacity: 0.7; }
 .badge-x:hover { opacity: 1; }
 .chips { display: flex; gap: 5px; flex-wrap: wrap; }
 .chip { font-size: 11px; color: var(--text-dim); background: var(--chip); border-radius: 6px; padding: 1px 6px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.act { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .foot { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-faint); }
 .foot .age { margin-left: auto; font-weight: 500; }
 .pr { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; border: 0.5px solid; border-radius: 6px; padding: 0 5px; text-decoration: none; }
