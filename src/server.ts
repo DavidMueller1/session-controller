@@ -4,6 +4,7 @@ import staticPlugin from "@fastify/static";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { CONFIG } from "./config.js";
+import { DevRunner } from "./devRunner.js";
 import { DevServerScanner } from "./devServers.js";
 import { Engine } from "./engine.js";
 import { type HookSettings, assembleHealth, readHookSettings } from "./hooksHealth.js";
@@ -30,10 +31,17 @@ async function main(): Promise<void> {
 
   let notes = store.getNotes();
   let landed = new Set(store.getLanded());
-  // per-repo config (keyed by shared git dir) — currently just the dev URL template
+  // per-repo config (keyed by shared git dir) — dev URL template + start command
   let projectConfig = store.getProjectConfigs();
   // dev servers detected running in each strip's folder (id → info), refreshed on a timer
   let devByAircraft = new Map<string, DevServerInfo>();
+  // per-strip worktree root + repo key, resolved on the dev-scan tick (for managed servers)
+  let rootByAircraft = new Map<string, string>();
+  let repoKeyByAircraft = new Map<string, string>();
+
+  // manages tower-started dev servers (keyed by worktree root); re-adopt any still alive
+  const devRunner = new DevRunner(store, path.dirname(CONFIG.dbPath));
+  devRunner.adopt();
 
   const decorate = (list: DiscoveredSession[]): DiscoveredSession[] =>
     list.map((a) => {
@@ -41,10 +49,20 @@ async function main(): Promise<void> {
       // Approach = a merged PR, unless landed. A working session wins the lane on the
       // client (working → In-flight), so a merged-but-active session shows In-flight.
       const approach = !isLanded && a.pr?.state === "MERGED";
-      // attach the detected dev server, resolving its per-repo URL template from config
+      const root = rootByAircraft.get(a.id) ?? null;
+      const managed = root ? devRunner.managedFor(root) : null;
+      // attach the detected dev server, resolving its per-repo URL template + managed flag
       const ds = devByAircraft.get(a.id);
-      const devServer = ds ? { ...ds, urlTemplate: projectConfig[ds.repoKey]?.urlTemplate || null } : null;
-      return { ...a, note: notes[a.id] ?? null, landed: isLanded, approach, devServer };
+      const devServer = ds ? { ...ds, urlTemplate: projectConfig[ds.repoKey]?.urlTemplate || null, managed: !!managed } : null;
+      const repoKey = repoKeyByAircraft.get(a.id);
+      const devCommand = repoKey ? projectConfig[repoKey]?.command || null : null;
+      const devManaged = managed ? { pid: managed.pid, startedAt: managed.startedAt } : null;
+      // a recent crash (within 10 min), only while not currently running
+      const exit = root ? devRunner.exitFor(root) : null;
+      const devExit = !managed && exit && Date.now() - exit.at < 10 * 60_000 ? exit : null;
+      // install affordance for any repo strip; carries running + last-exit state
+      const devInstall = root ? (devRunner.installStateFor(root) ?? { running: false, code: null, at: 0 }) : null;
+      return { ...a, note: notes[a.id] ?? null, landed: isLanded, approach, devServer, devCommand, devManaged, devExit, devInstall };
     });
 
   // Persistence: a tracked session with no live file right now is still shown from the
@@ -104,22 +122,43 @@ async function main(): Promise<void> {
   const refreshDevServers = async (): Promise<void> => {
     if (devScanning) return; // a scan can outlast the 3s tick — don't pile them up
     devScanning = true;
-    let map: Map<string, DevServerInfo>;
     try {
-      map = await devScanner.scan(baseList());
+      const list = baseList();
+      const map = await devScanner.scan(list);
+      // resolve each strip's worktree root + repo key (both cached) so decorate can attach
+      // managed-server state and the configured command
+      const rootMap = new Map<string, string>();
+      const repoMap = new Map<string, string>();
+      await Promise.all(
+        list.map(async (a) => {
+          if (!a.project) return;
+          const [root, repo] = await Promise.all([devScanner.resolveRoot(a.project), devScanner.resolveRepo(a.project)]);
+          if (root) rootMap.set(a.id, root);
+          if (repo) repoMap.set(a.id, repo.key);
+        }),
+      );
+      devRunner.reconcile(); // drop managed servers that exited on their own
+      devByAircraft = map;
+      rootByAircraft = rootMap;
+      repoKeyByAircraft = repoMap;
+      // push only when the observable dev state changed (detected ports OR managed pids)
+      const detSig = [...map.entries()].map(([id, d]) => `${id}:${d.port}:${d.candidates.map((c) => c.port).join(",")}`).sort();
+      const mgSig = [...rootMap.entries()]
+        .map(([id, r]) => {
+          const inst = devRunner.installStateFor(r);
+          return `${id}:${devRunner.managedFor(r)?.pid ?? ""}:${devRunner.exitFor(r)?.at ?? ""}:${inst?.running ? 1 : 0}:${inst?.at ?? ""}`;
+        })
+        .sort();
+      const sig = `${detSig.join("|")}||${mgSig.join("|")}`;
+      if (sig !== devSig) {
+        devSig = sig;
+        pushUpdate();
+      }
     } catch {
-      return; // lsof/git hiccup — keep the last known mapping
+      /* lsof/git hiccup — keep the last known mapping */
     } finally {
       devScanning = false;
     }
-    const sig = [...map.entries()]
-      .map(([id, d]) => `${id}:${d.port}:${d.candidates.map((c) => c.port).join(",")}`)
-      .sort()
-      .join("|");
-    if (sig === devSig) return;
-    devSig = sig;
-    devByAircraft = map;
-    pushUpdate();
   };
   void refreshDevServers();
   const devTimer = setInterval(() => void refreshDevServers(), CONFIG.devScanMs);
@@ -217,26 +256,125 @@ async function main(): Promise<void> {
   // repos the tower has strips for, with their per-repo config — drives the Settings modal
   app.get("/api/repos", async () => {
     const projects = [...new Set(fullList().map((a) => a.project).filter((p): p is string => !!p))];
-    const repos = new Map<string, { key: string; name: string; urlTemplate: string }>();
+    const repos = new Map<string, { key: string; name: string; urlTemplate: string; command: string }>();
     await Promise.all(
       projects.map(async (p) => {
         const r = await devScanner.resolveRepo(p);
-        if (r && !repos.has(r.key)) repos.set(r.key, { key: r.key, name: r.name, urlTemplate: projectConfig[r.key]?.urlTemplate ?? "" });
+        if (r && !repos.has(r.key))
+          repos.set(r.key, {
+            key: r.key,
+            name: r.name,
+            urlTemplate: projectConfig[r.key]?.urlTemplate ?? "",
+            command: projectConfig[r.key]?.command ?? "",
+          });
       }),
     );
     return [...repos.values()].sort((a, b) => a.name.localeCompare(b.name));
   });
 
-  // set (or clear) a repo's dev URL template; links refresh live via pushUpdate
-  app.put<{ Body: { key?: string; name?: string; urlTemplate?: string } }>("/api/repos", async (req, reply) => {
+  // set (or clear) a repo's dev URL template + start command; refreshes live via pushUpdate
+  app.put<{ Body: { key?: string; name?: string; urlTemplate?: string; command?: string } }>("/api/repos", async (req, reply) => {
     const key = (req.body?.key ?? "").trim();
     if (!key) return reply.code(400).send({ error: "key required" });
     const tmpl = (req.body?.urlTemplate ?? "").trim();
-    if (tmpl) store.setProjectConfig(key, req.body?.name ?? null, tmpl);
+    const command = (req.body?.command ?? "").trim();
+    if (tmpl || command) store.setProjectConfig(key, req.body?.name ?? null, tmpl, command);
     else store.deleteProjectConfig(key);
     projectConfig = store.getProjectConfigs();
+    void refreshDevServers(); // command availability may have changed
     pushUpdate();
-    return { ok: true, key, urlTemplate: tmpl };
+    return { ok: true, key, urlTemplate: tmpl, command };
+  });
+
+  // resolve a strip → its worktree root (where a managed server runs) + repo key
+  const rootForAircraft = async (id: string): Promise<{ root: string; repoKey: string } | null> => {
+    const a = baseList().find((x) => x.id === id);
+    if (!a?.project) return null;
+    const [root, repo] = await Promise.all([devScanner.resolveRoot(a.project), devScanner.resolveRepo(a.project)]);
+    return root ? { root, repoKey: repo?.key ?? "" } : null;
+  };
+
+  // start the repo's configured dev server for this strip's worktree
+  app.post<{ Params: { id: string } }>("/api/aircraft/:id/dev/start", async (req, reply) => {
+    const info = await rootForAircraft(req.params.id);
+    if (!info) return reply.code(404).send({ error: "not found or not a git repo" });
+    const command = projectConfig[info.repoKey]?.command ?? "";
+    if (!command.trim()) return reply.code(400).send({ error: "no dev command configured — set one in Settings" });
+    const res = await devRunner.start(info.root, command);
+    if ("error" in res) return reply.code(500).send(res);
+    // A bad command (missing deps, wrong Node, typo) exits within a moment — its child
+    // 'exit' clears it from the runner. Catch that here and return the log tail so the UI
+    // can show WHY, instead of the start silently vanishing.
+    await new Promise((r) => setTimeout(r, 1200));
+    if (!devRunner.managedFor(info.root)) {
+      const log = await devRunner.backlog(info.root, 8192);
+      return reply.code(422).send({ error: "dev server exited on startup", log });
+    }
+    void refreshDevServers();
+    return { ok: true, pid: res.pid };
+  });
+
+  // install dependencies for this strip's worktree (pnpm install, via the nvm-aware shell)
+  app.post<{ Params: { id: string } }>("/api/aircraft/:id/dev/install", async (req, reply) => {
+    const info = await rootForAircraft(req.params.id);
+    if (!info) return reply.code(404).send({ error: "not found or not a git repo" });
+    const res = await devRunner.install(info.root, "pnpm install");
+    if ("error" in res) return reply.code(500).send(res);
+    void refreshDevServers();
+    return { ok: true };
+  });
+
+  // stop the tower-managed dev server for this strip's worktree
+  app.post<{ Params: { id: string } }>("/api/aircraft/:id/dev/stop", async (req, reply) => {
+    const info = await rootForAircraft(req.params.id);
+    if (!info) return reply.code(404).send({ error: "not found" });
+    const res = await devRunner.stop(info.root);
+    void refreshDevServers();
+    pushUpdate();
+    return { ok: res.ok };
+  });
+
+  // recent log output (tail) for the panel's initial load. ?kind=install for install logs.
+  app.get<{ Params: { id: string }; Querystring: { kind?: string } }>("/api/aircraft/:id/dev/logs", async (req, reply) => {
+    const info = await rootForAircraft(req.params.id);
+    if (!info) return reply.code(404).send({ error: "not found" });
+    const kind = req.query.kind === "install" ? "install" : "server";
+    return { log: await devRunner.backlog(info.root, 64 * 1024, kind) };
+  });
+
+  // live log stream (SSE) — appended lines only; the panel loads backlog via the GET above
+  app.get<{ Params: { id: string }; Querystring: { kind?: string } }>("/api/aircraft/:id/dev/logs/stream", async (req, reply) => {
+    const info = await rootForAircraft(req.params.id);
+    if (!info) return reply.code(404).send({ error: "not found" });
+    const kind = req.query.kind === "install" ? "install" : "server";
+    const from = await devRunner.logSize(info.root, kind);
+    reply.hijack();
+    const raw = reply.raw;
+    raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    raw.write("retry: 2000\n\n");
+    const stop = devRunner.stream(
+      info.root,
+      from,
+      (text) => {
+        for (const line of text.split("\n")) if (line.length) raw.write(`data: ${line.replace(/\r$/, "")}\n\n`);
+      },
+      kind,
+    );
+    const keepalive = setInterval(() => raw.write(": ping\n\n"), 20_000);
+    req.raw.on("close", () => {
+      clearInterval(keepalive);
+      stop();
+      try {
+        raw.end();
+      } catch {
+        /* already closed */
+      }
+    });
   });
 
   // open/focus the session's host (PhpStorm project window, Claude app, or terminal)

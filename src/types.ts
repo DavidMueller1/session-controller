@@ -193,6 +193,16 @@ export interface DiscoveredSession {
   approach?: boolean;
   /** dev server detected running in this strip's folder (added by the server's decorate) */
   devServer?: DevServerInfo | null;
+  /** the repo's configured dev command (null = not set) — enables the Start button */
+  devCommand?: string | null;
+  /** a tower-managed dev server running for this strip's folder — enables Stop + logs */
+  devManaged?: { pid: number; startedAt: number } | null;
+  /** a tower-managed server that recently exited unexpectedly (crash) — shows in the UI
+   *  with its logs, instead of the Start button silently doing nothing */
+  devExit?: { code: number | null; at: number } | null;
+  /** install status for the strip's repo (null = not a git repo). Drives the Install
+   *  button: running while `pnpm install` runs, `code` is the last exit (0 = ok). */
+  devInstall?: { running: boolean; code: number | null; at: number } | null;
   /** shown from the persisted store because it has no live file right now */
   offline?: boolean;
 }

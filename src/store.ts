@@ -85,32 +85,77 @@ export class Store {
         repo_key         TEXT PRIMARY KEY,
         repo_name        TEXT,
         dev_url_template TEXT,
+        dev_command      TEXT,
         updated_at       INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS dev_servers (
+        root       TEXT PRIMARY KEY,
+        pid        INTEGER NOT NULL,
+        command    TEXT NOT NULL,
+        log_file   TEXT NOT NULL,
+        started_at INTEGER NOT NULL
+      );
     `);
+    // additive migration for DBs created before dev_command existed
+    this.addColumn("project_config", "dev_command", "TEXT");
+  }
+
+  /** add a column if it isn't already present (SQLite has no IF NOT EXISTS for columns) */
+  private addColumn(table: string, col: string, type: string): void {
+    const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
   }
 
   /** per-repo config, keyed by the shared git dir (so it's set once for all worktrees) */
-  getProjectConfigs(): Record<string, { name: string | null; urlTemplate: string }> {
-    const rows = this.db.prepare(`SELECT repo_key, repo_name, dev_url_template FROM project_config`).all() as {
+  getProjectConfigs(): Record<string, { name: string | null; urlTemplate: string; command: string }> {
+    const rows = this.db.prepare(`SELECT repo_key, repo_name, dev_url_template, dev_command FROM project_config`).all() as {
       repo_key: string;
       repo_name: string | null;
       dev_url_template: string | null;
+      dev_command: string | null;
     }[];
-    return Object.fromEntries(rows.map((r) => [r.repo_key, { name: r.repo_name, urlTemplate: r.dev_url_template ?? "" }]));
+    return Object.fromEntries(
+      rows.map((r) => [r.repo_key, { name: r.repo_name, urlTemplate: r.dev_url_template ?? "", command: r.dev_command ?? "" }]),
+    );
   }
 
-  setProjectConfig(key: string, name: string | null, urlTemplate: string): void {
+  setProjectConfig(key: string, name: string | null, urlTemplate: string, command: string): void {
     this.db
       .prepare(
-        `INSERT INTO project_config (repo_key, repo_name, dev_url_template, updated_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT(repo_key) DO UPDATE SET repo_name = excluded.repo_name, dev_url_template = excluded.dev_url_template, updated_at = excluded.updated_at`,
+        `INSERT INTO project_config (repo_key, repo_name, dev_url_template, dev_command, updated_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(repo_key) DO UPDATE SET repo_name = excluded.repo_name, dev_url_template = excluded.dev_url_template,
+           dev_command = excluded.dev_command, updated_at = excluded.updated_at`,
       )
-      .run(key, name, urlTemplate, Date.now());
+      .run(key, name, urlTemplate, command, Date.now());
   }
 
   deleteProjectConfig(key: string): void {
     this.db.prepare(`DELETE FROM project_config WHERE repo_key = ?`).run(key);
+  }
+
+  /** tower-managed dev servers, persisted so they can be re-adopted across a restart */
+  getDevServers(): { root: string; pid: number; command: string; logFile: string; startedAt: number }[] {
+    const rows = this.db.prepare(`SELECT root, pid, command, log_file, started_at FROM dev_servers`).all() as {
+      root: string;
+      pid: number;
+      command: string;
+      log_file: string;
+      started_at: number;
+    }[];
+    return rows.map((r) => ({ root: r.root, pid: r.pid, command: r.command, logFile: r.log_file, startedAt: r.started_at }));
+  }
+
+  setDevServer(s: { root: string; pid: number; command: string; logFile: string; startedAt: number }): void {
+    this.db
+      .prepare(
+        `INSERT INTO dev_servers (root, pid, command, log_file, started_at) VALUES (@root, @pid, @command, @logFile, @startedAt)
+         ON CONFLICT(root) DO UPDATE SET pid = excluded.pid, command = excluded.command, log_file = excluded.log_file, started_at = excluded.started_at`,
+      )
+      .run(s);
+  }
+
+  deleteDevServer(root: string): void {
+    this.db.prepare(`DELETE FROM dev_servers WHERE root = ?`).run(root);
   }
 
   /** ids the user has marked landed (kept, not pruned with sessions) */

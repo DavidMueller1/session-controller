@@ -222,6 +222,12 @@ export class DevServerScanner {
     }
   }
 
+  /** public accessor for a folder's worktree root (git top-level), cached. Used by the
+   *  server to know where to launch/attribute a managed dev server. */
+  async resolveRoot(cwd: string): Promise<string | null> {
+    return this.rootOf(cwd);
+  }
+
   private async rootOf(cwd: string): Promise<string | null> {
     const cached = this.rootCache.get(cwd);
     if (cached) return cached;
