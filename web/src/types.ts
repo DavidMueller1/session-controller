@@ -68,6 +68,14 @@ export interface Aircraft {
   pr?: PrInfo | null;
   approach?: boolean;
   devServer?: DevServerInfo | null;
+  /** the repo's configured dev command (null = not set) — enables the Start button */
+  devCommand?: string | null;
+  /** a tower-managed dev server running for this strip's folder — enables Stop + logs */
+  devManaged?: { pid: number; startedAt: number } | null;
+  /** a tower-managed server that recently crashed — shows an "exited" affordance + logs */
+  devExit?: { code: number | null; at: number } | null;
+  /** install status for the strip's repo (null = not a git repo) — drives the Install button */
+  devInstall?: { running: boolean; code: number | null; at: number } | null;
   offline?: boolean;
 }
 

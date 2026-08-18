@@ -6,6 +6,7 @@ interface RepoRow {
   key: string;
   name: string;
   urlTemplate: string;
+  command: string;
 }
 
 const emit = defineEmits<{ close: [] }>();
@@ -33,7 +34,7 @@ async function save(row: RepoRow) {
   await fetch("/api/repos", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key: row.key, name: row.name, urlTemplate: row.urlTemplate.trim() }),
+    body: JSON.stringify({ key: row.key, name: row.name, urlTemplate: row.urlTemplate.trim(), command: row.command.trim() }),
   });
   savedKey.value = row.key;
   clearTimeout(savedTimer);
@@ -50,9 +51,9 @@ async function save(row: RepoRow) {
       </div>
 
       <p class="s-note">
-        Set the URL used when you open a repo's dev-server badge. Use <code>{port}</code> for the detected port —
-        e.g. <code>https://shop.kartenliebe.de:{port}</code>. Applies to every worktree of the repo. Leave empty for
-        <code>http://localhost:{port}</code>.
+        Per repo (applies to every worktree). <b>Command</b> is what the Start button runs in the worktree — e.g.
+        <code>pnpm dev</code> (runs in your login shell, so nvm/PATH apply). <b>Open URL</b> is used by the port badge;
+        use <code>{port}</code> for the detected port, empty = <code>http://localhost:{port}</code>.
       </p>
 
       <div v-if="loading" class="s-empty">loading repos…</div>
@@ -61,16 +62,30 @@ async function save(row: RepoRow) {
       <div v-else class="s-list">
         <div v-for="r in repos" :key="r.key" class="s-row">
           <div class="s-name" :title="r.key">{{ r.name }}</div>
-          <div class="s-field">
-            <input
-              v-model="r.urlTemplate"
-              class="s-input"
-              placeholder="http://localhost:{port}"
-              spellcheck="false"
-              @keydown.enter="save(r)"
-              @blur="save(r)"
-            />
-            <span class="s-preview">→ {{ preview(r.urlTemplate) }}</span>
+          <div class="s-fields">
+            <label class="s-field">
+              <span class="s-label">start command</span>
+              <input
+                v-model="r.command"
+                class="s-input"
+                placeholder="pnpm dev"
+                spellcheck="false"
+                @keydown.enter="save(r)"
+                @blur="save(r)"
+              />
+            </label>
+            <label class="s-field">
+              <span class="s-label">open URL</span>
+              <input
+                v-model="r.urlTemplate"
+                class="s-input"
+                placeholder="http://localhost:{port}"
+                spellcheck="false"
+                @keydown.enter="save(r)"
+                @blur="save(r)"
+              />
+              <span class="s-preview">→ {{ preview(r.urlTemplate) }}</span>
+            </label>
           </div>
           <span class="s-saved" :class="{ show: savedKey === r.key }"><i class="ti ti-check"></i> saved</span>
         </div>
@@ -89,13 +104,15 @@ async function save(row: RepoRow) {
 .s-note code { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; background: var(--chip); border-radius: 4px; padding: 1px 4px; color: var(--text); }
 .s-empty { padding: 20px 14px; font-size: 12px; color: var(--text-faint); }
 .s-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; }
-.s-row { display: grid; grid-template-columns: 180px 1fr auto; align-items: center; gap: 12px; padding: 8px 8px; border-radius: 8px; }
+.s-row { display: grid; grid-template-columns: 160px 1fr auto; align-items: start; gap: 12px; padding: 10px 8px; border-radius: 8px; }
 .s-row:hover { background: rgba(255, 255, 255, 0.02); }
-.s-name { font-size: 12px; font-weight: 500; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-name { font-size: 12px; font-weight: 500; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 4px; }
+.s-fields { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .s-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.s-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); }
 .s-input { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12px; width: 100%; }
 .s-preview { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.s-saved { font-size: 11px; color: var(--green); opacity: 0; transition: opacity 0.15s; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; }
+.s-saved { font-size: 11px; color: var(--green); opacity: 0; transition: opacity 0.15s; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; padding-top: 4px; }
 .s-saved.show { opacity: 1; }
-@media (max-width: 640px) { .s-row { grid-template-columns: 1fr; gap: 4px; } }
+@media (max-width: 640px) { .s-row { grid-template-columns: 1fr; gap: 6px; } }
 </style>

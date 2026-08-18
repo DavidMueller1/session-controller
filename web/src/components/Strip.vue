@@ -2,6 +2,7 @@
 import { computed, ref, nextTick, onBeforeUnmount } from "vue";
 import type { Aircraft } from "../types";
 import { STATE, LANDED_COLOR, PARKED_COLOR, isParked, isFlashing, isMia, formatAge, projectName, devUrl } from "../format";
+import DevLogs from "./DevLogs.vue";
 
 const props = defineProps<{ aircraft: Aircraft; now: number }>();
 const emit = defineEmits<{
@@ -86,36 +87,55 @@ const roleColor: Record<string, string> = {
   unknown: "var(--gray)",
 };
 
-// candidate popover — teleported to body so the strip's overflow:hidden can't clip it
-const menu = ref(false);
-const menuPos = ref({ x: 0, y: 0 });
-function toggleMenu(e: MouseEvent) {
+// two teleported popovers (so the strip's overflow:hidden can't clip them): the port
+// candidate list, and the dev-actions dropdown. Both share one dismiss handler.
+const portMenu = ref(false);
+const actMenu = ref(false);
+const portMenuPos = ref({ x: 0, y: 0 });
+const actMenuPos = ref({ x: 0, y: 0 });
+const posOf = (e: MouseEvent) => {
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  menuPos.value = { x: Math.round(r.left), y: Math.round(r.bottom + 4) };
-  menu.value = !menu.value;
-  if (menu.value) nextTick(() => addDismiss());
-  else removeDismiss();
+  return { x: Math.round(r.left), y: Math.round(r.bottom + 4) };
+};
+function togglePort(e: MouseEvent) {
+  const open = !portMenu.value;
+  closeMenus();
+  if (open) {
+    portMenuPos.value = posOf(e);
+    portMenu.value = true;
+    nextTick(addDismiss);
+  }
+}
+function toggleAct(e: MouseEvent) {
+  const open = !actMenu.value;
+  closeMenus();
+  if (open) {
+    actMenuPos.value = posOf(e);
+    actMenu.value = true;
+    nextTick(addDismiss);
+  }
 }
 function openPort(p: number) {
   window.open(portUrl(p), "_blank", "noreferrer");
-  closeMenu();
+  closeMenus();
 }
-function closeMenu() {
-  menu.value = false;
+function closeMenus() {
+  portMenu.value = false;
+  actMenu.value = false;
   removeDismiss();
 }
 function onDocClick(e: MouseEvent) {
-  if (!(e.target as HTMLElement).closest(".dev-menu, .dev")) closeMenu();
+  if (!(e.target as HTMLElement).closest(".dev-menu, .dev, .act-trigger")) closeMenus();
 }
 function addDismiss() {
   document.addEventListener("click", onDocClick, true);
-  window.addEventListener("scroll", closeMenu, true);
-  window.addEventListener("resize", closeMenu, true);
+  window.addEventListener("scroll", closeMenus, true);
+  window.addEventListener("resize", closeMenus, true);
 }
 function removeDismiss() {
   document.removeEventListener("click", onDocClick, true);
-  window.removeEventListener("scroll", closeMenu, true);
-  window.removeEventListener("resize", closeMenu, true);
+  window.removeEventListener("scroll", closeMenus, true);
+  window.removeEventListener("resize", closeMenus, true);
 }
 onBeforeUnmount(removeDismiss);
 const prTitle = computed(() => {
@@ -126,6 +146,36 @@ const prTitle = computed(() => {
   if (p.reviewDecision) bits.push(p.reviewDecision.toLowerCase().replace(/_/g, " "));
   return `${bits.join(" · ")}${p.title ? " — " + p.title : ""}`;
 });
+
+// managed dev server (Phase 2) — Start when a command is configured, Stop + logs when running
+const devManaged = computed(() => props.aircraft.devManaged ?? null);
+const devCommand = computed(() => props.aircraft.devCommand ?? null);
+const devExit = computed(() => props.aircraft.devExit ?? null);
+const devInstall = computed(() => props.aircraft.devInstall ?? null);
+const installFailed = computed(() => {
+  const i = devInstall.value;
+  return !!i && !i.running && i.code != null && i.code !== 0;
+});
+const installing = computed(() => !!devInstall.value?.running);
+// show the dev-actions dropdown for any repo strip (install is always available there)
+const hasDev = computed(() => !!(devInstall.value || devManaged.value || devCommand.value || devExit.value));
+const devBusy = ref(false);
+// which log the panel shows (null = closed) — the dev server, or the install output
+const logs = ref<null | "server" | "install">(null);
+async function devAction(verb: "start" | "stop" | "install") {
+  if (verb === "install") logs.value = "install"; // open the panel to watch install output
+  devBusy.value = true;
+  try {
+    const res = await fetch(`/api/aircraft/${props.aircraft.id}/dev/${verb}`, { method: "POST" });
+    // a start that fails (exited on startup, no command, spawn error) → open the logs panel
+    // so the reason is visible instead of the button silently doing nothing
+    if (verb === "start" && !res.ok) logs.value = "server";
+  } catch {
+    /* board otherwise reflects the result via the WS update */
+  } finally {
+    devBusy.value = false;
+  }
+}
 
 const editing = ref(false);
 const draft = ref("");
@@ -192,7 +242,7 @@ function commitNote() {
           <a v-if="dev && !hasMenu" class="dev" :href="portUrl(dev.port)" target="_blank" rel="noreferrer" :title="devTitle">
             <span class="dot"></span>:{{ dev.port }}
           </a>
-          <button v-else-if="dev" class="dev" :title="devTitle" @click.stop="toggleMenu">
+          <button v-else-if="dev" class="dev" :title="devTitle" @click.stop="togglePort">
             <span class="dot"></span>:{{ dev.port }}<span class="more">+{{ candidates.length - 1 }}</span><i class="ti ti-chevron-down caret"></i>
           </button>
           <span class="age" :style="{ color: landed ? LANDED_COLOR : parked ? PARKED_COLOR : meta.color }">{{ age }}</span>
@@ -215,8 +265,21 @@ function commitNote() {
           @keydown.esc="editing = false"
           @blur="commitNote"
         />
-        <button class="ghost" title="Open this session's window" @click="emit('open', aircraft.id)"><i class="ti ti-external-link"></i> open</button>
         <button v-if="!aircraft.note && !editing" class="ghost" @click="openNote"><i class="ti ti-plus"></i> note</button>
+
+        <!-- dev-server & install actions, collapsed into one dropdown to keep the row tidy.
+             Trigger colour hints state: green = running, red = install failed / crashed. -->
+        <button
+          v-if="hasDev"
+          class="ghost act-trigger"
+          :class="{ running: devManaged, alert: installFailed || (devExit && !devManaged) }"
+          :disabled="devBusy"
+          title="Dev server & dependencies"
+          @click.stop="toggleAct"
+        >
+          <i class="ti" :class="installing ? 'ti-loader-2 spin' : devManaged ? 'ti-player-stop' : 'ti-server-2'"></i>
+          dev<i class="ti ti-chevron-down caret"></i>
+        </button>
 
         <button v-if="!landed" class="ghost land" title="Mark landed" @click="emit('land', aircraft.id)">
           <i class="ti ti-plane-arrival"></i> land
@@ -225,8 +288,17 @@ function commitNote() {
     </div>
   </div>
 
+  <DevLogs
+    v-if="logs"
+    :aircraft-id="aircraft.id"
+    :title="(aircraft.title || aircraft.id) + (logs === 'install' ? ' · install' : '')"
+    :port="logs === 'server' ? (dev?.port ?? null) : null"
+    :kind="logs"
+    @close="logs = null"
+  />
+
   <Teleport to="body">
-    <div v-if="menu && dev" class="dev-menu" :style="{ left: menuPos.x + 'px', top: menuPos.y + 'px' }">
+    <div v-if="portMenu && dev" class="dev-menu" :style="{ left: portMenuPos.x + 'px', top: portMenuPos.y + 'px' }">
       <div class="dev-menu-h">dev servers in this folder</div>
       <button v-for="c in candidates" :key="c.port" class="dev-row" :class="{ best: c.port === dev.port }" @click="openPort(c.port)">
         <span class="rdot" :style="{ background: roleColor[c.role] }"></span>
@@ -234,6 +306,34 @@ function commitNote() {
         <span class="rl">{{ c.label }}</span>
         <span v-if="c.port === dev.port" class="rbest">best guess</span>
         <i class="ti ti-external-link rx"></i>
+      </button>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
+    <div v-if="actMenu" class="dev-menu act-menu" :style="{ left: actMenuPos.x + 'px', top: actMenuPos.y + 'px' }">
+      <!-- install deps -->
+      <button
+        v-if="devInstall"
+        class="dev-row"
+        @click="closeMenus(); installing ? (logs = 'install') : devAction('install')"
+      >
+        <i class="ti" :class="installing ? 'ti-loader-2 spin' : installFailed ? 'ti-alert-triangle' : 'ti-download'" :style="installFailed ? { color: 'var(--red)' } : {}"></i>
+        <span class="rl">{{ installing ? "Installing… — view log" : installFailed ? "Reinstall (last failed)" : "Install dependencies" }}</span>
+      </button>
+      <!-- start / stop -->
+      <button v-if="devManaged" class="dev-row" @click="closeMenus(); devAction('stop')">
+        <i class="ti ti-player-stop" style="color: var(--red)"></i>
+        <span class="rl">Stop dev server</span>
+      </button>
+      <button v-else-if="devCommand" class="dev-row" @click="closeMenus(); devAction('start')">
+        <i class="ti ti-player-play" style="color: var(--green)"></i>
+        <span class="rl">{{ devExit ? "Restart dev server" : "Start dev server" }}</span>
+      </button>
+      <!-- dev server log -->
+      <button v-if="devManaged || devExit" class="dev-row" @click="closeMenus(); logs = 'server'">
+        <i class="ti ti-terminal-2" :style="devExit && !devManaged ? { color: 'var(--red)' } : {}"></i>
+        <span class="rl">{{ devExit && !devManaged ? "Dev log (crashed)" : "Dev server log" }}</span>
       </button>
     </div>
   </Teleport>
@@ -278,6 +378,13 @@ function commitNote() {
 .ghost { font-size: 11px; color: var(--text-faint); border: 0.5px dashed var(--border); border-radius: 6px; padding: 1px 7px; background: transparent; display: inline-flex; align-items: center; gap: 4px; }
 .ghost:hover { color: var(--text-dim); border-color: var(--gray); }
 .ghost.land:hover { color: #4cc38a; border-color: #2f6f4f; }
+.ghost:disabled { opacity: 0.5; cursor: default; }
+.act-trigger .caret { font-size: 12px; margin-left: -1px; opacity: 0.7; }
+.act-trigger.running { color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, transparent); }
+.act-trigger.alert { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, transparent); }
+.ghost .spin { animation: ghost-spin 0.9s linear infinite; }
+@keyframes ghost-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ghost .spin { animation: none; } }
 @media (prefers-reduced-motion: reduce) {
   .strip.flash { animation: none; background: var(--amber-bg); }
 }
