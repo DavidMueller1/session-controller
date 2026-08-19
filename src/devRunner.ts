@@ -100,8 +100,9 @@ export class DevRunner {
     this.store.deleteDevServer(root);
   }
 
-  /** start (or return the already-running) managed server for a worktree root */
-  async start(root: string, command: string): Promise<{ pid: number } | { error: string }> {
+  /** start (or return the already-running) managed server for a worktree root. `env` holds
+   *  extra vars to inject (configured env, with the worktree's own .env layered on top). */
+  async start(root: string, command: string, env?: Record<string, string>): Promise<{ pid: number } | { error: string }> {
     const existing = this.managed.get(root);
     if (existing && isPidAlive(existing.pid)) return { pid: existing.pid };
     if (!command.trim()) return { error: "no dev command configured for this repo" };
@@ -119,6 +120,7 @@ export class DevRunner {
       cwd: root,
       detached: true,
       stdio: "ignore",
+      env: { ...process.env, ...env },
     });
     if (child.pid == null) return { error: "failed to spawn" };
     child.unref();
@@ -153,7 +155,7 @@ export class DevRunner {
   /** run a one-shot install (e.g. `pnpm install`) in the worktree, streaming to its own log.
    *  Detached so a tower restart doesn't abort a half-done install. Returns immediately; the
    *  UI watches progress via the install log + the state from installStateFor(). */
-  async install(root: string, command: string): Promise<{ ok: true } | { error: string }> {
+  async install(root: string, command: string, env?: Record<string, string>): Promise<{ ok: true } | { error: string }> {
     if (!existsSync(root)) return { error: "worktree folder no longer exists" };
     if (this.installs.get(root)?.running) return { ok: true }; // already installing
     const logFile = this.logPath(root, "install");
@@ -163,6 +165,7 @@ export class DevRunner {
       cwd: root,
       detached: true,
       stdio: "ignore",
+      env: { ...process.env, ...env },
     });
     if (child.pid == null) return { error: "failed to spawn" };
     child.unref();

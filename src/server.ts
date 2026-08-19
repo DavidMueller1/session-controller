@@ -7,6 +7,7 @@ import { CONFIG } from "./config.js";
 import { DevRunner } from "./devRunner.js";
 import { DevServerScanner } from "./devServers.js";
 import { Engine } from "./engine.js";
+import { parseEnv, readEnvFile } from "./envfile.js";
 import { type HookSettings, assembleHealth, readHookSettings } from "./hooksHealth.js";
 import { openAircraft } from "./open.js";
 import { startStatusPolling } from "./status.js";
@@ -43,6 +44,15 @@ async function main(): Promise<void> {
   const devRunner = new DevRunner(store, path.dirname(CONFIG.dbPath));
   devRunner.adopt();
 
+  // per-repo config falls back to global defaults, stored under this reserved key (never a
+  // real repo, since real keys are absolute .git paths). A field resolves repo → global.
+  const GLOBAL_KEY = "__global__";
+  const eff = (repoKey: string, field: "command" | "install" | "urlTemplate" | "env"): string => {
+    const own = projectConfig[repoKey]?.[field] ?? "";
+    if (own.trim()) return own;
+    return projectConfig[GLOBAL_KEY]?.[field] ?? "";
+  };
+
   const decorate = (list: DiscoveredSession[]): DiscoveredSession[] =>
     list.map((a) => {
       const isLanded = landed.has(a.id);
@@ -53,9 +63,9 @@ async function main(): Promise<void> {
       const managed = root ? devRunner.managedFor(root) : null;
       // attach the detected dev server, resolving its per-repo URL template + managed flag
       const ds = devByAircraft.get(a.id);
-      const devServer = ds ? { ...ds, urlTemplate: projectConfig[ds.repoKey]?.urlTemplate || null, managed: !!managed } : null;
+      const devServer = ds ? { ...ds, urlTemplate: eff(ds.repoKey, "urlTemplate") || null, managed: !!managed } : null;
       const repoKey = repoKeyByAircraft.get(a.id);
-      const devCommand = repoKey ? projectConfig[repoKey]?.command || null : null;
+      const devCommand = repoKey ? eff(repoKey, "command") || null : null;
       const devManaged = managed ? { pid: managed.pid, startedAt: managed.startedAt } : null;
       // a recent crash (within 10 min), only while not currently running
       const exit = root ? devRunner.exitFor(root) : null;
@@ -256,7 +266,7 @@ async function main(): Promise<void> {
   // repos the tower has strips for, with their per-repo config — drives the Settings modal
   app.get("/api/repos", async () => {
     const projects = [...new Set(fullList().map((a) => a.project).filter((p): p is string => !!p))];
-    const repos = new Map<string, { key: string; name: string; urlTemplate: string; command: string }>();
+    const repos = new Map<string, { key: string; name: string; urlTemplate: string; command: string; install: string; env: string }>();
     await Promise.all(
       projects.map(async (p) => {
         const r = await devScanner.resolveRepo(p);
@@ -266,25 +276,36 @@ async function main(): Promise<void> {
             name: r.name,
             urlTemplate: projectConfig[r.key]?.urlTemplate ?? "",
             command: projectConfig[r.key]?.command ?? "",
+            install: projectConfig[r.key]?.install ?? "",
+            env: projectConfig[r.key]?.env ?? "",
           });
       }),
     );
-    return [...repos.values()].sort((a, b) => a.name.localeCompare(b.name));
+    const g = projectConfig[GLOBAL_KEY];
+    return {
+      global: { urlTemplate: g?.urlTemplate ?? "", command: g?.command ?? "", install: g?.install ?? "", env: g?.env ?? "" },
+      repos: [...repos.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    };
   });
 
-  // set (or clear) a repo's dev URL template + start command; refreshes live via pushUpdate
-  app.put<{ Body: { key?: string; name?: string; urlTemplate?: string; command?: string } }>("/api/repos", async (req, reply) => {
-    const key = (req.body?.key ?? "").trim();
-    if (!key) return reply.code(400).send({ error: "key required" });
-    const tmpl = (req.body?.urlTemplate ?? "").trim();
-    const command = (req.body?.command ?? "").trim();
-    if (tmpl || command) store.setProjectConfig(key, req.body?.name ?? null, tmpl, command);
-    else store.deleteProjectConfig(key);
-    projectConfig = store.getProjectConfigs();
-    void refreshDevServers(); // command availability may have changed
-    pushUpdate();
-    return { ok: true, key, urlTemplate: tmpl, command };
-  });
+  // set (or clear) a repo's dev URL template, start/install commands + env vars; refreshes live
+  app.put<{ Body: { key?: string; name?: string; urlTemplate?: string; command?: string; install?: string; env?: string } }>(
+    "/api/repos",
+    async (req, reply) => {
+      const key = (req.body?.key ?? "").trim();
+      if (!key) return reply.code(400).send({ error: "key required" });
+      const tmpl = (req.body?.urlTemplate ?? "").trim();
+      const command = (req.body?.command ?? "").trim();
+      const install = (req.body?.install ?? "").trim();
+      const env = (req.body?.env ?? "").trim();
+      if (tmpl || command || install || env) store.setProjectConfig(key, req.body?.name ?? null, tmpl, command, install, env);
+      else store.deleteProjectConfig(key);
+      projectConfig = store.getProjectConfigs();
+      void refreshDevServers(); // command availability may have changed
+      pushUpdate();
+      return { ok: true, key, urlTemplate: tmpl, command, install };
+    },
+  );
 
   // resolve a strip → its worktree root (where a managed server runs) + repo key
   const rootForAircraft = async (id: string): Promise<{ root: string; repoKey: string } | null> => {
@@ -294,13 +315,20 @@ async function main(): Promise<void> {
     return root ? { root, repoKey: repo?.key ?? "" } : null;
   };
 
+  // extra env for a spawned command: configured vars (repo → global), with the worktree's
+  // own .env layered ON TOP so a real .env always wins over the tower-configured values.
+  const extraEnvFor = (root: string, repoKey: string): Record<string, string> => ({
+    ...parseEnv(eff(repoKey, "env")),
+    ...readEnvFile(path.join(root, ".env")),
+  });
+
   // start the repo's configured dev server for this strip's worktree
   app.post<{ Params: { id: string } }>("/api/aircraft/:id/dev/start", async (req, reply) => {
     const info = await rootForAircraft(req.params.id);
     if (!info) return reply.code(404).send({ error: "not found or not a git repo" });
-    const command = projectConfig[info.repoKey]?.command ?? "";
+    const command = eff(info.repoKey, "command");
     if (!command.trim()) return reply.code(400).send({ error: "no dev command configured — set one in Settings" });
-    const res = await devRunner.start(info.root, command);
+    const res = await devRunner.start(info.root, command, extraEnvFor(info.root, info.repoKey));
     if ("error" in res) return reply.code(500).send(res);
     // A bad command (missing deps, wrong Node, typo) exits within a moment — its child
     // 'exit' clears it from the runner. Catch that here and return the log tail so the UI
@@ -318,7 +346,8 @@ async function main(): Promise<void> {
   app.post<{ Params: { id: string } }>("/api/aircraft/:id/dev/install", async (req, reply) => {
     const info = await rootForAircraft(req.params.id);
     if (!info) return reply.code(404).send({ error: "not found or not a git repo" });
-    const res = await devRunner.install(info.root, "pnpm install");
+    const command = eff(info.repoKey, "install").trim() || "pnpm install";
+    const res = await devRunner.install(info.root, command, extraEnvFor(info.root, info.repoKey));
     if ("error" in res) return reply.code(500).send(res);
     void refreshDevServers();
     return { ok: true };

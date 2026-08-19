@@ -86,6 +86,8 @@ export class Store {
         repo_name        TEXT,
         dev_url_template TEXT,
         dev_command      TEXT,
+        install_command  TEXT,
+        env_vars         TEXT,
         updated_at       INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS dev_servers (
@@ -96,8 +98,10 @@ export class Store {
         started_at INTEGER NOT NULL
       );
     `);
-    // additive migration for DBs created before dev_command existed
+    // additive migrations for DBs created before these columns existed
     this.addColumn("project_config", "dev_command", "TEXT");
+    this.addColumn("project_config", "install_command", "TEXT");
+    this.addColumn("project_config", "env_vars", "TEXT");
   }
 
   /** add a column if it isn't already present (SQLite has no IF NOT EXISTS for columns) */
@@ -107,26 +111,41 @@ export class Store {
   }
 
   /** per-repo config, keyed by the shared git dir (so it's set once for all worktrees) */
-  getProjectConfigs(): Record<string, { name: string | null; urlTemplate: string; command: string }> {
-    const rows = this.db.prepare(`SELECT repo_key, repo_name, dev_url_template, dev_command FROM project_config`).all() as {
+  getProjectConfigs(): Record<string, { name: string | null; urlTemplate: string; command: string; install: string; env: string }> {
+    const rows = this.db
+      .prepare(`SELECT repo_key, repo_name, dev_url_template, dev_command, install_command, env_vars FROM project_config`)
+      .all() as {
       repo_key: string;
       repo_name: string | null;
       dev_url_template: string | null;
       dev_command: string | null;
+      install_command: string | null;
+      env_vars: string | null;
     }[];
     return Object.fromEntries(
-      rows.map((r) => [r.repo_key, { name: r.repo_name, urlTemplate: r.dev_url_template ?? "", command: r.dev_command ?? "" }]),
+      rows.map((r) => [
+        r.repo_key,
+        {
+          name: r.repo_name,
+          urlTemplate: r.dev_url_template ?? "",
+          command: r.dev_command ?? "",
+          install: r.install_command ?? "",
+          env: r.env_vars ?? "",
+        },
+      ]),
     );
   }
 
-  setProjectConfig(key: string, name: string | null, urlTemplate: string, command: string): void {
+  setProjectConfig(key: string, name: string | null, urlTemplate: string, command: string, install: string, env: string): void {
     this.db
       .prepare(
-        `INSERT INTO project_config (repo_key, repo_name, dev_url_template, dev_command, updated_at) VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO project_config (repo_key, repo_name, dev_url_template, dev_command, install_command, env_vars, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(repo_key) DO UPDATE SET repo_name = excluded.repo_name, dev_url_template = excluded.dev_url_template,
-           dev_command = excluded.dev_command, updated_at = excluded.updated_at`,
+           dev_command = excluded.dev_command, install_command = excluded.install_command, env_vars = excluded.env_vars,
+           updated_at = excluded.updated_at`,
       )
-      .run(key, name, urlTemplate, command, Date.now());
+      .run(key, name, urlTemplate, command, install, env, Date.now());
   }
 
   deleteProjectConfig(key: string): void {
