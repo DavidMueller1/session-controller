@@ -6,7 +6,7 @@ whether it runs in the **PHPStorm terminal (Claude Code CLI)** or the **Claude D
 (Cowork / local agent mode)**.
 
 See [CONCEPT.md](CONCEPT.md) for the full design and the locked decisions, and
-**[SETUP.md](SETUP.md)** to get it running (`nvm use && pnpm run setup`).
+**[SETUP.md](SETUP.md)** to get it running — one command: `./install.sh`.
 
 ## Status
 

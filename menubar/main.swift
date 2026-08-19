@@ -44,6 +44,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         render(running: false, holding: 0)
         refresh()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in self?.refresh() }
+
+        // Hands-off: launch the server on start-up so the app (as a Login Item) keeps the
+        // dashboard always-on. Skips if something is already listening on the port —
+        // e.g. a `pnpm serve` you started, or a previous launch that's still up.
+        if !isPortOpen() { start() }
     }
 
     func applicationWillTerminate(_ note: Notification) {
