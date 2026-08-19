@@ -38,7 +38,7 @@ html, body {
 
 button { font-family: inherit; cursor: pointer; }
 
-input {
+input, textarea {
   font-family: inherit;
   background: var(--bg);
   border: 0.5px solid var(--border);
@@ -47,7 +47,7 @@ input {
   padding: 4px 8px;
   outline: none;
 }
-input:focus { border-color: var(--amber); }
+input:focus, textarea:focus { border-color: var(--amber); }
 
 ::-webkit-scrollbar { height: 8px; width: 8px; }
 ::-webkit-scrollbar-thumb { background: #232b35; border-radius: 4px; }

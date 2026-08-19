@@ -2,16 +2,22 @@
 import { onMounted, ref } from "vue";
 import { devUrl } from "../format";
 
-interface RepoRow {
-  key: string;
-  name: string;
+interface Cfg {
   urlTemplate: string;
   command: string;
+  install: string;
+  env: string;
+}
+interface RepoRow extends Cfg {
+  key: string;
+  name: string;
 }
 
+const GLOBAL_KEY = "__global__";
 const emit = defineEmits<{ close: [] }>();
 
 const repos = ref<RepoRow[]>([]);
+const globals = ref<Cfg>({ urlTemplate: "", command: "", install: "", env: "" });
 const loading = ref(true);
 const savedKey = ref<string | null>(null);
 let savedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -19,7 +25,9 @@ let savedTimer: ReturnType<typeof setTimeout> | undefined;
 onMounted(async () => {
   try {
     const res = await fetch("/api/repos");
-    repos.value = (await res.json()) as RepoRow[];
+    const data = (await res.json()) as { global: Cfg; repos: RepoRow[] };
+    globals.value = data.global;
+    repos.value = data.repos;
   } catch {
     repos.value = [];
   } finally {
@@ -29,17 +37,28 @@ onMounted(async () => {
 
 // preview the link a template produces, using :3000 as a stand-in port
 const preview = (t: string) => devUrl(t, 3000);
+// what a repo field falls back to when left blank: the global default, else the built-in
+const ph = (field: keyof Cfg, fallback: string) => globals.value[field]?.trim() || fallback;
 
-async function save(row: RepoRow) {
+async function put(key: string, name: string | null, cfg: Cfg) {
   await fetch("/api/repos", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key: row.key, name: row.name, urlTemplate: row.urlTemplate.trim(), command: row.command.trim() }),
+    body: JSON.stringify({
+      key,
+      name,
+      urlTemplate: cfg.urlTemplate.trim(),
+      command: cfg.command.trim(),
+      install: cfg.install.trim(),
+      env: cfg.env.trim(),
+    }),
   });
-  savedKey.value = row.key;
+  savedKey.value = key;
   clearTimeout(savedTimer);
   savedTimer = setTimeout(() => (savedKey.value = null), 1500);
 }
+const save = (r: RepoRow) => put(r.key, r.name, r);
+const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
 </script>
 
 <template>
@@ -51,40 +70,62 @@ async function save(row: RepoRow) {
       </div>
 
       <p class="s-note">
-        Per repo (applies to every worktree). <b>Command</b> is what the Start button runs in the worktree — e.g.
-        <code>pnpm dev</code> (runs in your login shell, so nvm/PATH apply). <b>Open URL</b> is used by the port badge;
-        use <code>{port}</code> for the detected port, empty = <code>http://localhost:{port}</code>.
+        <b>Global defaults</b> apply to every repo; a per-repo value overrides just that field (blank inherits the
+        global — shown as its placeholder). <b>Start</b>/<b>Install</b> run in the worktree via your login shell
+        (nvm/PATH apply); install falls back to <code>pnpm install</code>. <b>Open URL</b> uses <code>{port}</code> for
+        the detected port. <b>Env vars</b> (<code>KEY=value</code> per line) inject into start/install — a real
+        <code>.env</code> in the worktree always wins.
       </p>
 
-      <div v-if="loading" class="s-empty">loading repos…</div>
-      <div v-else-if="!repos.length" class="s-empty">no repos with strips yet</div>
-
+      <div v-if="loading" class="s-empty">loading…</div>
       <div v-else class="s-list">
+        <!-- Global defaults -->
+        <div class="s-row s-global">
+          <div class="s-name"><i class="ti ti-world-cog"></i> Global defaults</div>
+          <div class="s-fields">
+            <label class="s-field">
+              <span class="s-label">start command</span>
+              <input v-model="globals.command" class="s-input" placeholder="pnpm dev" spellcheck="false" @keydown.enter="saveGlobal" @blur="saveGlobal" />
+            </label>
+            <label class="s-field">
+              <span class="s-label">install command</span>
+              <input v-model="globals.install" class="s-input" placeholder="pnpm install" spellcheck="false" @keydown.enter="saveGlobal" @blur="saveGlobal" />
+            </label>
+            <label class="s-field">
+              <span class="s-label">open URL</span>
+              <input v-model="globals.urlTemplate" class="s-input" placeholder="http://localhost:{port}" spellcheck="false" @keydown.enter="saveGlobal" @blur="saveGlobal" />
+              <span class="s-preview">→ {{ preview(globals.urlTemplate) }}</span>
+            </label>
+            <label class="s-field">
+              <span class="s-label">env vars</span>
+              <textarea v-model="globals.env" class="s-input s-env" rows="2" placeholder="KEY=value" spellcheck="false" @blur="saveGlobal"></textarea>
+            </label>
+          </div>
+          <span class="s-saved" :class="{ show: savedKey === GLOBAL_KEY }"><i class="ti ti-check"></i> saved</span>
+        </div>
+
+        <div class="s-sep">per repo</div>
+        <div v-if="!repos.length" class="s-empty">no repos with strips yet</div>
+
         <div v-for="r in repos" :key="r.key" class="s-row">
           <div class="s-name" :title="r.key">{{ r.name }}</div>
           <div class="s-fields">
             <label class="s-field">
               <span class="s-label">start command</span>
-              <input
-                v-model="r.command"
-                class="s-input"
-                placeholder="pnpm dev"
-                spellcheck="false"
-                @keydown.enter="save(r)"
-                @blur="save(r)"
-              />
+              <input v-model="r.command" class="s-input" :placeholder="ph('command', 'pnpm dev')" spellcheck="false" @keydown.enter="save(r)" @blur="save(r)" />
+            </label>
+            <label class="s-field">
+              <span class="s-label">install command</span>
+              <input v-model="r.install" class="s-input" :placeholder="ph('install', 'pnpm install')" spellcheck="false" @keydown.enter="save(r)" @blur="save(r)" />
             </label>
             <label class="s-field">
               <span class="s-label">open URL</span>
-              <input
-                v-model="r.urlTemplate"
-                class="s-input"
-                placeholder="http://localhost:{port}"
-                spellcheck="false"
-                @keydown.enter="save(r)"
-                @blur="save(r)"
-              />
-              <span class="s-preview">→ {{ preview(r.urlTemplate) }}</span>
+              <input v-model="r.urlTemplate" class="s-input" :placeholder="ph('urlTemplate', 'http://localhost:{port}')" spellcheck="false" @keydown.enter="save(r)" @blur="save(r)" />
+              <span class="s-preview">→ {{ preview(r.urlTemplate.trim() || globals.urlTemplate) }}</span>
+            </label>
+            <label class="s-field">
+              <span class="s-label">env vars</span>
+              <textarea v-model="r.env" class="s-input s-env" rows="2" :placeholder="ph('env', 'KEY=value')" spellcheck="false" @blur="save(r)"></textarea>
             </label>
           </div>
           <span class="s-saved" :class="{ show: savedKey === r.key }"><i class="ti ti-check"></i> saved</span>
@@ -106,11 +147,15 @@ async function save(row: RepoRow) {
 .s-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; }
 .s-row { display: grid; grid-template-columns: 160px 1fr auto; align-items: start; gap: 12px; padding: 10px 8px; border-radius: 8px; }
 .s-row:hover { background: rgba(255, 255, 255, 0.02); }
-.s-name { font-size: 12px; font-weight: 500; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 4px; }
+.s-global { background: rgba(88, 166, 255, 0.05); border: 0.5px solid var(--border-soft); }
+.s-name { font-size: 12px; font-weight: 500; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 4px; display: inline-flex; align-items: center; gap: 5px; }
+.s-name i { color: var(--text-faint); }
+.s-sep { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); padding: 12px 8px 4px; }
 .s-fields { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .s-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .s-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); }
 .s-input { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12px; width: 100%; }
+.s-env { resize: vertical; min-height: 40px; line-height: 1.4; }
 .s-preview { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .s-saved { font-size: 11px; color: var(--green); opacity: 0; transition: opacity 0.15s; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; padding-top: 4px; }
 .s-saved.show { opacity: 1; }
