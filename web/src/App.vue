@@ -4,6 +4,7 @@ import Strip from "./components/Strip.vue";
 import FlightBoard from "./components/FlightBoard.vue";
 import FlipCounter from "./components/FlipCounter.vue";
 import Settings from "./components/Settings.vue";
+import Help from "./components/Help.vue";
 import { useBoard } from "./useBoard";
 import { laneOf, isFlashing } from "./format";
 import type { Aircraft } from "./types";
@@ -135,6 +136,7 @@ const holding = computed(() =>
 const clock = computed(() => new Date(now.value).toLocaleTimeString());
 
 const settingsOpen = ref(false);
+const helpOpen = ref(false);
 
 // cross-column FLIP: measure before patch, tween from old → new screen position
 let firstRects = new Map<string, DOMRect>();
@@ -275,6 +277,7 @@ function onOpen(id: string) { open(id); }
         <button class="bell" title="Settings" aria-label="Settings" @click="settingsOpen = true">
           <i class="ti ti-settings"></i>
         </button>
+        <button class="bell help-btn" title="Help — reading the board" aria-label="Help" @click="helpOpen = true">?</button>
         <button
           v-if="notifySupported"
           class="bell"
@@ -356,6 +359,7 @@ function onOpen(id: string) { open(id); }
     </div>
 
     <Settings v-if="settingsOpen" @close="settingsOpen = false" />
+    <Help v-if="helpOpen" @close="helpOpen = false" />
   </div>
 </template>
 
@@ -391,6 +395,9 @@ header { flex: none; display: flex; align-items: center; justify-content: space-
 .bell { all: unset; cursor: pointer; display: inline-flex; align-items: center; padding: 3px; border-radius: 6px; color: var(--text-faint); font-size: 14px; }
 .bell:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-dim); }
 .bell.on { color: var(--amber); }
+/* help "?" is text, not a glyph — the font lacks a plain question mark, and the circled
+   variants render the mark too small to read at this size */
+.help-btn { font-size: 15px; font-weight: 700; line-height: 1; width: 20px; justify-content: center; }
 
 /* board: MIA rail on the left, everything else in the main column */
 .board { flex: 1; min-height: 0; display: flex; gap: 12px; padding-top: 12px; }
