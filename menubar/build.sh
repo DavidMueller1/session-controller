@@ -58,13 +58,21 @@ cp "$LOGO"                      "$APP/Contents/Resources/statusicon.svg"
 # inherit your shell PATH/nvm).
 cat > "$APP/Contents/Resources/launch.sh" <<EOF
 #!/bin/bash
-export NVM_DIR="\$HOME/.nvm"
-[ -s "\$NVM_DIR/nvm.sh" ] && . "\$NVM_DIR/nvm.sh" >/dev/null 2>&1
-export PATH="$NODE_BIN:\$PATH"
+# The Node version comes from the project's .nvmrc — never from whatever shell
+# built this app. A mismatch silently breaks native modules (better-sqlite3's
+# .node is compiled per ABI), and the server dies on the first DB open.
 cd "$ROOT" || exit 1
-[ -d node_modules ] || "$PNPM" install || exit 1
-[ -d web/dist ] || "$PNPM" ui:build || exit 1
-exec "$PNPM" start
+export NVM_DIR="\$HOME/.nvm"
+if [ -s "\$NVM_DIR/nvm.sh" ]; then
+  . "\$NVM_DIR/nvm.sh" >/dev/null 2>&1
+  nvm use >/dev/null 2>&1 || nvm install >/dev/null 2>&1
+fi
+# Fallback for machines without nvm: the node/pnpm this bundle was built with.
+command -v node >/dev/null 2>&1 || export PATH="$NODE_BIN:\$PATH"
+PNPM="\$(command -v pnpm || echo "$PNPM")"
+[ -d node_modules ] || "\$PNPM" install || exit 1
+[ -d web/dist ] || "\$PNPM" ui:build || exit 1
+exec "\$PNPM" start
 EOF
 chmod +x "$APP/Contents/Resources/launch.sh"
 
