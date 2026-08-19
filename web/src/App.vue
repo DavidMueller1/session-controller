@@ -106,12 +106,22 @@ const healthTitle = computed(() => {
   return `installed: ${h.installedEvents.join(", ") || "none"} · fresh hook writes: ${h.freshWrites} · last: ${last}`;
 });
 
+// Hide landed strips older than 7 days — a landing that old is done and just clutters the
+// board. Filtered out of the set that feeds BOTH the flight layer and the simple list, so
+// they vanish everywhere in one place (non-landed strips always pass through).
+const HIDE_LANDED_MS = 7 * 24 * 60 * 60 * 1000;
+const landedAge = (a: { stateSince?: number | null; lastActivityAt: number | null }) =>
+  now.value - (a.stateSince ?? a.lastActivityAt ?? now.value);
+const boardAircraft = computed<Aircraft[]>(() =>
+  effectiveAircraft.value.filter((a) => !(laneOf(a) === "landed" && landedAge(a) > HIDE_LANDED_MS)),
+);
+
 // order by when each entered its state, so tool calls / thinking don't reshuffle the
 // board — a strip only moves when its state actually changes.
 const orderKey = (a: { stateSince?: number | null; lastActivityAt: number | null }) =>
   a.stateSince ?? a.lastActivityAt ?? 0;
 const byLane = (lane: string) =>
-  effectiveAircraft.value.filter((a) => laneOf(a) === lane).sort((a, b) => orderKey(b) - orderKey(a));
+  boardAircraft.value.filter((a) => laneOf(a) === lane).sort((a, b) => orderKey(b) - orderKey(a));
 
 const inflight = computed(() => byLane("inflight"));
 const mia = computed(() => byLane("mia"));
@@ -121,15 +131,6 @@ const landed = computed(() => byLane("landed"));
 const holding = computed(() =>
   byLane("holding").sort((a, b) => Number(isFlashing(b)) - Number(isFlashing(a))),
 );
-
-// Landed = one horizontally-scrollable row of recent landings; anything last active
-// more than 10 days ago drops into the Cold drawer (opened on demand).
-const TEN_DAYS = 10 * 24 * 60 * 60 * 1000;
-const landedAge = (a: { stateSince?: number | null; lastActivityAt: number | null }) =>
-  now.value - (a.stateSince ?? a.lastActivityAt ?? now.value);
-const landedVisible = computed(() => landed.value.filter((a) => landedAge(a) <= TEN_DAYS));
-const cold = computed(() => landed.value.filter((a) => landedAge(a) > TEN_DAYS));
-const showCold = ref(false);
 
 const clock = computed(() => new Date(now.value).toLocaleTimeString());
 
@@ -293,7 +294,7 @@ function onOpen(id: string) { open(id); }
 
     <FlightBoard
       v-if="flight"
-      :aircraft="effectiveAircraft"
+      :aircraft="boardAircraft"
       :now="now"
       :debug="debug"
       @set-note="onSet"
@@ -342,35 +343,19 @@ function onOpen(id: string) { open(id); }
           </section>
         </div>
 
-        <!-- LANDED: one row of the most-recent that fit; the older tail goes to Cold -->
+        <!-- LANDED: one row of recent landings (older than 7 days are hidden) -->
         <div v-if="landed.length" class="landed-region">
           <div class="band-h landed-h">
-            <i class="ti ti-plane-arrival"></i>Landed <span class="n">{{ landedVisible.length }}</span>
-            <button v-if="cold.length" class="cold-chip" title="Landed more than 10 days ago" @click="showCold = true">
-              <i class="ti ti-stack-2"></i> {{ cold.length }} cold
-            </button>
+            <i class="ti ti-plane-arrival"></i>Landed <span class="n">{{ landed.length }}</span>
           </div>
           <div v-fade class="band landed-band" @wheel="onLandedWheel">
-            <Strip v-for="a in landedVisible" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
+            <Strip v-for="a in landed" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
           </div>
         </div>
       </div>
     </div>
 
     <Settings v-if="settingsOpen" @close="settingsOpen = false" />
-
-    <!-- COLD: older landed, opened on demand and scrolled through -->
-    <div v-if="showCold" class="cold-overlay" @click.self="showCold = false">
-      <div class="cold-panel">
-        <div class="cold-panel-h">
-          <span><i class="ti ti-plane-arrival"></i> Cold — {{ cold.length }} older landed</span>
-          <button class="icon" aria-label="close" @click="showCold = false"><i class="ti ti-x"></i></button>
-        </div>
-        <div v-fade class="cold-panel-grid">
-          <Strip v-for="a in cold" :key="a.id" :aircraft="a" :now="now" @set-note="onSet" @remove-note="onRemove" @land="onLand" @unland="onUnland" @open="onOpen" />
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -434,23 +419,12 @@ header { flex: none; display: flex; align-items: center; justify-content: space-
 .stack { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .empty { font-size: 11px; color: var(--text-faint); padding: 6px 2px; }
 
-/* landed pinned at the bottom as ONE row of what fits; the older tail goes to Cold.
-   overflow:hidden (not auto) — no scrollbar; we render only the tiles that fit. */
+/* landed pinned at the bottom as ONE row of recent landings (older than 7 days hidden) */
 .landed-region { flex: none; display: flex; flex-direction: column; margin-top: 14px; }
 .landed-region .landed-h { margin-bottom: 8px; flex: none; }
-.cold-chip { all: unset; cursor: pointer; margin-left: 8px; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-faint); border: 0.5px dashed var(--border); border-radius: 6px; padding: 1px 7px; }
-.cold-chip:hover { color: var(--text-dim); border-color: var(--gray); }
 /* single row, scrolls sideways; align-items:stretch makes every card as tall as the tallest */
 .landed-band { display: flex; flex-wrap: nowrap; align-items: stretch; grid-template-columns: none; gap: 8px; overflow-x: auto; overflow-y: hidden; padding-bottom: 12px; }
 .landed-band > * { flex: 0 0 232px; min-width: 0; }
-
-/* cold: an on-demand overlay list, scrolled through (we rarely visit it) */
-.cold-overlay { position: fixed; inset: 0; z-index: 40; background: rgba(6, 9, 13, 0.66); display: flex; align-items: center; justify-content: center; padding: 32px; }
-.cold-panel { width: min(1100px, 92vw); max-height: 82vh; display: flex; flex-direction: column; background: var(--panel); border: 0.5px solid var(--border); border-radius: 12px; box-shadow: 0 18px 60px rgba(0,0,0,0.5); overflow: hidden; }
-.cold-panel-h { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; border-bottom: 0.5px solid var(--border-soft); font-size: 13px; font-weight: 500; color: var(--text); }
-.cold-panel-h .icon { all: unset; cursor: pointer; display: inline-flex; padding: 4px; border-radius: 6px; color: var(--text-faint); font-size: 15px; }
-.cold-panel-h .icon:hover { background: rgba(255,255,255,0.08); color: var(--text-dim); }
-.cold-panel-grid { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; padding: 12px 14px; align-content: start; }
 
 @media (max-width: 900px) { .lanes { grid-template-columns: 1fr; } .mia-rail { width: 200px; } }
 </style>
