@@ -197,7 +197,7 @@ function commitNote() {
     <div class="spine" :style="{ background: spineColor }"></div>
     <div class="body">
       <div class="cs">
-        <span class="title">{{ aircraft.title || aircraft.id }}</span>
+        <span class="title" title="Open the session's window (terminal / PhpStorm / Claude)" @click.stop="emit('open', aircraft.id)">{{ aircraft.title || aircraft.id }}</span>
         <span v-if="landed" class="badge" style="background: #16301f; color: #4cc38a"><i class="ti ti-check"></i> Landed<button class="badge-x" aria-label="undo landing" title="undo landing" @click="emit('unland', aircraft.id)"><i class="ti ti-x"></i></button></span>
         <span v-else-if="mia" class="badge" style="background: #1c222c; color: #8b98a8" title="no activity for 5+ min — still flying, but lost contact"><i class="ti ti-clock"></i> MIA</span>
         <span v-else-if="parked" class="badge" style="background: var(--parked-bg); color: var(--parked)"><i class="ti ti-parking"></i> Parked</span>
@@ -346,7 +346,8 @@ function commitNote() {
 /* the variable-length middle; it (not the buttons) clips when the strip is height-capped */
 .mid { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 4px; }
 .actions { flex: none; }
-.title { font-size: 13px; font-weight: 500; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.title { font-size: 13px; font-weight: 500; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; cursor: pointer; }
+.title:hover { text-decoration: underline; text-decoration-color: var(--gray); text-underline-offset: 2px; }
 .ctx { width: 16px; height: 16px; flex: none; margin-left: auto; }
 .badge { font-size: 10px; padding: 1px 6px; border-radius: 6px; white-space: nowrap; flex: none; display: inline-flex; align-items: center; gap: 3px; }
 .badge.dim { background: #1c222c; color: #8b98a8; }
