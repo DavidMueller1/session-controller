@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.22.0",
   "description": "Air-traffic-control style tracker for parallel Claude sessions",
   "scripts": {
     "start": "tsx src/server.ts",
