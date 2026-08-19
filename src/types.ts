@@ -139,6 +139,10 @@ export interface SessionFacts {
   contextTokens: number | null;
   /** desktop: session archived by the app (a "suspected done" signal) */
   archived?: boolean;
+  /** CLI: the predecessor session id this transcript continued from after a `/compact`
+   *  (parsed from the "continued from a previous conversation" preamble). Lets the board
+   *  fold a compacted session and its live continuation into one flight. null = fresh. */
+  continuedFrom?: string | null;
 }
 
 export interface DiscoveredSession {
@@ -205,4 +209,10 @@ export interface DiscoveredSession {
   devInstall?: { running: boolean; code: number | null; at: number } | null;
   /** shown from the persisted store because it has no live file right now */
   offline?: boolean;
+  /** CLI: predecessor session this transcript continued from after a `/compact` (raw link
+   *  from the transcript). Used by correlate to supersede the old session. */
+  continuedFrom?: string | null;
+  /** predecessor session ids this aircraft supersedes (a compaction chain, newest-last
+   *  excluded). Set by correlate; the server folds their note/landed onto this flight. */
+  supersedes?: string[];
 }

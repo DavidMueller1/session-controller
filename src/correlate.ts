@@ -92,5 +92,43 @@ export function correlate(all: DiscoveredSession[]): DiscoveredSession[] {
     out.push({ ...collapseCli(group), surfaces: ["cli"] });
   }
 
-  return out;
+  return supersedeContinuations(out);
+}
+
+/**
+ * A session that `/compact`ed opens a brand-new transcript (new session id) that continues
+ * the exhausted one — so the old and new both show up as aircraft. Fold each such chain into
+ * a single flight: the live continuation survives, its predecessor(s) are dropped, and the
+ * survivor carries `supersedes` (the retired ids, so the server can move their note/landed
+ * across). Only links where BOTH ends are present are collapsed; a continuation whose parent
+ * has aged out of the set stands on its own.
+ */
+function supersedeContinuations(out: DiscoveredSession[]): DiscoveredSession[] {
+  const byId = new Map(out.map((s) => [s.id, s]));
+  // child → parent, restricted to links whose parent is also present right now
+  const parentOf = new Map<string, string>();
+  for (const s of out) if (s.continuedFrom && byId.has(s.continuedFrom)) parentOf.set(s.id, s.continuedFrom);
+  if (parentOf.size === 0) return out;
+
+  // a title is "real" only if it isn't just the session id (no ai-title / first prompt yet)
+  const named = (s: DiscoveredSession): boolean => !!s.title && s.title !== s.id;
+  const superseded = new Set(parentOf.values()); // any id that some present child continued from
+  return out
+    .filter((s) => !superseded.has(s.id))
+    .map((s) => {
+      // walk the chain of predecessors this survivor transitively continues from
+      const chain: string[] = [];
+      const guard = new Set<string>();
+      for (let p = parentOf.get(s.id); p && !guard.has(p); p = parentOf.get(p)) {
+        guard.add(p);
+        chain.push(p);
+      }
+      if (!chain.length) return s;
+      // A compaction continues the SAME task, so keep the flight's established identity:
+      // inherit the nearest named predecessor's title (its ai-title / first real prompt)
+      // rather than the continuation's, whose opening turns are compaction/command noise.
+      // A live `/rename` still overrides this later in the engine (callsign wins).
+      const inherited = chain.map((id) => byId.get(id)).find((p) => p && named(p))?.title;
+      return { ...s, title: inherited ?? s.title, supersedes: chain };
+    });
 }

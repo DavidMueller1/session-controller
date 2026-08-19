@@ -55,7 +55,12 @@ async function main(): Promise<void> {
 
   const decorate = (list: DiscoveredSession[]): DiscoveredSession[] =>
     list.map((a) => {
-      const isLanded = landed.has(a.id);
+      // note/landed live under this flight's own id once reassign() has run; until then
+      // (and defensively) fall back to a superseded predecessor's. Don't carry `landed`
+      // onto an actively working continuation — it auto-clears when work resumes anyway.
+      const carriedNote = a.supersedes?.map((id) => notes[id]).find(Boolean);
+      const carriedLanded = a.state !== "working" && !!a.supersedes?.some((id) => landed.has(id));
+      const isLanded = landed.has(a.id) || carriedLanded;
       // Approach = a merged PR, unless landed. A working session wins the lane on the
       // client (working → In-flight), so a merged-but-active session shows In-flight.
       const approach = !isLanded && a.pr?.state === "MERGED";
@@ -72,7 +77,7 @@ async function main(): Promise<void> {
       const devExit = !managed && exit && Date.now() - exit.at < 10 * 60_000 ? exit : null;
       // install affordance for any repo strip; carries running + last-exit state
       const devInstall = root ? (devRunner.installStateFor(root) ?? { running: false, code: null, at: 0 }) : null;
-      return { ...a, note: notes[a.id] ?? null, landed: isLanded, approach, devServer, devCommand, devManaged, devExit, devInstall };
+      return { ...a, note: notes[a.id] ?? carriedNote ?? null, landed: isLanded, approach, devServer, devCommand, devManaged, devExit, devInstall };
     });
 
   // Persistence: a tracked session with no live file right now is still shown from the
@@ -81,10 +86,14 @@ async function main(): Promise<void> {
   const floorOffline = (s: ActivityState): ActivityState =>
     s === "working" || s === "needs-input" || s === "unknown" ? "idle" : s;
   function offlineSessions(): DiscoveredSession[] {
-    const live = new Set(engine.aircraft().map((a) => a.id));
+    const liveList = engine.aircraft();
+    const live = new Set(liveList.map((a) => a.id));
+    // a superseded predecessor is folded into its live continuation — never a strip of its
+    // own, even for the brief window before its persisted row is retired.
+    const superseded = new Set(liveList.flatMap((a) => a.supersedes ?? []));
     return store
       .getSessions()
-      .filter((s) => !live.has(s.id))
+      .filter((s) => !live.has(s.id) && !superseded.has(s.id))
       .map((s) => ({ ...s, state: floorOffline(s.state), offline: true }));
   }
   const baseList = (): DiscoveredSession[] => [...engine.aircraft(), ...offlineSessions()];
@@ -188,6 +197,14 @@ async function main(): Promise<void> {
   // engine → persist sessions + push decorated update
   engine.on("update", (list: DiscoveredSession[]) => {
     store.syncSessions(list);
+    // fold each compacted predecessor's note/landed onto its live continuation and retire
+    // its persisted row (so it can't come back as an offline strip). Idempotent per tick.
+    let reassigned = false;
+    for (const a of list) for (const from of a.supersedes ?? []) if (store.reassign(from, a.id)) reassigned = true;
+    if (reassigned) {
+      notes = store.getNotes();
+      landed = new Set(store.getLanded());
+    }
     autoUnlandOnWork(list);
     broadcast({ type: "update", ts: Date.now(), aircraft: fullList() });
     refreshHealth();

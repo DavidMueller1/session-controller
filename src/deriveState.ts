@@ -63,5 +63,6 @@ export function resolve(f: SessionFacts, now: number): DiscoveredSession {
     linkedCliSessionId: f.linkedCliSessionId,
     contextTokens: f.contextTokens,
     contextPct: contextPctOf(f.contextTokens),
+    continuedFrom: f.continuedFrom ?? null,
   };
 }

@@ -262,6 +262,39 @@ export class Store {
     return rows.map(rowToSession);
   }
 
+  /**
+   * Fold a superseded predecessor onto its continuation (a `/compact` chain). Moves the
+   * note + landed flag to the successor if it doesn't already have them, then retires the
+   * predecessor's note, landed, and persisted session row (so it can't resurface as an
+   * offline strip). Idempotent — a no-op once the predecessor is gone. Returns true iff
+   * anything changed, so the caller can refresh its cached maps.
+   */
+  reassign(fromId: string, toId: string): boolean {
+    if (!fromId || fromId === toId) return false;
+    const tx = this.db.transaction((): boolean => {
+      let changed = false;
+
+      const fromNote = this.db.prepare(`SELECT note FROM notes WHERE id = ?`).get(fromId) as { note: string } | undefined;
+      if (fromNote) {
+        const hasTo = this.db.prepare(`SELECT 1 FROM notes WHERE id = ?`).get(toId);
+        if (!hasTo) this.db.prepare(`INSERT INTO notes (id, note, updated_at) VALUES (?, ?, ?)`).run(toId, fromNote.note, Date.now());
+        this.db.prepare(`DELETE FROM notes WHERE id = ?`).run(fromId);
+        changed = true;
+      }
+
+      const fromLanded = this.db.prepare(`SELECT landed_at FROM landed WHERE id = ?`).get(fromId) as { landed_at: number } | undefined;
+      if (fromLanded) {
+        this.db.prepare(`INSERT INTO landed (id, landed_at) VALUES (?, ?) ON CONFLICT(id) DO NOTHING`).run(toId, fromLanded.landed_at);
+        this.db.prepare(`DELETE FROM landed WHERE id = ?`).run(fromId);
+        changed = true;
+      }
+
+      if (this.db.prepare(`DELETE FROM sessions WHERE id = ?`).run(fromId).changes > 0) changed = true;
+      return changed;
+    });
+    return tx();
+  }
+
   close(): void {
     this.db.close();
   }

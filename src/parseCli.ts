@@ -64,6 +64,21 @@ function classify(o: any): NormEvent {
 
 const CONVERSATIONAL = new Set<NormEvent["kind"]>(["human", "assistant-text", "assistant-tool", "assistant-ask", "tool-result"]);
 
+/** The `/compact` continuation preamble Claude Code injects as the first user turn of a
+ *  session that resumed a context-exhausted one. It names the parent transcript path,
+ *  whose basename is the predecessor session id we link to. */
+const CONTINUATION_RE = /continued from a previous conversation/i;
+const PARENT_ID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl/i;
+
+/** full text of a user turn (string content, or the joined `text` blocks) — unlike the
+ *  classifier's summary this isn't truncated, so we can scan it for the parent path. */
+function humanText(o: any): string {
+  const content = o?.message?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return content.filter((b) => b?.type === "text").map((b) => b?.text ?? "").join(" ");
+  return "";
+}
+
 /**
  * Strip harness noise from a user message so it reads as a title: XML-ish wrappers
  * (`<command-message>`, `<command-name>`, `<local-command-…>`, `<task-notification>`),
@@ -92,6 +107,9 @@ export interface CliCursor {
   branch: string | null;
   aiTitle: string | null;
   firstUserText: string | null;
+  /** predecessor session id, if this transcript opens with the `/compact` continuation
+   *  preamble ("This session is being continued…"), else null */
+  continuedFrom: string | null;
   firstTs: number | null;
   contextTokens: number | null;
   lastActivityAt: number | null;
@@ -107,6 +125,7 @@ function emptyCursor(): CliCursor {
     branch: null,
     aiTitle: null,
     firstUserText: null,
+    continuedFrom: null,
     firstTs: null,
     contextTokens: null,
     lastActivityAt: null,
@@ -136,7 +155,21 @@ function ingestLine(c: CliCursor, s: string): void {
     if (c.firstTs == null) c.firstTs = ev.ts;
     c.lastActivityAt = ev.ts; // last timed event wins
   }
-  if (ev.kind === "human" && !c.firstUserText) c.firstUserText = ev.summary.replace(/^you:\s*/, "");
+  if (ev.kind === "human" && !c.firstUserText) {
+    const raw = humanText(o);
+    if (CONTINUATION_RE.test(raw)) {
+      // A compaction continuation opens with the preamble naming its parent transcript;
+      // capture that predecessor id so the board can fold both into one flight. Don't let
+      // the boilerplate preamble become the title — wait for the first real prompt (the
+      // folded flight inherits the predecessor's title until then).
+      if (c.continuedFrom == null) {
+        const m = raw.match(PARENT_ID_RE);
+        if (m && m[1] !== c.sessionId) c.continuedFrom = m[1];
+      }
+    } else {
+      c.firstUserText = ev.summary.replace(/^you:\s*/, "");
+    }
+  }
   if (CONVERSATIONAL.has(ev.kind)) c.tail = ev; // last conversational event wins
 }
 
@@ -159,6 +192,7 @@ function cursorToFacts(filePath: string, c: CliCursor): SessionFacts {
     tailIsError: c.tail?.isError ?? false,
     tailSummary: c.tail?.summary || "no conversation yet",
     contextTokens: c.contextTokens,
+    continuedFrom: c.continuedFrom,
   };
 }
 
