@@ -9,8 +9,8 @@
   </p>
 </div>
 
-Each feature is an **aircraft**; every session working on it — in a terminal (Claude Code
-CLI) or the Claude desktop app — is tracked automatically and shown as a live flight strip.
+Every Claude session — in a terminal (Claude Code
+CLI) or the Claude desktop app — is tracked automatically and shown as a live strip.
 It never writes to Claude's files. See [CONCEPT.md](CONCEPT.md) for the full design.
 
 ## Install
