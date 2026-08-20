@@ -217,14 +217,25 @@ export class Engine extends EventEmitter {
       const movedToWaitingPast = (signalTs: number | undefined): boolean =>
         txnWaiting && a0.lastActivityAt != null && signalTs != null && a0.lastActivityAt > signalTs + 250;
 
+      // When Claude changed `status` (idle time on an interrupt) — more precise than mtime.
+      const regTs = entry ? entry.statusUpdatedAt ?? entry.mtimeMs : undefined;
+      // A "working" signal is stale if the registry went idle AFTER it. An ESC interrupt
+      // (even mid-thinking, with no transcript marker) flips status to idle but fires no
+      // Stop hook, so the last hook stays "working" — trust the newer idle instead.
+      // No +250 fudge here: both timestamps are precise wall-clock, and a *current* idle
+      // status means work isn't running — so any working hook older than the idle is stale,
+      // even by a few ms (covers submitting a prompt and instantly hitting ESC).
+      const registryIdleAfter = (signalTs: number | undefined): boolean =>
+        !pidDead && entry?.status === "idle" && regTs != null && signalTs != null && regTs > signalTs;
+
       // Registry `status` is Claude Code's own live signal — authoritative for CLI
       // sessions, so we trust it over transcript-timing inference: busy => working,
       // idle => waiting on you. Desktop-run sessions report null status; those fall
       // back to the inferred state. This is what makes states exact without hooks.
-      if (!pidDead && entry?.status === "busy" && !movedToWaitingPast(entry.mtimeMs)) {
+      if (!pidDead && entry?.status === "busy" && !movedToWaitingPast(regTs)) {
         a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
         stateSource = "registry";
-      } else if (!pidDead && entry?.status === "idle" && !movedOnPast(entry.mtimeMs)) {
+      } else if (!pidDead && entry?.status === "idle" && !movedOnPast(regTs)) {
         a = { ...a, state: "needs-input" };
         stateSource = "registry";
       }
@@ -240,7 +251,7 @@ export class Engine extends EventEmitter {
         a = { ...a, state: "suspected-done" };
         stateSource = "hook";
       } else if (hs && now - hs.ts < CONFIG.hookStaleMs) {
-        if (hs.state === "working" && !movedToWaitingPast(hs.ts)) {
+        if (hs.state === "working" && !movedToWaitingPast(hs.ts) && !registryIdleAfter(hs.ts)) {
           a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
           stateSource = "hook";
         } else if (hs.state === "needs-input" && !movedOnPast(hs.ts)) {

@@ -14,6 +14,9 @@ export interface RegistryEntry {
    *  desktop builds). Absent on older builds, where `name` was always a user rename. */
   nameSource: string | null;
   status: string | null;
+  /** when Claude Code last changed `status` (ms). More precise than the file mtime for
+   *  recency comparisons — an interrupt flips this to the idle time. Null if absent. */
+  statusUpdatedAt: number | null;
   entrypoint: string | null;
   pid: number | null;
   cwd: string | null;
@@ -51,6 +54,7 @@ export async function parseRegistryFile(filePath: string): Promise<RegistryEntry
     name: typeof o.name === "string" && o.name.trim() ? o.name.trim() : null,
     nameSource: typeof o.nameSource === "string" ? o.nameSource : null,
     status: typeof o.status === "string" ? o.status : null,
+    statusUpdatedAt: typeof o.statusUpdatedAt === "number" ? o.statusUpdatedAt : null,
     entrypoint: typeof o.entrypoint === "string" ? o.entrypoint : null,
     pid: typeof o.pid === "number" ? o.pid : null,
     cwd: typeof o.cwd === "string" ? o.cwd : null,
