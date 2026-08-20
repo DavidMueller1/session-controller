@@ -1,7 +1,7 @@
 <div align="center">
   <img src="web/public/logo.svg" width="84" alt="Session Controller" />
   <h1>Session Controller</h1>
-  <p><em>An air-traffic-control board for the Claude Code sessions you run in parallel.</em></p>
+  <p><em>A board for the Claude Code sessions you run in parallel.</em></p>
   <p>
     <img alt="macOS" src="https://img.shields.io/badge/macOS-06090d?style=for-the-badge&logo=apple&logoColor=white" />
     <img alt="self-updating" src="https://img.shields.io/badge/self--updating-3fb950?style=for-the-badge&labelColor=0d1117&color=3fb950" />
