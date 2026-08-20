@@ -1,11 +1,17 @@
-# Session Controller
+<div align="center">
+  <img src="web/public/logo.svg" width="84" alt="Session Controller" />
+  <h1>Session Controller</h1>
+  <p><em>An air-traffic-control board for the Claude Code sessions you run in parallel.</em></p>
+  <p>
+    <img alt="macOS" src="https://img.shields.io/badge/macOS-06090d?style=for-the-badge&logo=apple&logoColor=white" />
+    <img alt="self-updating" src="https://img.shields.io/badge/self--updating-3fb950?style=for-the-badge&labelColor=0d1117&color=3fb950" />
+    <img alt="read-only" src="https://img.shields.io/badge/read--only-7d8590?style=for-the-badge&labelColor=0d1117&color=7d8590" />
+  </p>
+</div>
 
-An air-traffic-control board for the Claude Code sessions you run in parallel. Each feature
-is an "aircraft"; every session working on it — in a terminal (Claude Code CLI) or the
-Claude desktop app — is tracked automatically and shown as a live flight strip. It's
-read-only and never writes to Claude's files.
-
-macOS. See [CONCEPT.md](CONCEPT.md) for the full design.
+Each feature is an **aircraft**; every session working on it — in a terminal (Claude Code
+CLI) or the Claude desktop app — is tracked automatically and shown as a live flight strip.
+It never writes to Claude's files. See [CONCEPT.md](CONCEPT.md) for the full design.
 
 ## Install
 
@@ -30,16 +36,16 @@ Strips move between lanes as each session's state changes:
 
 | Lane | Meaning |
 |---|---|
-| **In-flight** | working now |
-| **Holding** | waiting on you — turn ended, or it called `AskUserQuestion` / `ExitPlanMode` (flashes) |
-| **Parked** | a "needs you" strip you triaged by adding a note |
-| **MIA** | lost contact — quiet 5+ min, or wrapped up |
-| **Landed** | you marked it done |
+| ![In-flight](https://img.shields.io/badge/In--flight-3fb950?style=flat-square&labelColor=3fb950&color=3fb950) | working now |
+| ![Holding](https://img.shields.io/badge/Holding-e0a92e?style=flat-square&labelColor=e0a92e&color=e0a92e) | waiting on you — turn ended, or it called `AskUserQuestion` / `ExitPlanMode` (flashes) |
+| ![Parked](https://img.shields.io/badge/Parked-e0823c?style=flat-square&labelColor=e0823c&color=e0823c) | a "needs you" strip you triaged by adding a note |
+| ![MIA](https://img.shields.io/badge/MIA-7d8590?style=flat-square&labelColor=7d8590&color=7d8590) | lost contact — quiet 5+ min, or wrapped up |
+| ![Landed](https://img.shields.io/badge/Landed-4cc38a?style=flat-square&labelColor=4cc38a&color=4cc38a) | you marked it done |
 
 - Sessions idle **> 5 days drop off** the board — unless they have a note.
 - **Click a strip** for details; **click its title** to focus the session's window (terminal / PhpStorm / Claude desktop).
-- **PR pill** per branch (via `gh`), coloured by review state; a merged PR flags **Approach** (cleared to land). Landing is a manual click.
-- **dev ▾** — detect, start/stop a dev server in the strip's folder and tail its logs; configure the command per repo in **Settings**.
+- ![PR](https://img.shields.io/badge/PR-58a6ff?style=flat-square&labelColor=58a6ff&color=58a6ff) pill per branch (via `gh`), coloured by review state; a merged PR flags ![Approach](https://img.shields.io/badge/Approach-a371f7?style=flat-square&labelColor=a371f7&color=a371f7) (cleared to land). Landing is a manual click.
+- **dev ▾** — detect, start/stop a dev server in the strip's folder and tail its logs; set the command per repo in **Settings**.
 - A **context-usage ring**, header **bell** for holding notifications, and a **?** help panel cover the rest.
 
 ## Tracking hooks
