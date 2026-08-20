@@ -9,6 +9,7 @@
     "start": "tsx src/server.ts",
     "serve": "tsx src/server.ts",
     "dev": "tsx watch src/server.ts",
+    "dev:live": "bash scripts/dev-live.sh",
     "board": "tsx src/console-app.ts",
     "once": "tsx src/console-app.ts --once",
     "doctor": "tsx src/doctor.ts",

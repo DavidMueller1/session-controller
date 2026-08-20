@@ -62,6 +62,7 @@ nvm use                # Node 22 (from .nvmrc)
 pnpm run setup         # deps + build UI + wire hooks   (NB: `run setup`, not `pnpm setup`)
 pnpm serve             # server + built UI on :4317
 pnpm ui                # Vite dev server on :5173 (HMR), proxies to :4317
+pnpm dev:live          # both of the above against the INSTALLED app's DB — instant changes, same data
 pnpm typecheck
 ```
 
