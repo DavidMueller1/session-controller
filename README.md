@@ -6,7 +6,25 @@ whether it runs in the **PHPStorm terminal (Claude Code CLI)** or the **Claude D
 (Cowork / local agent mode)**.
 
 See [CONCEPT.md](CONCEPT.md) for the full design and the locked decisions, and
-**[SETUP.md](SETUP.md)** to get it running — one command: `./install.sh`.
+**[SETUP.md](SETUP.md)** for setup.
+
+## Install & auto-update
+
+One command (macOS):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DavidMueller1/session-controller/main/install.sh | bash
+```
+
+It clones into `~/Library/Application Support/Session Controller/repo`, builds an
+on-device menu-bar app, wires the tracking hooks, and adds a Login Item. Because it's
+built locally, there's no Gatekeeper prompt.
+
+The app then **keeps itself up to date automatically**: it checks `main` shortly after
+launch and every 30 min (or via the menu's *Check for Updates Now*), then silently
+`git pull`s, rebuilds only what changed, and restarts the server — relaunching itself if
+the app bundle changed. So **pushing to `main` ships to everyone**. Board state
+(`…/Session Controller/data`) is never touched by an update.
 
 ## Status
 

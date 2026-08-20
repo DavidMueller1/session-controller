@@ -4,23 +4,22 @@ Getting Session Controller running on a new machine (macOS).
 
 ## One command (recommended)
 
-From a checkout of the repo:
-
 ```bash
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/DavidMueller1/session-controller/main/install.sh | bash
 ```
 
-That's the whole install, hands-off. It:
+(Or `./install.sh` from a checkout.) Hands-off, idempotent. It:
 
 1. Ensures the toolchain — **Node 22** (installs [nvm](https://github.com/nvm-sh/nvm) if missing) and **pnpm** (via corepack)
-2. Builds the dashboard (`pnpm run setup`)
+2. Clones into `~/Library/Application Support/Session Controller/repo` and builds the dashboard there
 3. Wires the session-tracking hooks into `~/.claude/settings.json` (see below)
-4. Builds the menu-bar app, installs it to `/Applications`, and registers it as a **Login Item**
-5. Launches it and opens the dashboard
+4. Builds the menu-bar app, installs it to `/Applications`, registers it as a **Login Item**, and launches it
 
-After this the server **autostarts every login** and lives in your menu bar — no terminal to keep open. The script is safe to re-run (every step is idempotent). macOS may ask once to allow controlling System Events (for the Login Item) — click OK; and the first launch of a menu-bar app built on your machine opens without a Gatekeeper prompt.
+After this the app **autostarts at login** and **keeps itself up to date automatically** — it tracks `main` (checks shortly after launch, every 30 min, or via the menu's *Check for Updates Now*) and silently pulls, rebuilds only what changed, and restarts/relaunches. Board state in `…/Session Controller/data` is never touched by an update.
 
-- **`gh`** (GitHub CLI) is optional — only for the PR pills on strips.
+macOS may ask once to allow controlling System Events (for the Login Item) — click OK. Because the app is built on your machine, there's no Gatekeeper prompt. **`gh`** (GitHub CLI) is optional — only for the PR pills on strips.
+
+> The installed app is a **separate managed clone** — developing in your own checkout never affects it, and it never auto-updates your working tree.
 
 ## Manual (what `install.sh` automates)
 
@@ -75,14 +74,11 @@ You can also check from the terminal:
 curl -s http://127.0.0.1:4317/api/hooks-health | python3 -m json.tool
 ```
 
-## Menu-bar app (optional)
+## Menu-bar app
 
-A macOS status-bar app shows the Session Controller logo with a badge = the number of
-sessions holding for you. Build and install it with:
-
-```bash
-menubar/build.sh
-```
+`install.sh` builds and installs this — a macOS status-bar app showing the logo with a
+badge = the number of sessions holding for you. It runs the server, autostarts at login,
+and drives the auto-update. To rebuild the bundle by hand: `menubar/build.sh`.
 
 ## Troubleshooting
 
