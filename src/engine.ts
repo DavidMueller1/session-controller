@@ -209,11 +209,19 @@ export class Engine extends EventEmitter {
       const movedOnPast = (signalTs: number | undefined): boolean =>
         txnWorking && a0.lastActivityAt != null && signalTs != null && a0.lastActivityAt > signalTs + 250;
 
+      // Mirror of movedOnPast: has the transcript moved to a WAITING state (turn ended,
+      // asked a question, or you hit ESC) AFTER a "working" signal fired? Then that signal
+      // is stale — an ESC interrupt fires no Stop hook, so the last hook stays "working"
+      // while the transcript already recorded the interrupt. Trust the newer transcript.
+      const txnWaiting = a0.state === "needs-input";
+      const movedToWaitingPast = (signalTs: number | undefined): boolean =>
+        txnWaiting && a0.lastActivityAt != null && signalTs != null && a0.lastActivityAt > signalTs + 250;
+
       // Registry `status` is Claude Code's own live signal — authoritative for CLI
       // sessions, so we trust it over transcript-timing inference: busy => working,
       // idle => waiting on you. Desktop-run sessions report null status; those fall
       // back to the inferred state. This is what makes states exact without hooks.
-      if (!pidDead && entry?.status === "busy") {
+      if (!pidDead && entry?.status === "busy" && !movedToWaitingPast(entry.mtimeMs)) {
         a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
         stateSource = "registry";
       } else if (!pidDead && entry?.status === "idle" && !movedOnPast(entry.mtimeMs)) {
@@ -232,7 +240,7 @@ export class Engine extends EventEmitter {
         a = { ...a, state: "suspected-done" };
         stateSource = "hook";
       } else if (hs && now - hs.ts < CONFIG.hookStaleMs) {
-        if (hs.state === "working") {
+        if (hs.state === "working" && !movedToWaitingPast(hs.ts)) {
           a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
           stateSource = "hook";
         } else if (hs.state === "needs-input" && !movedOnPast(hs.ts)) {

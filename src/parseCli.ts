@@ -10,10 +10,27 @@ import { firstLine, truncate } from "./util.js";
  * role, so they must classify as "tool-result", not "human".
  */
 interface NormEvent {
-  kind: "human" | "assistant-text" | "assistant-tool" | "assistant-ask" | "tool-result" | "system" | "meta";
+  kind: "human" | "assistant-text" | "assistant-tool" | "assistant-ask" | "tool-result" | "interrupt" | "system" | "meta";
   ts: number | null;
   summary: string;
   isError: boolean;
+}
+
+/** Claude Code injects this user turn when you hit ESC — the session is now waiting on you,
+ *  not working, even though the last hook/tool event said "working". */
+const INTERRUPT_RE = /\[Request interrupted by user/;
+
+/** all text a user turn carries — plain string content, `text` blocks, and the string body
+ *  of a `tool_result` block — so we can spot the interrupt marker wherever it lands. */
+function userText(o: any): string {
+  const c = o?.message?.content;
+  if (typeof c === "string") return c;
+  if (Array.isArray(c)) {
+    return c
+      .map((b) => (typeof b?.text === "string" ? b.text : typeof b?.content === "string" ? b.content : ""))
+      .join(" ");
+  }
+  return "";
 }
 
 /** tools that block waiting on the user — their call means "needs you", not "working" */
@@ -45,6 +62,10 @@ function classify(o: any): NormEvent {
   }
 
   if (type === "user") {
+    // An ESC interrupt fires no Stop hook, so this transcript turn is the authoritative
+    // "you took back control" signal — flag it distinctly so state derivation reads it as
+    // needs-input, not as work-in-motion (which a plain human/tool-result tail implies).
+    if (INTERRUPT_RE.test(userText(o))) return { kind: "interrupt", ts, summary: "interrupted — waiting on you", isError: false };
     if (blockTypes.has("tool_result")) {
       const isError = blocks.some((b) => b.type === "tool_result" && b.is_error === true);
       return { kind: "tool-result", ts, summary: isError ? "tool error" : "tool result received", isError };
@@ -62,7 +83,7 @@ function classify(o: any): NormEvent {
   return { kind: "meta", ts, summary: "", isError: false };
 }
 
-const CONVERSATIONAL = new Set<NormEvent["kind"]>(["human", "assistant-text", "assistant-tool", "assistant-ask", "tool-result"]);
+const CONVERSATIONAL = new Set<NormEvent["kind"]>(["human", "assistant-text", "assistant-tool", "assistant-ask", "tool-result", "interrupt"]);
 
 /** The `/compact` continuation preamble Claude Code injects as the first user turn of a
  *  session that resumed a context-exhausted one. It names the parent transcript path,

@@ -18,6 +18,8 @@ function deriveCli(f: SessionFacts, now: number): [ActivityState, string] {
   // a tool that waits on the user (AskUserQuestion / ExitPlanMode) is unambiguously
   // "needs you" — no grace, and it takes priority even over the age window.
   if (f.tailKind === "assistant-ask") return ["needs-input", f.tailSummary];
+  // an ESC interrupt is unambiguously "waiting on you" — no grace, priority over the window
+  if (f.tailKind === "interrupt") return ["needs-input", f.tailSummary];
   if (f.tailKind === "assistant-text") {
     return [age > CONFIG.needsInputGraceMs ? "needs-input" : "working", f.tailSummary];
   }
