@@ -1,0 +1,8 @@
+packages:
+  - web
+
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+  # icon webfont ships prebuilt woff2 files; no need to run its font converter
+  ttf2woff2: false
