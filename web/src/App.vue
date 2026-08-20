@@ -107,15 +107,9 @@ const healthTitle = computed(() => {
   return `installed: ${h.installedEvents.join(", ") || "none"} · fresh hook writes: ${h.freshWrites} · last: ${last}`;
 });
 
-// Hide landed strips older than 7 days — a landing that old is done and just clutters the
-// board. Filtered out of the set that feeds BOTH the flight layer and the simple list, so
-// they vanish everywhere in one place (non-landed strips always pass through).
-const HIDE_LANDED_MS = 7 * 24 * 60 * 60 * 1000;
-const landedAge = (a: { stateSince?: number | null; lastActivityAt: number | null }) =>
-  now.value - (a.stateSince ?? a.lastActivityAt ?? now.value);
-const boardAircraft = computed<Aircraft[]>(() =>
-  effectiveAircraft.value.filter((a) => !(laneOf(a) === "landed" && landedAge(a) > HIDE_LANDED_MS)),
-);
+// Staleness (drop sessions idle > 5 days, landed or not — unless noted) is enforced by the
+// server now, so the board renders whatever it sends.
+const boardAircraft = computed<Aircraft[]>(() => effectiveAircraft.value);
 
 // order by when each entered its state, so tool calls / thinking don't reshuffle the
 // board — a strip only moves when its state actually changes.

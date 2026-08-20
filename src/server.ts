@@ -32,6 +32,9 @@ async function main(): Promise<void> {
 
   let notes = store.getNotes();
   let landed = new Set(store.getLanded());
+  // Noted sessions stay on the board at any age — tell the engine not to skip them.
+  const syncKeepIds = () => engine.setKeepIds(new Set(Object.keys(notes)));
+  syncKeepIds();
   // per-repo config (keyed by shared git dir) — dev URL template + start command
   let projectConfig = store.getProjectConfigs();
   // dev servers detected running in each strip's folder (id → info), refreshed on a timer
@@ -91,13 +94,22 @@ async function main(): Promise<void> {
     // a superseded predecessor is folded into its live continuation — never a strip of its
     // own, even for the brief window before its persisted row is retired.
     const superseded = new Set(liveList.flatMap((a) => a.supersedes ?? []));
+    // Drop persisted sessions with no activity for staleCutoffMs (incl. old landings) so a
+    // fresh install / restart doesn't resurrect the whole history — unless the user noted it.
+    const cutoff = Date.now() - CONFIG.staleCutoffMs;
     return store
       .getSessions()
       .filter((s) => !live.has(s.id) && !superseded.has(s.id))
+      .filter((s) => !!notes[s.id] || (s.lastActivityAt ?? 0) >= cutoff)
       .map((s) => ({ ...s, state: floorOffline(s.state), offline: true }));
   }
   const baseList = (): DiscoveredSession[] => [...engine.aircraft(), ...offlineSessions()];
-  const fullList = (): DiscoveredSession[] => decorate(baseList());
+  // Final staleness cut on the board, keyed on real last-activity (not file mtime, which
+  // the engine gate uses only as a cheap perf pre-filter — some files are touched without
+  // new events). A session idle > staleCutoffMs drops off unless the user noted it.
+  const onBoard = (a: DiscoveredSession): boolean =>
+    !!a.note || (a.lastActivityAt ?? 0) >= Date.now() - CONFIG.staleCutoffMs;
+  const fullList = (): DiscoveredSession[] => decorate(baseList()).filter(onBoard);
 
   const clients = new Set<WebSocket>();
   const broadcast = (msg: unknown) => {
@@ -204,6 +216,7 @@ async function main(): Promise<void> {
     if (reassigned) {
       notes = store.getNotes();
       landed = new Set(store.getLanded());
+      syncKeepIds();
     }
     autoUnlandOnWork(list);
     broadcast({ type: "update", ts: Date.now(), aircraft: fullList() });
@@ -254,6 +267,7 @@ async function main(): Promise<void> {
     if (!note) return reply.code(400).send({ error: "note required" });
     store.setNote(req.params.id, note);
     notes = store.getNotes();
+    syncKeepIds();
     pushUpdate();
     return { ok: true, id: req.params.id, note };
   });
@@ -261,6 +275,7 @@ async function main(): Promise<void> {
   app.delete<{ Params: { id: string } }>("/api/aircraft/:id/note", async (req) => {
     store.deleteNote(req.params.id);
     notes = store.getNotes();
+    syncKeepIds();
     pushUpdate();
     return { ok: true, id: req.params.id };
   });

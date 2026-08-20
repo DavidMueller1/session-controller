@@ -15,6 +15,13 @@ function isCliTranscript(p: string): boolean {
   return p.endsWith(".jsonl");
 }
 
+/** best-effort aircraft id from a transcript/desktop path: the filename stem. For a main
+ *  CLI transcript this IS the sessionId; noted sessions are top-level, so this suffices to
+ *  honor the "keep noted sessions at any age" exception in the staleness gate. */
+function idForPath(p: string): string {
+  return path.basename(p).replace(/\.(jsonl|json)$/, "");
+}
+
 /**
  * Is a process still running? Used to detect a hard-killed session: Claude Code names its
  * registry file `<pid>.json` and removes it on a clean exit, but a SIGKILL / force-close
@@ -56,6 +63,9 @@ export class Engine extends EventEmitter {
    *  `reconcile` re-reads every transcript (hundreds of MB) each minute even when idle.
    *  Only set after a successful parse, so a failed read is retried. */
   private fileMeta = new Map<string, { size: number; mtimeMs: number }>();
+  /** ids to keep on the board regardless of age — sessions the user noted. Fed by the
+   *  server from its notes store; the staleness gate won't skip these. */
+  private keepIds = new Set<string>();
   /** per-transcript incremental-parse cursor, so a `change` reads only appended bytes
    *  instead of re-reading the whole (often tens-of-MB) file — the dominant scan cost */
   private cliCursors = new Map<string, CliCursor>();
@@ -117,30 +127,35 @@ export class Engine extends EventEmitter {
       if (h) this.hookState.set(h.sessionId, h);
       return;
     }
-    // Skip the read entirely when the file is unchanged since we last parsed it. This is
-    // the hot path: `reconcile` re-visits every transcript each minute and, without this,
-    // re-reads them all (hundreds of MB) even when nothing changed.
-    const meta = await this.statIfChanged(p);
-    if (!meta) return; // unchanged (or vanished) → keep cached facts, no content read
+    // Transcript / desktop session. Stat once — cheap, unlike a read, which triggers a
+    // synchronous AV content-scan of the whole file.
+    let st: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      st = await fs.stat(p);
+    } catch {
+      return; // vanished/unreadable — syncRoots handles pruning
+    }
+    // Staleness gate: a session with no activity for staleCutoffMs drops off the board —
+    // we don't even read it (a big startup + AV-scan saving, and it keeps a fresh install
+    // from flooding MIA with the whole history). A note pins it on at any age.
+    if (Date.now() - st.mtimeMs > CONFIG.staleCutoffMs && !this.keepIds.has(idForPath(p))) {
+      this.forget(p);
+      return;
+    }
+    // Skip the read when unchanged since our last parse (the hot path).
+    const prev = this.fileMeta.get(p);
+    if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return;
     const f = await this.parseFile(p);
     if (f) {
       this.facts.set(p, f);
-      this.fileMeta.set(p, meta);
+      this.fileMeta.set(p, { size: st.size, mtimeMs: st.mtimeMs });
     }
   }
 
-  /** current (size, mtimeMs) if the file changed since our last parse (or is new), else
-   *  null meaning "unchanged — don't read it". A missing/unreadable file also returns null
-   *  (the unlink watcher handles removal). */
-  private async statIfChanged(p: string): Promise<{ size: number; mtimeMs: number } | null> {
-    try {
-      const st = await fs.stat(p);
-      const prev = this.fileMeta.get(p);
-      if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return null;
-      return { size: st.size, mtimeMs: st.mtimeMs };
-    } catch {
-      return null;
-    }
+  /** ids to keep on the board regardless of age (sessions the user noted). Fed by the
+   *  server from its notes store; discovery won't skip these even when stale. */
+  setKeepIds(ids: Set<string>): void {
+    this.keepIds = ids;
   }
 
   private forget(p: string): void {
