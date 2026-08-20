@@ -62,6 +62,10 @@ cat > "$APP/Contents/Resources/launch.sh" <<EOF
 # built this app. A mismatch silently breaks native modules (better-sqlite3's
 # .node is compiled per ABI), and the server dies on the first DB open.
 cd "$ROOT" || exit 1
+# Board state lives beside the managed clone, never inside it, so a git sync
+# can't touch it. Baked at build time from the repo's parent directory.
+export DB_PATH="$(dirname "$ROOT")/data/traffic-controller.db"
+mkdir -p "$(dirname "$ROOT")/data"
 export NVM_DIR="\$HOME/.nvm"
 if [ -s "\$NVM_DIR/nvm.sh" ]; then
   . "\$NVM_DIR/nvm.sh" >/dev/null 2>&1
