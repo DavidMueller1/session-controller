@@ -8,6 +8,11 @@ import Cocoa
 let kPort = 4317
 let kBase = "http://localhost:\(kPort)"
 
+// The auto-updater targets ONLY the managed clone — never a dev checkout.
+let kRepo = ("~/Library/Application Support/Session Controller/repo" as NSString).expandingTildeInPath
+let kUpdateScript = kRepo + "/scripts/update.sh"
+let kUpdateInterval: TimeInterval = 30 * 60   // 30 minutes
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var serverProcess: Process?          // set only if WE started the server
@@ -23,18 +28,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let startItem = NSMenuItem(title: "Start Server", action: #selector(start), keyEquivalent: "s")
     let stopItem = NSMenuItem(title: "Stop Server", action: #selector(stop), keyEquivalent: "x")
 
+    var updateTimer: Timer?
+    var checkingUpdate = false
+    let versionItem = NSMenuItem(title: "Checking…", action: nil, keyEquivalent: "")
+    let checkUpdateItem = NSMenuItem(title: "Check for Updates Now", action: #selector(checkForUpdatesClicked), keyEquivalent: "u")
+
     func applicationDidFinishLaunching(_ note: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         let menu = NSMenu()
         menu.autoenablesItems = false
         headerItem.isEnabled = false
-        for item in [openItem, startItem, stopItem] { item.target = self }
+        for item in [openItem, startItem, stopItem, checkUpdateItem] { item.target = self }
+        versionItem.isEnabled = false
         menu.addItem(headerItem)
         menu.addItem(.separator())
         menu.addItem(openItem)
         menu.addItem(startItem)
         menu.addItem(stopItem)
+        menu.addItem(.separator())
+        menu.addItem(versionItem)
+        menu.addItem(checkUpdateItem)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
@@ -49,6 +63,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // dashboard always-on. Skips if something is already listening on the port —
         // e.g. a `pnpm serve` you started, or a previous launch that's still up.
         if !isPortOpen() { start() }
+
+        // Keep the app up to date: check shortly after launch, then on an interval.
+        refreshVersion()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.runUpdateCheck() }
+        updateTimer = Timer.scheduledTimer(withTimeInterval: kUpdateInterval, repeats: true) { [weak self] _ in self?.runUpdateCheck() }
     }
 
     func applicationWillTerminate(_ note: Notification) {
@@ -104,6 +123,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func quit() { NSApp.terminate(nil) }
+
+    // MARK: - Self-update
+
+    @objc func checkForUpdatesClicked() { runUpdateCheck() }
+
+    // Run the update engine off the main thread; act on its exit-code contract.
+    func runUpdateCheck() {
+        guard !checkingUpdate else { return }
+        guard FileManager.default.fileExists(atPath: kUpdateScript) else { return }
+        checkingUpdate = true
+        versionItem.title = "Updating…"
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let code = self?.runCode("/bin/bash", [kUpdateScript]) ?? -1
+            DispatchQueue.main.async {
+                self?.checkingUpdate = false
+                switch code {
+                case 10: self?.restartServer()
+                case 20: self?.relaunchApp(); return   // process is terminating
+                case 1:  self?.versionItem.title = "Update failed — staying put"
+                default: break
+                }
+                self?.refreshVersion()
+            }
+        }
+    }
+
+    // Exit 10: new server/web code — bounce the server so it reloads.
+    func restartServer() {
+        killPort(force: true)
+        serverProcess?.terminate(); serverProcess = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in self?.start() }
+    }
+
+    // Exit 20: the .app itself was rebuilt. Wait for THIS process to exit (freeing the
+    // port), then open the freshly installed bundle — so two instances never fight over :4317.
+    func relaunchApp() {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let helper = "while kill -0 \(pid) 2>/dev/null; do sleep 0.2; done; sleep 0.5; open \"/Applications/Session Controller.app\""
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", helper]
+        try? p.run()
+        killPort(force: true)
+        NSApp.terminate(nil)
+    }
+
+    func refreshVersion() {
+        let v = run("/usr/bin/git", ["-C", kRepo, "describe", "--tags", "--always"])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        versionItem.title = v.isEmpty ? "Session Controller" : "Version \(v)"
+    }
+
+    // Like run(), but returns the process exit code instead of stdout.
+    @discardableResult
+    func runCode(_ launchPath: String, _ args: [String]) -> Int32 {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: launchPath)
+        p.arguments = args
+        p.standardOutput = Pipe(); p.standardError = Pipe()
+        do { try p.run() } catch { return -1 }
+        p.waitUntilExit()
+        return p.terminationStatus
+    }
 
     // MARK: - State
 
