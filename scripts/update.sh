@@ -25,12 +25,30 @@ if ! mkdir "$LOCKDIR" 2>/dev/null; then
 fi
 trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
 
-# Node from .nvmrc, exactly like launch.sh (skipped in tests)
+# Toolchain, matching launch.sh / install.sh (skipped in tests). This runs spawned by the
+# menu-bar app, which has a MINIMAL GUI PATH — no shell profile — so neither Node nor a
+# user-installed pnpm is on PATH by default. Resolve both here, or the build fails with
+# "pnpm: command not found" and rolls back forever.
 if [ "${TC_SKIP_NVM:-0}" != "1" ]; then
   export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
   if [ -s "$NVM_DIR/nvm.sh" ]; then
     . "$NVM_DIR/nvm.sh" >/dev/null 2>&1
     nvm use >/dev/null 2>&1 || nvm install >/dev/null 2>&1
+  fi
+  # pnpm is often a standalone install only on the user's shell PATH (e.g. ~/Library/pnpm);
+  # surface it, then fall back to corepack (bundled with Node) exactly like install.sh.
+  for d in "$HOME/Library/pnpm" "$HOME/.local/share/pnpm"; do
+    [ -x "$d/pnpm" ] && case ":$PATH:" in *":$d:"*) ;; *) PATH="$d:$PATH"; export PATH ;; esac
+  done
+  if ! command -v pnpm >/dev/null 2>&1; then
+    export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+    corepack enable >/dev/null 2>&1 || true
+    corepack prepare pnpm@latest --activate >/dev/null 2>&1 || true
+  fi
+  # If the toolchain still isn't usable, bail BEFORE fetch/reset so we never roll into a
+  # stale loop — a later run (or a re-install) can then recover cleanly.
+  if ! command -v pnpm >/dev/null 2>&1; then
+    log "pnpm unavailable in update environment; aborting (PATH=$PATH)"; exit 1
   fi
 fi
 
