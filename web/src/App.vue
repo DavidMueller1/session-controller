@@ -129,6 +129,10 @@ const holding = computed(() =>
 
 const clock = computed(() => new Date(now.value).toLocaleTimeString());
 
+// true only when served by the Vite dev server (pnpm ui / dev:live on :5173); false in the
+// built bundle the installed app serves — so the DEV badge shows only on a dev board.
+const isDev = import.meta.env.DEV;
+
 const settingsOpen = ref(false);
 const helpOpen = ref(false);
 
@@ -253,6 +257,7 @@ function onOpen(id: string) { open(id); }
       <div class="brand">
         <img src="/logo.svg" class="brand-logo" alt="" />
         <span class="name"><span class="w1">Session</span><span class="w2">Controller</span></span>
+        <span v-if="isDev" class="dev-badge" title="Development build (Vite dev server) — not the installed app">DEV</span>
       </div>
       <div class="stats">
         <span class="stat"><FlipCounter :value="holding.length" color="var(--amber)" /> holding</span>
@@ -376,6 +381,14 @@ function onOpen(id: string) { open(id); }
 header { flex: none; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft); }
 .brand { display: flex; align-items: center; gap: 9px; }
 .brand-logo { width: 26px; height: 26px; display: block; }
+/* only rendered under the Vite dev server (pnpm ui / dev:live) — flags a non-installed board */
+.dev-badge {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  color: var(--bg); background: var(--amber);
+  padding: 2px 6px; border-radius: 5px; line-height: 1;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--amber) 55%, transparent);
+}
 /* airport-signage wordmark: wide tracking + a light/bold weight pairing (transit-brand look) */
 .name { display: inline-flex; align-items: baseline; gap: 0.5em; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; text-transform: uppercase; font-size: 15px; line-height: 1; }
 .name .w1 { font-weight: 300; letter-spacing: 0.34em; color: var(--text-dim); }
