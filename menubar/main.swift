@@ -220,7 +220,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.alphaValue = running ? 1.0 : 0.45
             if running && holding > 0 {
                 button.attributedTitle = NSAttributedString(string: " \(holding)", attributes: [
-                    .foregroundColor: NSColor.systemOrange,
+                    // Holding amber (#e0a92e) — matches the board's Holding lane, and no
+                    // longer clashes now that the glyph beside it is a neutral template.
+                    .foregroundColor: NSColor(srgbRed: 224 / 255, green: 169 / 255, blue: 46 / 255, alpha: 1),
                     .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
                 ])
             } else {
@@ -244,14 +246,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Icon
 
-    // Our radar logo, rendered to a bundled PNG at build time. Kept colored (not a
-    // template) so it reads as the brand mark rather than a flat glyph.
+    // Our radar logo. Rendered as a TEMPLATE image so macOS tints it for contrast on
+    // ANY menu bar — near-black on light bars, white on dark or accent-tinted ones. A
+    // fixed-color (green) glyph washed out on tinted bars; template mode fixes that. The
+    // brand color returns when we revisit the logo itself.
     func loadLogo(size pt: CGFloat = 18) -> NSImage {
-        // NSImage (macOS 13+) renders the SVG as a crisp, transparent, colored vector.
+        // NSImage renders the SVG as a crisp transparent vector; isTemplate makes AppKit
+        // use its shape (alpha) and pick the menu-bar-appropriate color automatically.
         if let p = Bundle.main.path(forResource: "statusicon", ofType: "svg"),
            let img = NSImage(contentsOfFile: p) {
             img.size = NSSize(width: pt, height: pt)
-            img.isTemplate = false
+            img.isTemplate = true
             return img
         }
         // fallback so the app is never invisible in the bar
