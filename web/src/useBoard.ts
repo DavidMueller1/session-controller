@@ -10,7 +10,10 @@ const HOLD_NOTIFY_DELAY = 0;
  * Live board state over the backend WebSocket, with auto-reconnect. The server is the
  * source of truth (including notes); we just render what it pushes.
  */
-export function useBoard() {
+export function useBoard(opts: { notify?: boolean } = {}) {
+  // the compact menu-bar panel shares this composable but must NOT raise notifications —
+  // the full dashboard is the notification surface, and two would double-ping.
+  const notifyAllowed = opts.notify !== false;
   const aircraft = shallowRef<Aircraft[]>([]);
   const status = ref<AnthropicStatus | null>(null);
   const health = ref<HooksHealth | null>(null);
@@ -43,7 +46,7 @@ export function useBoard() {
   }
 
   function reconcileNotifications(list: Aircraft[]) {
-    if (!notifyEnabled.value) return;
+    if (!notifyAllowed || !notifyEnabled.value) return;
     // first update after enabling: baseline everything currently holding as
     // already-handled so we don't ping for sessions that were waiting before you opted in.
     if (!primed) {
@@ -75,7 +78,7 @@ export function useBoard() {
   }
 
   async function toggleNotify() {
-    if (!notifySupported) return;
+    if (!notifySupported || !notifyAllowed) return;
     if (notifyEnabled.value) {
       notifyEnabled.value = false;
       pending.forEach(clearTimeout);
@@ -127,7 +130,7 @@ export function useBoard() {
   }
 
   function start() {
-    if (notifySupported && Notification.permission === "granted" && localStorage.getItem("fc-notify") === "1") {
+    if (notifyAllowed && notifySupported && Notification.permission === "granted" && localStorage.getItem("fc-notify") === "1") {
       notifyEnabled.value = true; // first snapshot baselines via the `primed` guard
     }
     connect();

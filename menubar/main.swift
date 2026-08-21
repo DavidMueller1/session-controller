@@ -1,4 +1,5 @@
 import Cocoa
+import WebKit
 
 // Lightweight menu bar controller for Session Controller.
 // Lives in the macOS status bar (no Dock icon): shows our logo plus a badge with the
@@ -7,6 +8,11 @@ import Cocoa
 
 let kPort = 4317
 let kBase = "http://localhost:\(kPort)"
+let kPanelURL = kBase + "/?panel"   // compact mini-board rendered inside the popover
+let kBgColor = NSColor(srgbRed: 10 / 255, green: 14 / 255, blue: 20 / 255, alpha: 1)  // board --bg
+let kPanelWidth: CGFloat = 380
+let kPanelMinH: CGFloat = 110       // header + a little; the popover never shrinks below this
+let kPanelMaxH: CGFloat = 560       // …and never grows past this (then the webview scrolls)
 
 // The auto-updater targets ONLY the managed clone — never a dev checkout.
 let kRepo = ("~/Library/Application Support/Session Controller/repo" as NSString).expandingTildeInPath
@@ -23,6 +29,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var lastRendered: String?
     lazy var logo: NSImage = loadLogo()
 
+    // Left-click opens this popover (the web mini-board); right-click shows `menu`.
+    let menu = NSMenu()
+    var popover: NSPopover?
+    var webView: WKWebView?
+
     let headerItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     let openItem = NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: "o")
     let startItem = NSMenuItem(title: "Start Server", action: #selector(start), keyEquivalent: "s")
@@ -36,7 +47,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ note: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
-        let menu = NSMenu()
         menu.autoenablesItems = false
         headerItem.isEnabled = false
         for item in [openItem, startItem, stopItem, checkUpdateItem] { item.target = self }
@@ -53,7 +63,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let quit = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
-        statusItem.menu = menu
+
+        // Route clicks ourselves so left and right can differ: left → popover mini-board,
+        // right (or ctrl-click) → this menu. Setting statusItem.menu would hijack both.
+        if let b = statusItem.button {
+            b.target = self
+            b.action = #selector(statusClicked)
+            b.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
 
         render(running: false, holding: 0)
         refresh()
@@ -123,6 +140,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func quit() { NSApp.terminate(nil) }
+
+    // MARK: - Click routing & popover
+
+    @objc func statusClicked() {
+        let ev = NSApp.currentEvent
+        let rightish = ev?.type == .rightMouseUp || (ev?.modifierFlags.contains(.control) ?? false)
+        // Left-click opens the mini-board — but only when the server is up to render it;
+        // otherwise fall back to the menu (which offers Start Server).
+        if rightish || !isPortOpen() { showMenu() } else { togglePopover() }
+    }
+
+    // Show the menu on demand without leaving it bound (which would steal left-clicks).
+    func showMenu() {
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        DispatchQueue.main.async { self.statusItem.menu = nil }
+    }
+
+    func togglePopover() {
+        if let p = popover, p.isShown { p.performClose(nil); return }
+        guard let button = statusItem.button else { return }
+        let p = popover ?? makePopover()
+        popover = p
+        p.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        // an accessory (LSUIElement) app must activate for the WKWebView to take keystrokes
+        // (e.g. editing a strip's note); otherwise the popover renders but ignores typing.
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func makePopover() -> NSPopover {
+        // start compact; the page reports its real height over the "resize" bridge and we
+        // grow/shrink the popover to fit (clamped to [kPanelMinH, kPanelMaxH]).
+        let frame = NSRect(x: 0, y: 0, width: kPanelWidth, height: kPanelMinH)
+        let cfg = WKWebViewConfiguration()
+        cfg.userContentController.add(self, name: "resize")
+        let wv = WKWebView(frame: frame, configuration: cfg)
+        wv.uiDelegate = self
+        if #available(macOS 12.0, *) { wv.underPageBackgroundColor = kBgColor }
+        wv.load(URLRequest(url: URL(string: kPanelURL)!))
+        webView = wv
+
+        // Dark backing so any area not yet painted by the page matches the board rather
+        // than flashing white on first open.
+        let container = NSView(frame: frame)
+        container.wantsLayer = true
+        container.layer?.backgroundColor = kBgColor.cgColor
+        wv.autoresizingMask = [.width, .height]
+        container.addSubview(wv)
+
+        let vc = NSViewController()
+        vc.view = container
+
+        let p = NSPopover()
+        p.behavior = .transient
+        p.contentSize = frame.size
+        p.appearance = NSAppearance(named: .darkAqua)
+        p.contentViewController = vc
+        return p
+    }
 
     // MARK: - Self-update
 
@@ -304,6 +380,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         a.messageText = "Session Controller"
         a.informativeText = msg
         a.runModal()
+    }
+}
+
+extension AppDelegate: WKScriptMessageHandler {
+    // The panel posts its natural content height; size the popover to it, clamped.
+    func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "resize", let n = message.body as? NSNumber else { return }
+        let h = max(kPanelMinH, min(kPanelMaxH, CGFloat(n.doubleValue)))
+        if abs((popover?.contentSize.height ?? 0) - h) < 1 { return }
+        popover?.contentSize = NSSize(width: kPanelWidth, height: h)
+    }
+}
+
+extension AppDelegate: WKUIDelegate {
+    // The panel's "Open full dashboard" is a target=_blank link; open it in the default
+    // browser instead of trying to spawn a second WKWebView inside the popover.
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if let url = navigationAction.request.url { NSWorkspace.shared.open(url) }
+        return nil
     }
 }
 

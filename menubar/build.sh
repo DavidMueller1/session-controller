@@ -95,6 +95,12 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
   <key>CFBundleVersion</key>            <string>1</string>
   <key>LSMinimumSystemVersion</key>     <string>12.0</string>
   <key>LSUIElement</key>                <true/>
+  <!-- The popover's WKWebView loads the dashboard over http://localhost; this permits
+       loopback traffic without disabling App Transport Security globally. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key>  <true/>
+  </dict>
 </dict>
 </plist>
 EOF

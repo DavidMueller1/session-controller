@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref, watch } from "vue";
 import Strip from "./components/Strip.vue";
 import FlightBoard from "./components/FlightBoard.vue";
+import Panel from "./components/Panel.vue";
 import FlipCounter from "./components/FlipCounter.vue";
 import Settings from "./components/Settings.vue";
 import Help from "./components/Help.vue";
@@ -9,7 +10,11 @@ import { useBoard } from "./useBoard";
 import { laneOf, isFlashing } from "./format";
 import type { Aircraft } from "./types";
 
-const { aircraft, status, health, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify } = useBoard();
+// Compact mode for the menu-bar popover (loaded as /?panel). Renders just the mini-board
+// and tells useBoard to stay silent (the full dashboard owns notifications).
+const panel = new URLSearchParams(location.search).has("panel");
+
+const { aircraft, status, health, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel });
 onMounted(start);
 
 // Board layout: the flight-layer (one animated coordinate space) is the default; the
@@ -211,7 +216,18 @@ function onOpen(id: string) { open(id); }
 </script>
 
 <template>
-  <div class="wrap">
+  <Panel
+    v-if="panel"
+    :aircraft="boardAircraft"
+    :now="now"
+    :connected="connected"
+    @set-note="onSet"
+    @remove-note="onRemove"
+    @land="onLand"
+    @unland="onUnland"
+    @open="onOpen"
+  />
+  <div v-else class="wrap">
     <a
       v-if="showStatus && status"
       class="status-bar"
