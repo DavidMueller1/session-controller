@@ -247,18 +247,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func refreshVersion() {
-        // Human-readable: the commit's date (what "version" means to a user — how current
-        // am I?) with the short hash kept in parens for support/diagnosis.
-        let date = run("/usr/bin/git", ["-C", kRepo, "log", "-1", "--format=%cd", "--date=format:%b %d, %Y"])
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let sha = run("/usr/bin/git", ["-C", kRepo, "rev-parse", "--short", "HEAD"])
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if date.isEmpty && sha.isEmpty {
+        // Lead with the commit count ("Version 104") — a monotonic build number that ticks
+        // up on every update, so "did it update?" is answerable at a glance even for two
+        // updates the same day. Time + short hash disambiguate further.
+        let g: ([String]) -> String = { args in
+            self.run("/usr/bin/git", ["-C", kRepo] + args).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let build = g(["rev-list", "--count", "HEAD"])
+        let sha = g(["rev-parse", "--short", "HEAD"])
+        let dt = g(["log", "-1", "--format=%cd", "--date=format:%b %d, %H:%M"])
+        if build.isEmpty && sha.isEmpty {
             versionItem.title = "Session Controller"
-        } else if date.isEmpty {
-            versionItem.title = "Version \(sha)"
         } else {
-            versionItem.title = "Version: \(date)" + (sha.isEmpty ? "" : "  (\(sha))")
+            let head = build.isEmpty ? sha : build
+            var tail: [String] = []
+            if !dt.isEmpty { tail.append(dt) }
+            if !sha.isEmpty && !build.isEmpty { tail.append(sha) }
+            versionItem.title = "Version " + head + (tail.isEmpty ? "" : " · " + tail.joined(separator: " · "))
         }
     }
 

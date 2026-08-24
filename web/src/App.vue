@@ -144,6 +144,20 @@ const isDev = import.meta.env.DEV;
 // updated). A runtime binding is fetched as a plain URL, so it always reflects the file.
 const logoUrl = "/logo.svg";
 
+// Build version, shown subtly at the bottom — a quick "did my update land?" check.
+const version = ref("");
+onMounted(async () => {
+  try {
+    const r = await fetch("/api/version");
+    if (r.ok) {
+      const v = await r.json();
+      version.value = v.pretty || v.label || "";
+    }
+  } catch {
+    /* offline / old server without the endpoint — just hide the tag */
+  }
+});
+
 const settingsOpen = ref(false);
 const helpOpen = ref(false);
 
@@ -381,6 +395,7 @@ function onOpen(id: string) { open(id); }
 
     <Settings v-if="settingsOpen" @close="settingsOpen = false" />
     <Help v-if="helpOpen" @close="helpOpen = false" />
+    <div v-if="version" class="version-tag">{{ version }}</div>
   </div>
 </template>
 
@@ -461,6 +476,13 @@ header { flex: none; display: flex; align-items: center; justify-content: space-
 /* single row, scrolls sideways; align-items:stretch makes every card as tall as the tallest */
 .landed-band { display: flex; flex-wrap: nowrap; align-items: stretch; grid-template-columns: none; gap: 8px; overflow-x: auto; overflow-y: hidden; padding-bottom: 12px; }
 .landed-band > * { flex: 0 0 232px; min-width: 0; }
+
+/* subtle build stamp, bottom-right — a quick "did my update land?" glance */
+.version-tag {
+  position: fixed; bottom: 5px; right: 9px; z-index: 1; pointer-events: none;
+  font: 10px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.02em;
+  color: var(--text-faint); opacity: 0.5; user-select: none;
+}
 
 @media (max-width: 900px) { .lanes { grid-template-columns: 1fr; } .mia-rail { width: 200px; } }
 </style>

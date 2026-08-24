@@ -13,6 +13,7 @@ import { openAircraft } from "./open.js";
 import { startStatusPolling } from "./status.js";
 import { Store } from "./store.js";
 import type { ActivityState, AnthropicStatus, DevServerInfo, DiscoveredSession, HooksHealth } from "./types.js";
+import { getVersion } from "./version.js";
 
 /** the ws socket type, sourced from @fastify/websocket to avoid importing ws directly */
 type WebSocket = import("@fastify/websocket").WebSocket;
@@ -234,6 +235,10 @@ async function main(): Promise<void> {
     clients: clients.size,
     uptimeSec: Math.round(process.uptime()),
   }));
+
+  // computed once at boot — the version only changes when an update restarts the server
+  const version = getVersion();
+  app.get("/api/version", async () => version);
 
   app.get("/api/aircraft", async () => fullList());
 
