@@ -71,8 +71,11 @@ apply_build() {
   fi
   if printf '%s\n' "$changed" | grep -qE '^menubar/'; then
     log "rebuild .app"; bash menubar/build.sh >>"$LOG" 2>&1 || return 1
+    # Do NOT quit the app here. It's the process orchestrating this update and must stay
+    # alive to receive exit 20 and relaunch itself — quitting it mid-run orphaned the update
+    # and left the app down. Replacing a running .app bundle in place is safe on macOS: the
+    # live process keeps its already-open executable, and it quits itself on relaunch.
     log "install .app to /Applications"
-    osascript -e 'tell application "Session Controller" to quit' >/dev/null 2>&1 || true
     rm -rf "$APP_DST"
     cp -R "$REPO/menubar/build/Session Controller.app" "$APP_DST" || return 1
   fi
