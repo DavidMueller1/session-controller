@@ -62,6 +62,11 @@ cat > "$APP/Contents/Resources/launch.sh" <<EOF
 # built this app. A mismatch silently breaks native modules (better-sqlite3's
 # .node is compiled per ABI), and the server dies on the first DB open.
 cd "$ROOT" || exit 1
+# GUI-launched apps inherit a minimal PATH (no /usr/local/bin or /opt/homebrew/bin), so
+# CLI tools the server shells out to aren't found — notably 'gh', which drives the PR
+# pills and Approach (merged-PR) detection, plus whatever a repo's dev-server command
+# needs. Put the standard tool dirs on PATH so they resolve like they do in a terminal.
+export PATH="/opt/homebrew/bin:/usr/local/bin:\$PATH"
 # Board state lives beside the managed clone, never inside it, so a git sync
 # can't touch it. Baked at build time from the repo's parent directory.
 export DB_PATH="$(dirname "$ROOT")/data/traffic-controller.db"
