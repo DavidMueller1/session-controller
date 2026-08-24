@@ -138,6 +138,12 @@ const clock = computed(() => new Date(now.value).toLocaleTimeString());
 // built bundle the installed app serves — so the DEV badge shows only on a dev board.
 const isDev = import.meta.env.DEV;
 
+// Bind the logo URL at runtime rather than `src="/logo.svg"`: a static src makes Vite
+// inline the SVG as a data-URI at compile time, and in dev that inlined copy gets cached
+// and goes stale when the file changes (the header showed the old logo while the favicon
+// updated). A runtime binding is fetched as a plain URL, so it always reflects the file.
+const logoUrl = "/logo.svg";
+
 const settingsOpen = ref(false);
 const helpOpen = ref(false);
 
@@ -271,7 +277,7 @@ function onOpen(id: string) { open(id); }
 
     <header>
       <div class="brand">
-        <img src="/logo.svg" class="brand-logo" alt="" />
+        <img :src="logoUrl" class="brand-logo" alt="" />
         <span class="name"><span class="w1">Session</span><span class="w2">Controller</span></span>
         <span v-if="isDev" class="dev-badge" title="Development build (Vite dev server) — not the installed app">DEV</span>
       </div>

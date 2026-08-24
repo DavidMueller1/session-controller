@@ -42,6 +42,8 @@ function toggle(key: string) { open[key] = !open[key]; }
 
 const total = computed(() => holding.value.length + parked.value.length);
 const dashboardUrl = computed(() => location.origin + "/");
+// runtime-bound (not static src="/logo.svg") so Vite doesn't inline+cache a stale SVG in dev
+const logoUrl = "/logo.svg";
 
 // Native controls: only when hosted in the menu-bar popover (the webkit bridge exists).
 // Each button posts a command the Swift app executes (start/stop/update/quit live there).
@@ -70,7 +72,7 @@ onMounted(() => {
 <template>
   <div class="panel">
     <header class="p-head">
-      <img src="/logo.svg" class="p-logo" alt="" />
+      <img :src="logoUrl" class="p-logo" alt="" />
       <span class="p-name"><span class="w1">Session</span><span class="w2">Controller</span></span>
       <span class="p-counts">
         <span v-if="holding.length" :style="{ color: 'var(--amber)' }">{{ holding.length }}</span>
