@@ -57,7 +57,11 @@ fi
 apply_build() {
   local changed="$1"
   if printf '%s\n' "$changed" | grep -qE '^(pnpm-lock\.yaml|package\.json|pnpm-workspace\.yaml|web/)'; then
-    log "pnpm install"; pnpm install >>"$LOG" 2>&1 || return 1
+    # CI=true makes pnpm fully non-interactive: it won't stop to confirm removing an
+    # incompatible node_modules (which aborts as ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY
+    # when spawned by the app with no TTY, then the whole update rolls back).
+    # --no-frozen-lockfile keeps it from failing on minor lockfile drift.
+    log "pnpm install"; CI=true pnpm install --no-frozen-lockfile >>"$LOG" 2>&1 || return 1
   fi
   if printf '%s\n' "$changed" | grep -qE '^web/'; then
     log "pnpm ui:build"; pnpm ui:build >>"$LOG" 2>&1 || return 1
