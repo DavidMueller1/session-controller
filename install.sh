@@ -75,6 +75,14 @@ fi
 command -v pnpm >/dev/null 2>&1 || die "Could not install pnpm."
 ok "pnpm $(pnpm -v)"
 
+# A piped install (curl | bash) and the app's auto-updater both run pnpm with no TTY. If an
+# existing node_modules is incompatible, pnpm wants to purge it and otherwise aborts asking
+# for confirmation (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY) — which is exactly what
+# strands a re-run meant to recover a stuck install. CI=true makes pnpm non-interactive;
+# frozen_lockfile=false keeps it from failing on minor lockfile drift.
+export CI=true
+export npm_config_frozen_lockfile=false
+
 step "Building the dashboard + wiring hooks"
 pnpm run setup
 ok "built + hooks wired into ~/.claude/settings.json"
