@@ -43,6 +43,13 @@ function toggle(key: string) { open[key] = !open[key]; }
 const total = computed(() => holding.value.length + parked.value.length);
 const dashboardUrl = computed(() => location.origin + "/");
 
+// Native controls: only when hosted in the menu-bar popover (the webkit bridge exists).
+// Each button posts a command the Swift app executes (start/stop/update/quit live there).
+const isNative = typeof (window as any).webkit?.messageHandlers?.command !== "undefined";
+function cmd(name: string) {
+  (window as any).webkit?.messageHandlers?.command?.postMessage(name);
+}
+
 // mini in-flight chips: label + hover detail
 const miniLabel = (a: Aircraft) => a.title || projectName(a.project) || a.id;
 const miniTitle = (a: Aircraft) =>
@@ -121,6 +128,22 @@ onMounted(() => {
         </div>
       </section>
     </div>
+
+    <footer v-if="isNative" class="p-foot">
+      <span class="foot-hint">right-click the icon for more</span>
+      <button class="foot-btn" title="Check for Updates" @click="cmd('update')">
+        <i class="ti ti-refresh"></i>
+      </button>
+      <button class="foot-btn" title="Restart server" @click="cmd('restart')">
+        <i class="ti ti-reload"></i>
+      </button>
+      <button class="foot-btn" title="Stop server" @click="cmd('stop')">
+        <i class="ti ti-player-stop"></i>
+      </button>
+      <button class="foot-btn danger" title="Quit Session Controller" @click="cmd('quit')">
+        <i class="ti ti-power"></i>
+      </button>
+    </footer>
   </div>
 </template>
 
@@ -147,6 +170,13 @@ onMounted(() => {
 .p-stack { display: flex; flex-direction: column; gap: 8px; }
 .p-empty { color: var(--text-faint); font-size: 12px; text-align: center; padding: 30px 0; }
 .p-quiet { padding: 0 0 2px; text-align: left; }
+
+/* native controls footer (menu-bar popover only) */
+.p-foot { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 4px; padding: 7px 10px; background: var(--bg); border-top: 1px solid var(--border-soft); }
+.foot-hint { font-size: 10px; color: var(--text-faint); margin-right: auto; }
+.foot-btn { all: unset; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 24px; border-radius: 6px; color: var(--text-dim); font-size: 14px; }
+.foot-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-hi); }
+.foot-btn.danger:hover { background: color-mix(in srgb, var(--red) 20%, transparent); color: var(--red); }
 
 /* very mini in-flight strips: the real strip look (card + green spine) shrunk down */
 .p-inflight { display: flex; flex-wrap: wrap; gap: 6px; }

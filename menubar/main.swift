@@ -175,6 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let frame = NSRect(x: 0, y: 0, width: kPanelWidth, height: kPanelMinH)
         let cfg = WKWebViewConfiguration()
         cfg.userContentController.add(self, name: "resize")
+        cfg.userContentController.add(self, name: "command")
         let wv = WKWebView(frame: frame, configuration: cfg)
         wv.uiDelegate = self
         if #available(macOS 12.0, *) { wv.underPageBackgroundColor = kBgColor }
@@ -246,9 +247,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func refreshVersion() {
-        let v = run("/usr/bin/git", ["-C", kRepo, "describe", "--tags", "--always"])
+        // Human-readable: the commit's date (what "version" means to a user — how current
+        // am I?) with the short hash kept in parens for support/diagnosis.
+        let date = run("/usr/bin/git", ["-C", kRepo, "log", "-1", "--format=%cd", "--date=format:%b %d, %Y"])
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        versionItem.title = v.isEmpty ? "Session Controller" : "Version \(v)"
+        let sha = run("/usr/bin/git", ["-C", kRepo, "rev-parse", "--short", "HEAD"])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if date.isEmpty && sha.isEmpty {
+            versionItem.title = "Session Controller"
+        } else if date.isEmpty {
+            versionItem.title = "Version \(sha)"
+        } else {
+            versionItem.title = "Version: \(date)" + (sha.isEmpty ? "" : "  (\(sha))")
+        }
     }
 
     // Like run(), but returns the process exit code instead of stdout.
@@ -384,12 +395,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: WKScriptMessageHandler {
-    // The panel posts its natural content height; size the popover to it, clamped.
     func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "resize", let n = message.body as? NSNumber else { return }
-        let h = max(kPanelMinH, min(kPanelMaxH, CGFloat(n.doubleValue)))
-        if abs((popover?.contentSize.height ?? 0) - h) < 1 { return }
-        popover?.contentSize = NSSize(width: kPanelWidth, height: h)
+        switch message.name {
+        case "resize":
+            // The panel posts its natural content height; size the popover to it, clamped.
+            guard let n = message.body as? NSNumber else { return }
+            let h = max(kPanelMinH, min(kPanelMaxH, CGFloat(n.doubleValue)))
+            if abs((popover?.contentSize.height ?? 0) - h) < 1 { return }
+            popover?.contentSize = NSSize(width: kPanelWidth, height: h)
+        case "command":
+            // Footer buttons in the panel drive the same native actions as the menu.
+            guard let c = message.body as? String else { return }
+            handleCommand(c)
+        default:
+            break
+        }
+    }
+
+    func handleCommand(_ c: String) {
+        switch c {
+        case "update":  popover?.performClose(nil); runUpdateCheck()
+        case "restart": popover?.performClose(nil); restartServer()
+        case "stop":    popover?.performClose(nil); stop()
+        case "quit":    quit()
+        case "dashboard": openDashboard()
+        case "menu":    showMenu()
+        default: break
+        }
     }
 }
 
