@@ -91,26 +91,42 @@ const portMenu = ref(false);
 const actMenu = ref(false);
 const portMenuPos = ref({ x: 0, y: 0 });
 const actMenuPos = ref({ x: 0, y: 0 });
-const posOf = (e: MouseEvent) => {
-  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  return { x: Math.round(r.left), y: Math.round(r.bottom + 4) };
-};
+const portMenuEl = ref<HTMLElement | null>(null);
+const actMenuEl = ref<HTMLElement | null>(null);
+// After the teleported menu renders, measure it and keep it on-screen: flip above the
+// trigger if it would overflow the bottom (the Landed lane sits at the screen edge), and
+// clamp to the right edge. Runs in nextTick because we need the menu's real size.
+function placeMenu(rect: DOMRect, el: HTMLElement | null, posRef: { value: { x: number; y: number } }) {
+  const mh = el?.offsetHeight ?? 0;
+  const mw = el?.offsetWidth ?? 220;
+  const m = 8; // viewport margin
+  let y = rect.bottom + 4;
+  if (y + mh > window.innerHeight - m) {
+    const above = rect.top - mh - 4;
+    y = above >= m ? above : Math.max(m, window.innerHeight - mh - m);
+  }
+  let x = rect.left;
+  if (x + mw > window.innerWidth - m) x = Math.max(m, window.innerWidth - mw - m);
+  posRef.value = { x: Math.round(x), y: Math.round(y) };
+}
 function togglePort(e: MouseEvent) {
   const open = !portMenu.value;
   closeMenus();
   if (open) {
-    portMenuPos.value = posOf(e);
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    portMenuPos.value = { x: Math.round(r.left), y: Math.round(r.bottom + 4) };
     portMenu.value = true;
-    nextTick(addDismiss);
+    nextTick(() => { placeMenu(r, portMenuEl.value, portMenuPos); addDismiss(); });
   }
 }
 function toggleAct(e: MouseEvent) {
   const open = !actMenu.value;
   closeMenus();
   if (open) {
-    actMenuPos.value = posOf(e);
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    actMenuPos.value = { x: Math.round(r.left), y: Math.round(r.bottom + 4) };
     actMenu.value = true;
-    nextTick(addDismiss);
+    nextTick(() => { placeMenu(r, actMenuEl.value, actMenuPos); addDismiss(); });
   }
 }
 function openPort(p: number) {
@@ -293,7 +309,7 @@ function commitNote() {
   <StripDetail v-if="detailOpen" :aircraft="aircraft" :now="now" @close="detailOpen = false" @open="emit('open', aircraft.id)" />
 
   <Teleport to="body">
-    <div v-if="portMenu && dev" class="dev-menu" :style="{ left: portMenuPos.x + 'px', top: portMenuPos.y + 'px' }">
+    <div v-if="portMenu && dev" ref="portMenuEl" class="dev-menu" :style="{ left: portMenuPos.x + 'px', top: portMenuPos.y + 'px' }">
       <div class="dev-menu-h">dev servers in this folder</div>
       <button v-for="c in candidates" :key="c.port" class="dev-row" :class="{ best: c.port === dev.port }" @click="openPort(c.port)">
         <span class="rdot" :style="{ background: roleColor[c.role] }"></span>
@@ -306,7 +322,7 @@ function commitNote() {
   </Teleport>
 
   <Teleport to="body">
-    <div v-if="actMenu" class="dev-menu act-menu" :style="{ left: actMenuPos.x + 'px', top: actMenuPos.y + 'px' }">
+    <div v-if="actMenu" ref="actMenuEl" class="dev-menu act-menu" :style="{ left: actMenuPos.x + 'px', top: actMenuPos.y + 'px' }">
       <!-- install deps -->
       <button
         v-if="devInstall"
