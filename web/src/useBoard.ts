@@ -157,9 +157,28 @@ export function useBoard(opts: { notify?: boolean } = {}) {
     await fetch(`/api/aircraft/${encodeURIComponent(id)}/landed`, { method: "DELETE" });
   }
 
-  async function open(id: string) {
-    await fetch(`/api/aircraft/${encodeURIComponent(id)}/open`, { method: "POST" });
+  /** transient one-liner for a click that could not be routed anywhere (auto-clears) */
+  const openHint = ref<string | null>(null);
+  let hintTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function hint(msg: string | null) {
+    if (hintTimer) clearTimeout(hintTimer);
+    openHint.value = msg;
+    if (msg) hintTimer = setTimeout(() => (openHint.value = null), 3500);
   }
 
-  return { aircraft, status, health, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify };
+  async function open(id: string) {
+    try {
+      const res = await fetch(`/api/aircraft/${encodeURIComponent(id)}/open`, { method: "POST" });
+      const body = (await res.json()) as { ok?: boolean; action?: string };
+      // the session is gone and we never recorded its host — better no jump than a
+      // surprise window (see src/open.ts)
+      if (body.ok === false) hint(body.action === "unknown-host" ? "Unknown host — this session's terminal is gone" : "Could not focus this session");
+      else hint(null);
+    } catch {
+      hint("Could not focus this session");
+    }
+  }
+
+  return { aircraft, status, health, connected, now, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify };
 }
