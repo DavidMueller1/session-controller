@@ -169,7 +169,19 @@ export class Engine extends EventEmitter {
   /** sessionId → registry entry (rebuilt cheaply; only a handful of live sessions) */
   private registryBySession(): Map<string, RegistryEntry> {
     const m = new Map<string, RegistryEntry>();
-    for (const e of this.registry.values()) m.set(e.sessionId, e);
+    for (const e of this.registry.values()) {
+      const cur = m.get(e.sessionId);
+      if (!cur) {
+        m.set(e.sessionId, e);
+        continue;
+      }
+      // A relaunch of the same session id leaves a stale <pid>.json whose process is dead.
+      // Prefer the entry whose process is still alive, then the newest — otherwise a dead
+      // pid can win, and the pidDead safety net wrongly forces a live session to MIA.
+      const eAlive = e.pid != null && isPidAlive(e.pid);
+      const curAlive = cur.pid != null && isPidAlive(cur.pid);
+      if (eAlive !== curAlive ? eAlive : e.mtimeMs > cur.mtimeMs) m.set(e.sessionId, e);
+    }
     return m;
   }
 
