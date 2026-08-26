@@ -7,6 +7,9 @@
     <img alt="self-updating" src="https://img.shields.io/badge/self--updating-3fb950?style=for-the-badge&labelColor=0d1117&color=3fb950" />
     <img alt="read-only" src="https://img.shields.io/badge/read--only-7d8590?style=for-the-badge&labelColor=0d1117&color=7d8590" />
   </p>
+  <p>
+    <a href="https://buymeacoffee.com/davidsaysthankyou"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy_me_a_coffee-davidsaysthankyou-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=0d1117&labelColor=FFDD00" /></a>
+  </p>
 </div>
 
 Every Claude session — in a terminal (Claude Code
