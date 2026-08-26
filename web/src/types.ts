@@ -109,4 +109,11 @@ export interface HooksHealth {
 export type WsMessage =
   | { type: "snapshot" | "update"; ts: number; aircraft: Aircraft[] }
   | { type: "status"; ts: number; status: AnthropicStatus | null }
-  | { type: "health"; ts: number; health: HooksHealth | null };
+  | { type: "health"; ts: number; health: HooksHealth | null }
+  | {
+      type: "version";
+      ts: number;
+      current: { build: number | null; pretty: string };
+      updateAvailable: boolean;
+      latest: { build: number | null; sha: string; pretty: string } | null;
+    };

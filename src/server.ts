@@ -13,7 +13,7 @@ import { openAircraft } from "./open.js";
 import { startStatusPolling } from "./status.js";
 import { Store } from "./store.js";
 import type { ActivityState, AnthropicStatus, DevServerInfo, DiscoveredSession, HooksHealth } from "./types.js";
-import { getVersion } from "./version.js";
+import { type UpdateStatus, checkForUpdate, getVersion } from "./version.js";
 
 /** the ws socket type, sourced from @fastify/websocket to avoid importing ws directly */
 type WebSocket = import("@fastify/websocket").WebSocket;
@@ -238,7 +238,25 @@ async function main(): Promise<void> {
 
   // computed once at boot — the version only changes when an update restarts the server
   const version = getVersion();
-  app.get("/api/version", async () => version);
+  // Check-only update detection (never applies — the app applies at startup / on demand).
+  // We poll the tracked branch and surface an "update available" banner in the UI.
+  const BRANCH = process.env.TC_BRANCH ?? "main";
+  let updateStatus: UpdateStatus = { available: false, latest: null };
+  const versionMsg = () => ({
+    type: "version" as const,
+    ts: Date.now(),
+    current: { build: version.build, pretty: version.pretty },
+    updateAvailable: updateStatus.available,
+    latest: updateStatus.latest,
+  });
+  const refreshUpdate = async () => {
+    const prev = updateStatus;
+    updateStatus = await checkForUpdate(BRANCH);
+    if (updateStatus.available !== prev.available || updateStatus.latest?.sha !== prev.latest?.sha) broadcast(versionMsg());
+  };
+  setTimeout(() => void refreshUpdate(), 20_000);
+  const updateTimer = setInterval(() => void refreshUpdate(), 20 * 60_000);
+  app.get("/api/version", async () => ({ ...version, updateAvailable: updateStatus.available, latest: updateStatus.latest }));
 
   app.get("/api/aircraft", async () => fullList());
 
@@ -472,6 +490,7 @@ async function main(): Promise<void> {
     socket.send(JSON.stringify({ type: "snapshot", ts: Date.now(), aircraft: fullList() }));
     socket.send(JSON.stringify({ type: "status", ts: Date.now(), status: anthropicStatus }));
     socket.send(JSON.stringify({ type: "health", ts: Date.now(), health: hooksHealth }));
+    socket.send(JSON.stringify(versionMsg()));
     socket.on("close", () => clients.delete(socket));
     socket.on("error", () => clients.delete(socket));
   });
@@ -500,6 +519,7 @@ async function main(): Promise<void> {
     stopStatus();
     clearInterval(healthTimer);
     clearInterval(devTimer);
+    clearInterval(updateTimer);
     await engine.stop();
     await app.close();
     store.close();

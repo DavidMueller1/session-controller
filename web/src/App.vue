@@ -14,7 +14,7 @@ import type { Aircraft } from "./types";
 // and tells useBoard to stay silent (the full dashboard owns notifications).
 const panel = new URLSearchParams(location.search).has("panel");
 
-const { aircraft, status, health, connected, now, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel });
+const { aircraft, status, health, connected, now, version, update, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel });
 onMounted(start);
 
 // Board layout: the flight-layer (one animated coordinate space) is the default; the
@@ -143,20 +143,6 @@ const isDev = import.meta.env.DEV;
 // and goes stale when the file changes (the header showed the old logo while the favicon
 // updated). A runtime binding is fetched as a plain URL, so it always reflects the file.
 const logoUrl = "/logo.svg";
-
-// Build version, shown subtly at the bottom — a quick "did my update land?" check.
-const version = ref("");
-onMounted(async () => {
-  try {
-    const r = await fetch("/api/version");
-    if (r.ok) {
-      const v = await r.json();
-      version.value = v.pretty || v.label || "";
-    }
-  } catch {
-    /* offline / old server without the endpoint — just hide the tag */
-  }
-});
 
 const settingsOpen = ref(false);
 const helpOpen = ref(false);
@@ -287,6 +273,13 @@ function onOpen(id: string) { open(id); }
         >missing: {{ e }}</span>
       </span>
       <span class="s-link">{{ health.installedEvents.length }} hook{{ health.installedEvents.length === 1 ? '' : 's' }} wired</span>
+    </div>
+
+    <!-- a newer build is on `main`; the app applies it at startup, so prompt a restart -->
+    <div v-if="update.available" class="status-bar sev-info">
+      <i class="ti ti-arrow-up-circle"></i>
+      <span class="s-desc">Update available{{ update.latest ? ' — ' + update.latest.pretty : '' }}</span>
+      <span class="s-link">restart Session Controller (or menu → “Check for Updates Now”) to apply</span>
     </div>
 
     <!-- a click that could not be routed (session gone, host never recorded) -->

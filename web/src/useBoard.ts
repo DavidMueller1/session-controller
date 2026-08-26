@@ -19,6 +19,9 @@ export function useBoard(opts: { notify?: boolean } = {}) {
   const health = ref<HooksHealth | null>(null);
   const connected = ref(false);
   const now = ref(Date.now());
+  // build version (for the bottom stamp) + whether the tracked branch is ahead (banner)
+  const version = ref("");
+  const update = ref<{ available: boolean; latest: { pretty: string } | null }>({ available: false, latest: null });
 
   const notifySupported = typeof Notification !== "undefined";
   const notifyEnabled = ref(false);
@@ -119,6 +122,9 @@ export function useBoard(opts: { notify?: boolean } = {}) {
         status.value = msg.status;
       } else if (msg.type === "health") {
         health.value = msg.health;
+      } else if (msg.type === "version") {
+        version.value = msg.current?.pretty ?? "";
+        update.value = { available: msg.updateAvailable, latest: msg.latest };
       }
     };
     ws.onclose = () => {
@@ -180,5 +186,5 @@ export function useBoard(opts: { notify?: boolean } = {}) {
     }
   }
 
-  return { aircraft, status, health, connected, now, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify };
+  return { aircraft, status, health, connected, now, version, update, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify };
 }

@@ -17,7 +17,6 @@ let kPanelMaxH: CGFloat = 560       // …and never grows past this (then the we
 // The auto-updater targets ONLY the managed clone — never a dev checkout.
 let kRepo = ("~/Library/Application Support/Session Controller/repo" as NSString).expandingTildeInPath
 let kUpdateScript = kRepo + "/scripts/update.sh"
-let kUpdateInterval: TimeInterval = 30 * 60   // 30 minutes
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
@@ -39,7 +38,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let startItem = NSMenuItem(title: "Start Server", action: #selector(start), keyEquivalent: "s")
     let stopItem = NSMenuItem(title: "Stop Server", action: #selector(stop), keyEquivalent: "x")
 
-    var updateTimer: Timer?
     var checkingUpdate = false
     let versionItem = NSMenuItem(title: "Checking…", action: nil, keyEquivalent: "")
     let checkUpdateItem = NSMenuItem(title: "Check for Updates Now", action: #selector(checkForUpdatesClicked), keyEquivalent: "u")
@@ -81,10 +79,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // e.g. a `pnpm serve` you started, or a previous launch that's still up.
         if !isPortOpen() { start() }
 
-        // Keep the app up to date: check shortly after launch, then on an interval.
+        // Update ON STARTUP only — apply once, shortly after launch. We deliberately do NOT
+        // poll-and-apply on an interval anymore; while running, the server detects a newer
+        // build and shows an "update available" banner, and the user restarts (or uses
+        // "Check for Updates Now") to apply it.
         refreshVersion()
         DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.runUpdateCheck() }
-        updateTimer = Timer.scheduledTimer(withTimeInterval: kUpdateInterval, repeats: true) { [weak self] _ in self?.runUpdateCheck() }
     }
 
     func applicationWillTerminate(_ note: Notification) {
