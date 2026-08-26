@@ -256,13 +256,18 @@ export class Engine extends EventEmitter {
       // tool use regardless of desktop-vs-terminal or build (newer desktop builds no
       // longer publish registry `status`). A fresh hook state wins over both.
       const hs = this.hookState.get(a.id);
-      if (hs?.state === "ended") {
-        // The session exited (SessionEnd hook). Terminal and authoritative regardless of
-        // age: drop it out of the active lanes ("wrapped up") rather than letting
-        // transcript inference keep a just-exited session in-flight.
+      // A desktop-app session fires SessionEnd just from closing/switching its tab, yet it
+      // persists and can be reopened — so an "ended" hook must NOT wrap it up. For those,
+      // "wrapped up" comes only from the desktop `isArchived` signal (handled in correlate);
+      // deletion just removes it. A terminal (CLI-only) session that exits IS genuinely done.
+      const isDesktopSession = (a.surfaces ?? []).includes("desktop");
+      if (hs?.state === "ended" && !isDesktopSession) {
+        // A terminal session exited (SessionEnd). Terminal and authoritative regardless of
+        // age: drop it out of the active lanes ("wrapped up") rather than letting transcript
+        // inference keep a just-exited session in-flight.
         a = { ...a, state: "suspected-done" };
         stateSource = "hook";
-      } else if (hs && now - hs.ts < CONFIG.hookStaleMs) {
+      } else if (hs && hs.state !== "ended" && now - hs.ts < CONFIG.hookStaleMs) {
         if (hs.state === "working" && !movedToWaitingPast(hs.ts) && !registryIdleAfter(hs.ts)) {
           a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
           stateSource = "hook";
