@@ -80,7 +80,14 @@ export function correlate(all: DiscoveredSession[]): DiscoveredSession[] {
     if (s.source !== "desktop") continue;
     const link = s.linkedCliSessionId;
     if (link && cliById.has(link)) {
-      out.push(merge(collapseCli(cliById.get(link)!), s));
+      const merged = merge(collapseCli(cliById.get(link)!), s);
+      // The desktop metadata is written as a placeholder ("Awaiting instructions") BEFORE
+      // it gains its cliSessionId, so a desktop row was already persisted under its own id.
+      // Now that it's folded into the CLI flight, retire that id like a compaction
+      // predecessor: `supersedes` drives offlineSessions() to drop the orphan strip and
+      // reassign() to delete its persisted row (carrying any note/landed onto this flight).
+      const supersedes = s.id !== merged.id ? [...(merged.supersedes ?? []), s.id] : merged.supersedes;
+      out.push({ ...merged, supersedes });
       consumedCliIds.add(link);
     } else {
       out.push({ ...s, surfaces: ["desktop"] });
@@ -129,6 +136,8 @@ function supersedeContinuations(out: DiscoveredSession[]): DiscoveredSession[] {
       // rather than the continuation's, whose opening turns are compaction/command noise.
       // A live `/rename` still overrides this later in the engine (callsign wins).
       const inherited = chain.map((id) => byId.get(id)).find((p) => p && named(p))?.title;
-      return { ...s, title: inherited ?? s.title, supersedes: chain };
+      // keep any ids already set (e.g. a desktop id retired at merge time) alongside the chain
+      const supersedes = [...new Set([...chain, ...(s.supersedes ?? [])])];
+      return { ...s, title: inherited ?? s.title, supersedes };
     });
 }
