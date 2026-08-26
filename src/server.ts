@@ -443,19 +443,23 @@ async function main(): Promise<void> {
     });
   });
 
-  // open/focus the session's host (PhpStorm project window, Claude app, or terminal)
+  // open/focus the session's host (terminal tab, IDE project window, or the Claude app)
   app.post<{ Params: { id: string } }>("/api/aircraft/:id/open", async (req, reply) => {
     const a = engine.aircraft().find((x) => x.id === req.params.id);
     if (!a) return reply.code(404).send({ error: "not found" });
     const reg = engine.registryEntry(a.id);
     const surfaces = a.surfaces ?? [a.source];
     try {
-      const result = await openAircraft({
+      const { host, ...result } = await openAircraft({
         entrypoint: reg?.entrypoint,
         pid: reg?.pid,
         cwd: a.project ?? reg?.cwd ?? null,
         desktopOnly: surfaces.includes("desktop") && !surfaces.includes("cli"),
+        knownHost: store.getHost(a.id),
       });
+      // remember a freshly detected host, so a click on this strip still lands in the
+      // right app once the session (and its registry entry) is gone
+      if (host) store.setHost(a.id, host.kind, host.bin ?? null);
       return result;
     } catch (err) {
       return reply.code(500).send({ ok: false, error: String(err) });

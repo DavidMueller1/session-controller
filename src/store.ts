@@ -102,6 +102,9 @@ export class Store {
     this.addColumn("project_config", "dev_command", "TEXT");
     this.addColumn("project_config", "install_command", "TEXT");
     this.addColumn("project_config", "env_vars", "TEXT");
+    // host of the session's terminal/IDE, remembered while it was alive (see src/open.ts)
+    this.addColumn("sessions", "host_kind", "TEXT");
+    this.addColumn("sessions", "host_bin", "TEXT");
   }
 
   /** add a column if it isn't already present (SQLite has no IF NOT EXISTS for columns) */
@@ -188,6 +191,20 @@ export class Store {
 
   unsetLanded(id: string): void {
     this.db.prepare(`DELETE FROM landed WHERE id = ?`).run(id);
+  }
+
+  /** the host we last saw a session running in, or null if we never resolved one */
+  getHost(id: string): { kind: string; bin: string | null } | null {
+    const row = this.db.prepare(`SELECT host_kind, host_bin FROM sessions WHERE id = ?`).get(id) as
+      | { host_kind: string | null; host_bin: string | null }
+      | undefined;
+    if (!row?.host_kind) return null;
+    return { kind: row.host_kind, bin: row.host_bin };
+  }
+
+  /** record the host of a live session, so a later click still lands in the right app */
+  setHost(id: string, kind: string, bin: string | null): void {
+    this.db.prepare(`UPDATE sessions SET host_kind = ?, host_bin = ? WHERE id = ?`).run(kind, bin, id);
   }
 
   /** all notes as { aircraftId: note } — notes outlive sessions (kept, not pruned) */

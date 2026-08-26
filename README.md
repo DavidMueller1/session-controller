@@ -43,7 +43,7 @@ Strips move between lanes as each session's state changes:
 | ![Landed](https://img.shields.io/badge/Landed-4cc38a?style=flat-square&labelColor=4cc38a&color=4cc38a) | you marked it done |
 
 - Sessions idle **> 5 days drop off** the board — unless they have a note.
-- **Click a strip** for details; **click its title** to focus the session's window (terminal / PhpStorm / Claude desktop).
+- **Click a strip** for details; **click its title** to focus the session — the exact iTerm2/Terminal.app **tab** it runs in (matched by tty), the matching IDE project window, or the Claude app. For a session that is already gone the board falls back to the host it was last seen in; if that was never recorded it says so instead of guessing an app.
 - ![PR](https://img.shields.io/badge/PR-58a6ff?style=flat-square&labelColor=58a6ff&color=58a6ff) pill per branch (via `gh`), coloured by review state; a merged PR flags ![Approach](https://img.shields.io/badge/Approach-a371f7?style=flat-square&labelColor=a371f7&color=a371f7) (cleared to land). Landing is a manual click.
 - **dev ▾** — detect, start/stop a dev server in the strip's folder and tail its logs; set the command per repo in **Settings**.
 - A **context-usage ring**, header **bell** for holding notifications, and a **?** help panel cover the rest.

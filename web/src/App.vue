@@ -14,7 +14,7 @@ import type { Aircraft } from "./types";
 // and tells useBoard to stay silent (the full dashboard owns notifications).
 const panel = new URLSearchParams(location.search).has("panel");
 
-const { aircraft, status, health, connected, now, start, setNote, removeNote, land, unland, open, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel });
+const { aircraft, status, health, connected, now, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel });
 onMounted(start);
 
 // Board layout: the flight-layer (one animated coordinate space) is the default; the
@@ -287,6 +287,12 @@ function onOpen(id: string) { open(id); }
         >missing: {{ e }}</span>
       </span>
       <span class="s-link">{{ health.installedEvents.length }} hook{{ health.installedEvents.length === 1 ? '' : 's' }} wired</span>
+    </div>
+
+    <!-- a click that could not be routed (session gone, host never recorded) -->
+    <div v-if="openHint" class="status-bar sev-info">
+      <i class="ti ti-app-window"></i>
+      <span class="s-desc">{{ openHint }}</span>
     </div>
 
     <header>

@@ -307,7 +307,9 @@ follow-up PR: it keeps its history, resets `prState` for the new branch/PR, and 
 5. ✅ **Registry status** — for live CLI sessions, take state from Claude Code's own
    `~/.claude/sessions` `status` (busy → In-flight, idle → Holding); authoritative, no
    transcript guesswork, **zero per-machine setup**. Desktop sessions fall back to inference.
-   Also: `open` action focuses the host window; AskUserQuestion/ExitPlanMode → Holding; tool
+   Also: `open` action focuses the host — the exact terminal tab via tty/AppleScript where
+   iTerm2 or Terminal.app hosts the session, else the IDE project window, else nothing (an
+   unknown host is reported on the board rather than guessed); AskUserQuestion/ExitPlanMode → Holding; tool
    errors are not terminal. **Hooks intentionally skipped** — they'd need per-machine
    settings.json edits and only cover CLI (see the distribution note in §9).
 6. ✅ **PR integration** — per-strip GitHub PR pill via `gh` (attached by branch); a **merged**
