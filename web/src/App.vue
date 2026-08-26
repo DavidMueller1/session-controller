@@ -14,7 +14,7 @@ import type { Aircraft } from "./types";
 // and tells useBoard to stay silent (the full dashboard owns notifications).
 const panel = new URLSearchParams(location.search).has("panel");
 
-const { aircraft, status, health, connected, now, version, update, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel });
+const { aircraft, status, health, connected, now, version, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel });
 onMounted(start);
 
 // Board layout: the flight-layer (one animated coordinate space) is the default; the
@@ -279,7 +279,7 @@ function onOpen(id: string) { open(id); }
     <div v-if="update.available" class="status-bar sev-info">
       <i class="ti ti-arrow-up-circle"></i>
       <span class="s-desc">Update available{{ update.latest ? ' — ' + update.latest.pretty : '' }}</span>
-      <span class="s-link">restart Session Controller (or menu → “Check for Updates Now”) to apply</span>
+      <button class="s-action" :disabled="updating" @click="applyUpdate">{{ updating ? 'Updating…' : 'Update now' }}</button>
     </div>
 
     <!-- a click that could not be routed (session gone, host never recorded) -->
@@ -424,6 +424,9 @@ function onOpen(id: string) { open(id); }
 .s-badge { font-size: 11px; border: 0.5px solid; border-radius: 6px; padding: 0 6px; white-space: nowrap; }
 .s-link { margin-left: auto; color: var(--text-dim); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .s-link i { font-size: 12px; }
+.s-action { all: unset; margin-left: auto; cursor: pointer; font-size: 11px; font-weight: 600; color: var(--blue); border: 0.5px solid color-mix(in srgb, var(--blue) 50%, transparent); border-radius: 6px; padding: 3px 10px; white-space: nowrap; }
+.s-action:hover { background: color-mix(in srgb, var(--blue) 15%, transparent); }
+.s-action:disabled { opacity: 0.6; cursor: default; }
 header { flex: none; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft); }
 .brand { display: flex; align-items: center; gap: 9px; }
 .brand-logo { width: 26px; height: 26px; display: block; }

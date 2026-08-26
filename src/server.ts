@@ -266,11 +266,23 @@ async function main(): Promise<void> {
 
   // compact count for the macOS menu-bar app: strips in Holding that are NOT parked
   // (needs-input/error, not landed/approach, no note) — i.e. the ones flashing for you.
+  // The "Update now" banner button POSTs here; the menu-bar app picks the flag up on its
+  // next /api/badge poll and runs its normal update→relaunch path (the web can't relaunch
+  // the native app itself). No-op in dev:live, where no menu-bar app is polling.
+  let updateRequested = false;
+  app.post("/api/update", async () => {
+    updateRequested = true;
+    return { ok: true };
+  });
+
   app.get("/api/badge", async () => {
     const holding = fullList().filter(
       (a) => (a.state === "needs-input" || a.state === "error") && !a.landed && !a.approach && !a.note,
     ).length;
-    return { holding, ts: Date.now() };
+    // read-and-clear so the app triggers the update exactly once per click
+    const wantsUpdate = updateRequested;
+    updateRequested = false;
+    return { holding, updateRequested: wantsUpdate, ts: Date.now() };
   });
 
   app.get<{ Params: { id: string } }>("/api/aircraft/:id", async (req, reply) => {

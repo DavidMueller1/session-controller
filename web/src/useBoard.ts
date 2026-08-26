@@ -163,6 +163,20 @@ export function useBoard(opts: { notify?: boolean } = {}) {
     await fetch(`/api/aircraft/${encodeURIComponent(id)}/landed`, { method: "DELETE" });
   }
 
+  /** ask the menu-bar app (via its badge poll) to apply the available update now */
+  const updating = ref(false);
+  async function applyUpdate() {
+    updating.value = true;
+    try {
+      await fetch("/api/update", { method: "POST" });
+    } catch {
+      /* ignore — button resets below */
+    }
+    // the app relaunches / the server restarts on success and the banner clears itself;
+    // reset after a grace period so the button isn't stuck if nothing happened.
+    setTimeout(() => (updating.value = false), 20_000);
+  }
+
   /** transient one-liner for a click that could not be routed anywhere (auto-clears) */
   const openHint = ref<string | null>(null);
   let hintTimer: ReturnType<typeof setTimeout> | null = null;
@@ -186,5 +200,5 @@ export function useBoard(opts: { notify?: boolean } = {}) {
     }
   }
 
-  return { aircraft, status, health, connected, now, version, update, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify };
+  return { aircraft, status, health, connected, now, version, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify };
 }

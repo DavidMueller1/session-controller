@@ -290,12 +290,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
             var running = false
             var holding = 0
+            var wantsUpdate = false
             if let http = resp as? HTTPURLResponse, http.statusCode == 200, let data,
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 running = true
                 holding = (obj["holding"] as? Int) ?? 0
+                wantsUpdate = (obj["updateRequested"] as? Bool) ?? false
             }
-            DispatchQueue.main.async { self?.render(running: running, holding: holding) }
+            DispatchQueue.main.async {
+                self?.render(running: running, holding: holding)
+                // the board's "Update now" button asked us to update — run our normal path
+                if wantsUpdate { self?.runUpdateCheck() }
+            }
         }.resume()
     }
 
