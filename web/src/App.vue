@@ -146,6 +146,14 @@ const logoUrl = "/logo.svg";
 
 const settingsOpen = ref(false);
 const helpOpen = ref(false);
+// Open Help automatically on each visit until the user has closed it once (full board only).
+function closeHelp() {
+  helpOpen.value = false;
+  localStorage.setItem("fc-help-seen", "1");
+}
+onMounted(() => {
+  if (!panel && !localStorage.getItem("fc-help-seen")) helpOpen.value = true;
+});
 
 // cross-column FLIP: measure before patch, tween from old → new screen position
 let firstRects = new Map<string, DOMRect>();
@@ -403,7 +411,7 @@ function onOpen(id: string) { open(id); }
     </div>
 
     <Settings v-if="settingsOpen" @close="settingsOpen = false" />
-    <Help v-if="helpOpen" @close="helpOpen = false" />
+    <Help v-if="helpOpen" @close="closeHelp" />
     <div v-if="version" class="version-tag">{{ version }}</div>
   </div>
 </template>

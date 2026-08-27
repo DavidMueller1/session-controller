@@ -88,6 +88,13 @@ const actions = [
             </div>
           </div>
 
+          <div class="h-sec">Removal &amp; keeping</div>
+          <p class="h-note">
+            A session with no activity for <b>5 days</b> drops off the board automatically — landed
+            or not — so the board stays current. To keep one for good, <b>add a note</b>: a noted
+            strip is pinned and never removed, at any age. It's the way to make a session persist.
+          </p>
+
           <div class="h-sec">Top banners</div>
           <p class="h-note">
             A banner appears only when something needs attention: <b>Claude service status</b> (from status.claude.com),
