@@ -15,9 +15,18 @@ const badges = [
   { label: "Needs you", bg: "#e0a92e", fg: "var(--bg)", desc: "Waiting for your answer — the strip flashes." },
   { label: "Parked", bg: "var(--parked-bg)", fg: "var(--parked)", icon: "ti-parking", desc: "Triaged with a note." },
   { label: "MIA", bg: "#1c222c", fg: "#8b98a8", icon: "ti-clock", desc: "No activity for 5+ min — still flying, just out of contact." },
-  { label: "Wrapped up", bg: "#1c222c", fg: "#8b98a8", desc: "Looks finished / lost contact (also “Dormant”, “Unknown”)." },
+  { label: "Wrapped up", bg: "#1c222c", fg: "#8b98a8", desc: "Looks finished — see the MIA rail below (also “Dormant”, “Unknown”)." },
   { label: "Landed", bg: "#16301f", fg: "#4cc38a", icon: "ti-check", desc: "Marked done by you." },
   { label: "Approach", bg: "rgba(88,166,255,0.14)", fg: "var(--blue)", icon: "ti-plane-inflight", desc: "Its PR is merged — cleared to land. Rides alongside the state badge." },
+];
+
+// the MIA rail gathers every "not actively in a lane" state — all shown in the same muted
+// grey, distinguished only by the label. What each one actually means:
+const miaStates = [
+  { label: "MIA", desc: "Was working, then radio silence for 5+ minutes — or its process was killed. Still flying; it may pick back up." },
+  { label: "Dormant", desc: "No activity for 2+ hours. Cold and set aside — overnight-safe, not gone." },
+  { label: "Wrapped up", desc: "Looks finished: a terminal session that exited, or a desktop session you archived." },
+  { label: "Unknown", desc: "No readable activity to judge from — its state couldn't be determined." },
 ];
 
 const actions = [
@@ -59,6 +68,15 @@ const actions = [
             <div v-for="b in badges" :key="b.label" class="h-item">
               <span class="h-vis"><span class="hbadge" :style="{ background: b.bg, color: b.fg }"><i v-if="b.icon" class="ti" :class="b.icon"></i>{{ b.label }}</span></span>
               <div class="h-text"><span>{{ b.desc }}</span></div>
+            </div>
+          </div>
+
+          <div class="h-sec">MIA rail — why a strip is here</div>
+          <p class="h-note">The MIA lane gathers everything that's gone quiet. All wear the same muted grey — the label tells you which:</p>
+          <div class="h-legend">
+            <div v-for="m in miaStates" :key="m.label" class="h-item">
+              <span class="h-vis"><span class="hbadge" style="background: #1c222c; color: #8b98a8">{{ m.label }}</span></span>
+              <div class="h-text"><span>{{ m.desc }}</span></div>
             </div>
           </div>
 
