@@ -12,7 +12,11 @@ import { type RegistryEntry, isRegistryFile, parseRegistryFile } from "./registr
 import type { DiscoveredSession, PrInfo, SessionFacts } from "./types.js";
 
 function isCliTranscript(p: string): boolean {
-  return p.endsWith(".jsonl");
+  // `audit.jsonl` is a Cowork/scheduled-task audit log dropped in every desktop session
+  // root, not a Claude Code transcript — it uses snake_case `session_id`, so parseCli can't
+  // read its id and falls back to the "audit" filename stem, spawning a bogus duplicate strip
+  // beside the session's real transcript. Skip it.
+  return p.endsWith(".jsonl") && path.basename(p) !== "audit.jsonl";
 }
 
 /** best-effort aircraft id from a transcript/desktop path: the filename stem. For a main
