@@ -51,6 +51,10 @@ export class Store {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
+    // let a live app and a dev instance share one DB: WAL gives concurrent readers + one
+    // writer, and busy_timeout makes a blocked writer wait for the lock instead of throwing
+    // SQLITE_BUSY (both tick ~every 2s, so waits are milliseconds).
+    this.db.pragma("busy_timeout = 5000");
     this.migrate();
   }
 

@@ -1,7 +1,9 @@
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vite";
 
-const API = "http://127.0.0.1:4317";
+// dev:live points this at its own backend port (running alongside the installed app on
+// :4317) via TC_API, so both can serve the same shared DB at once.
+const API = process.env.TC_API ?? "http://127.0.0.1:4317";
 
 export default defineConfig({
   plugins: [vue()],
