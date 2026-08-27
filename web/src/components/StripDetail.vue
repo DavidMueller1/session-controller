@@ -159,14 +159,6 @@ const devSummary = computed(() => {
             </div>
           </div>
         </div>
-
-        <!-- flat ring overlay, on top of the 3D pages; appears whole as the cover opens.
-             each ring is two halves: the lower arc sits BEHIND the bar, the upper arc in
-             FRONT of it, so the ring reads as looping through the spine like a real binder -->
-        <div class="d-rings" aria-hidden="true">
-          <span class="d-bar"></span>
-          <span v-for="i in 4" :key="i" class="d-ring"><span class="d-ring-half lo"></span><span class="d-ring-half up"></span></span>
-        </div>
       </div>
       </div>
     </Transition>
@@ -195,7 +187,9 @@ const devSummary = computed(() => {
 .d-tp-id { margin-top: auto; font-size: 10px; color: var(--text-faint); overflow-wrap: anywhere; }
 
 /* RIGHT detail page */
-.d-base { grid-column: 2; grid-row: 1; position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border: 0.5px solid var(--border); border-left: none; border-radius: 3px 12px 12px 3px; }
+/* the left border is the binder's centre line — a plain hairline in the same colour as the
+   outline, revealed with the page as the cover opens (no separate spine decoration) */
+.d-base { grid-column: 2; grid-row: 1; position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border: 0.5px solid var(--border); border-radius: 3px 12px 12px 3px; }
 .d-x { all: unset; position: absolute; top: 8px; right: 10px; z-index: 2; cursor: pointer; display: inline-flex; padding: 4px; border-radius: 6px; color: var(--text-faint); font-size: 15px; }
 .d-x:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-dim); }
 .d-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 15px 8px 36px; }
@@ -220,56 +214,25 @@ const devSummary = computed(() => {
 .d-open { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text); background: var(--chip); border: 0.5px solid var(--border); border-radius: 7px; padding: 5px 11px; cursor: pointer; }
 .d-open:hover { border-color: var(--gray); color: var(--text-hi); }
 
-/* rings: flat overlay above the pages (never 3D-sorted), whole ovals fade in on open */
-/* spread the four rings along the rod, top and bottom ones nearly at its ends (the bar
-   runs 13%→87%, so this padding sits the outer rings just inside the tips) */
-.d-rings { position: absolute; inset: 0; z-index: 10; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 15% 0; }
-.d-bar { position: absolute; top: 13%; bottom: 13%; left: 50%; width: 11px; margin-left: -5.5px; z-index: 2; border-radius: 4px; background: linear-gradient(90deg, #565f6b, #c9d2db 45%, #eef2f6 50%, #c9d2db 55%, #565f6b); box-shadow: 0 0 4px rgba(0, 0, 0, 0.55); }
-/* the ring box carries no visible border — its two halves draw the oval and are z-sorted
-   around the bar (no z-index on the box itself, so the halves live in .d-rings' context) */
-.d-ring { position: relative; width: 46px; height: 19px; }
-.d-ring-half { position: absolute; inset: 0; border-radius: 50%; border: 3.5px solid; border-color: #c0c8d1 #eef2f6 #565f6b #9aa4af; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6), inset 0 0 3px rgba(0, 0, 0, 0.4); background: transparent; }
-.d-ring-half.lo { z-index: 1; clip-path: inset(47% 0 0 0); }   /* lower arc → behind the bar */
-.d-ring-half.up { z-index: 3; clip-path: inset(0 0 47% 0); }   /* upper arc → in front of the bar */
-
 /* enter plays the timeline forward; leave plays the SAME var(--dur) timeline in REVERSE — a
-   clean rewind (cover folds shut, base + rings hide, then the binder lifts away and fades) */
+   clean rewind (cover folds shut, base hides, then the binder lifts away and fades) */
 .d-overlay.v-enter-active { animation: d-bg var(--dur) ease both; }
 .v-enter-active .d-binder { animation: d-drop var(--dur) cubic-bezier(0.2, 0.8, 0.3, 1) both; }
 .v-enter-active .d-cover  { animation: d-flip var(--dur) cubic-bezier(0.65, 0, 0.35, 1) both; }
 .v-enter-active .d-face   { animation: d-fx var(--dur) ease both; }
 .v-enter-active .d-base   { animation: d-reveal var(--dur) ease both; }
-.v-enter-active .d-rings  { animation: d-rings var(--dur) linear both; }
 
 .d-overlay.v-leave-active { animation: d-bg var(--dur) ease reverse both; }
 .v-leave-active .d-binder { animation: d-drop var(--dur) cubic-bezier(0.2, 0.8, 0.3, 1) reverse both; }
 .v-leave-active .d-cover  { animation: d-flip var(--dur) cubic-bezier(0.65, 0, 0.35, 1) reverse both; }
 .v-leave-active .d-face   { animation: d-fx var(--dur) ease reverse both; }
 .v-leave-active .d-base   { animation: d-reveal var(--dur) ease reverse both; }
-.v-leave-active .d-rings  { animation: d-rings var(--dur) linear reverse both; }
 
 @keyframes d-bg { 0% { background: rgba(6, 9, 13, 0); } 20%, 100% { background: rgba(6, 9, 13, 0.66); } }
 @keyframes d-drop { 0% { transform: translateY(-24px) scale(1.26); } 40%, 100% { transform: translateY(0) scale(1); } }
 @keyframes d-flip { 0%, 8% { transform: rotateY(180deg); } 100% { transform: rotateY(0deg); } }
 @keyframes d-fx { 0% { opacity: 0; filter: blur(11px); } 40%, 100% { opacity: 1; filter: blur(0); } }
 @keyframes d-reveal { 0%, 38% { opacity: 0; } 46%, 100% { opacity: 1; } }
-/* the rings are unveiled by the cover's own leading edge — a right→left wipe tracking the
-   folding cover EXACTLY. The cover's free edge projects to x/W = (1 + cos(180°·e))/2 (e =
-   the fold's eased progress), so the clip's left inset X% = 50·(1 + cos(180°·e)). Both the
-   cover ease (cubic-bezier(0.65,0,0.35,1)) and that cosine are pre-baked into these stops,
-   which is why this runs `linear`. Held clipped until the fold starts (8%), then tracks it
-   (8→100%): slow at the edges, fast as the edge sweeps across the central spine. */
-@keyframes d-rings {
-  0%, 8%   { clip-path: inset(0 0 0 100%); }
-  19.5%    { clip-path: inset(0 0 0 99.95%); }
-  31%      { clip-path: inset(0 0 0 98.76%); }
-  42.5%    { clip-path: inset(0 0 0 89.69%); }
-  54%      { clip-path: inset(0 0 0 50%); }
-  65.5%    { clip-path: inset(0 0 0 10.31%); }
-  77%      { clip-path: inset(0 0 0 1.24%); }
-  88.5%    { clip-path: inset(0 0 0 0.05%); }
-  100%     { clip-path: inset(0 0 0 0); }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .d-overlay, .d-overlay * { animation: none !important; }
