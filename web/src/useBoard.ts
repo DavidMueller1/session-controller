@@ -29,6 +29,18 @@ export function useBoard(opts: { notify?: boolean } = {}) {
   let ws: WebSocket | null = null;
   let retry = 0;
 
+  // Auto-reload when the server comes back on a NEW build (e.g. after "Update now" restarts
+  // it): the running page's JS/CSS are then stale, so reconnecting onto a different build/sha
+  // means we reload to pick up the new assets. A plain restart on the SAME code just
+  // reconnects — no reload. Skipped in the Vite dev server, where HMR owns reloading.
+  let loadedBuildKey: string | null = null;
+  function maybeReloadOnNewBuild(cur?: { build: number | null; sha: string }) {
+    if (!cur || import.meta.env.DEV) return;
+    const key = `${cur.build ?? "?"}·${cur.sha}`;
+    if (loadedBuildKey === null) loadedBuildKey = key; // baseline = the build this page loaded with
+    else if (key !== loadedBuildKey) location.reload();
+  }
+
   // --- holding notifications ---------------------------------------------------------
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
   const notified = new Set<string>();
@@ -125,6 +137,7 @@ export function useBoard(opts: { notify?: boolean } = {}) {
       } else if (msg.type === "version") {
         version.value = msg.current?.pretty ?? "";
         update.value = { available: msg.updateAvailable, latest: msg.latest };
+        maybeReloadOnNewBuild(msg.current);
       }
     };
     ws.onclose = () => {

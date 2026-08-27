@@ -245,7 +245,7 @@ async function main(): Promise<void> {
   const versionMsg = () => ({
     type: "version" as const,
     ts: Date.now(),
-    current: { build: version.build, pretty: version.pretty },
+    current: { build: version.build, sha: version.sha, pretty: version.pretty },
     updateAvailable: updateStatus.available,
     latest: updateStatus.latest,
   });

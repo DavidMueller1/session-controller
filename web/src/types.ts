@@ -113,7 +113,7 @@ export type WsMessage =
   | {
       type: "version";
       ts: number;
-      current: { build: number | null; pretty: string };
+      current: { build: number | null; sha: string; pretty: string };
       updateAvailable: boolean;
       latest: { build: number | null; sha: string; pretty: string } | null;
     };
