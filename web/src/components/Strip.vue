@@ -351,8 +351,15 @@ function commitNote() {
 </template>
 
 <style scoped>
-.strip { display: flex; background: var(--strip); border: 0.5px solid var(--border); border-radius: 8px; overflow: hidden; animation: strip-in 0.3s ease; cursor: pointer; }
+.strip { display: flex; background: var(--strip); border: 0.5px solid var(--border); border-radius: 8px; overflow: hidden; animation: strip-in 0.3s ease; cursor: pointer; transition: background-color 0.12s ease; }
 .strip.parked { background: var(--strip-parked); }
+/* the strip body opens its detail on click — a faint lift on hover hints at that. a
+   translucent layer over the base colour, so it brightens every variant without replacing
+   it. Suppressed while hovering an interactive child (title, note, buttons, links), since
+   those have their own action and don't open the modal. */
+.strip:hover:not(:has(button:hover, a:hover, input:hover, .title:hover)) {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.05));
+}
 .strip.flash { animation: flash 1s ease-in-out infinite; }
 .strip.landed { opacity: 0.9; }
 .strip.mia { opacity: 0.7; }

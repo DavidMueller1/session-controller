@@ -52,7 +52,7 @@ input:focus, textarea:focus { border-color: var(--amber); }
 ::-webkit-scrollbar { height: 8px; width: 8px; }
 ::-webkit-scrollbar-thumb { background: #232b35; border-radius: 4px; }
 
-@keyframes flash { 0%, 100% { background: var(--amber-bg); } 50% { background: var(--strip); } }
+@keyframes flash { 0%, 100% { background-color: var(--amber-bg); } 50% { background-color: var(--strip); } }
 @keyframes strip-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 
 @media (prefers-reduced-motion: reduce) {
