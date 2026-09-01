@@ -43,11 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var overlayPanel: NSPanel?
     var overlayWeb: WKWebView?
     var overlayTimer: Timer?
-    // where the web says its strips are (viewport px from the top) + whether one is revealed,
-    // so the panel is click-through everywhere except over them.
-    var overlayTop: CGFloat = 0
-    var overlayBottom: CGFloat = 0
-    var overlayCardOpen = false
+    // each strip's vertical rect (viewport px from the top), reported by the web, so we can
+    // tell which one the cursor is over and reveal exactly that one.
+    var overlayStrips: [(id: String, top: CGFloat, bottom: CGFloat)] = []
+    var overlayActiveId: String?
     let overlayItem = NSMenuItem(title: "Show Overlay", action: #selector(toggleOverlay), keyEquivalent: "l")
 
     let headerItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -259,8 +258,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless()
         overlayPanel = panel
 
-        overlayTop = 0; overlayBottom = 0; overlayCardOpen = false
-        // poll the cursor: intercept clicks only when it's over the strips (per the web's report)
+        overlayStrips = []; overlayActiveId = nil
+        // poll the cursor: reveal the strip it's over + intercept clicks only there
         overlayTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.overlayTick() }
 
         UserDefaults.standard.set(true, forKey: "overlayEnabled")
@@ -276,23 +275,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayItem.state = .off
     }
 
-    // Cursor-driven click-through: the panel is always kOverlayW wide but only intercepts
-    // clicks over the strips — a narrow right-edge band (enough to hover a spine) when nothing
-    // is revealed, widening to the full width once a strip is expanded so the cursor can move
-    // onto it. The reveal itself is pure CSS :hover in the web view; this only decides which
-    // pixels are "live" vs click-through. Region comes from the web (overlay message).
+    // Cursor-driven reveal (a non-activating panel gets no mouseMoved, so CSS :hover can't
+    // work in the web view). We poll NSEvent.mouseLocation — which always works — find the
+    // strip whose vertical rect the cursor is in, and tell the web to reveal it. The panel
+    // intercepts clicks only while a strip is active (so it can be clicked); otherwise it's
+    // click-through. Hysteresis: once a strip is active the whole width is live so the cursor
+    // can move left onto the revealed card; otherwise only a narrow right-edge band (a spine).
     func overlayTick() {
         guard let panel = overlayPanel, let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame
         let m = NSEvent.mouseLocation
-        // map the web's viewport-y (from top) to screen-y (bottom-left origin): panel top = vf.maxY
-        let yTop = vf.maxY - overlayTop
-        let yBot = vf.maxY - overlayBottom
-        let band = overlayCardOpen ? kOverlayW : kOverlayTrigger
         let fromRight = vf.maxX - m.x
-        let hasStrips = overlayBottom > overlayTop
-        let inRegion = hasStrips && fromRight >= 0 && fromRight <= band && m.y <= yTop && m.y >= yBot
-        panel.ignoresMouseEvents = !inRegion
+        // strip whose vertical range contains the cursor (screen y = vf.maxY - web viewport y)
+        let rowId = overlayStrips.first { s in
+            m.y <= (vf.maxY - s.top) && m.y >= (vf.maxY - s.bottom)
+        }?.id
+        let band: CGFloat = (rowId != nil && rowId == overlayActiveId) ? kOverlayW : kOverlayTrigger
+        let active = (rowId != nil && fromRight >= 0 && fromRight <= band) ? rowId : nil
+        panel.ignoresMouseEvents = (active == nil)
+        if active != overlayActiveId {
+            overlayActiveId = active
+            let arg = active.map { "\"\($0.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\"" } ?? "null"
+            overlayWeb?.evaluateJavaScript("window.__overlayHover && window.__overlayHover(\(arg))", completionHandler: nil)
+        }
     }
 
     // MARK: - Self-update
@@ -513,11 +518,14 @@ extension AppDelegate: WKScriptMessageHandler {
             guard let c = message.body as? String else { return }
             handleCommand(c)
         case "overlay":
-            // The overlay web view reports its strips' vertical extent + whether one is revealed.
-            guard let d = message.body as? [String: Any] else { return }
-            overlayTop = (d["top"] as? NSNumber).map { CGFloat($0.doubleValue) } ?? 0
-            overlayBottom = (d["bottom"] as? NSNumber).map { CGFloat($0.doubleValue) } ?? 0
-            overlayCardOpen = (d["expanded"] as? NSNumber)?.boolValue ?? false
+            // The overlay web view reports each strip's vertical rect (viewport px from top).
+            guard let d = message.body as? [String: Any], let arr = d["strips"] as? [[String: Any]] else { overlayStrips = []; return }
+            overlayStrips = arr.compactMap { s in
+                guard let id = s["id"] as? String,
+                      let t = (s["top"] as? NSNumber)?.doubleValue,
+                      let b = (s["bottom"] as? NSNumber)?.doubleValue else { return nil }
+                return (id, CGFloat(t), CGFloat(b))
+            }
         default:
             break
         }

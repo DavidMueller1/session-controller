@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
+import { computed, onMounted, onBeforeUnmount, nextTick, watch, ref } from "vue";
 import { laneOf, isFlashing, projectName, formatAge } from "../format";
 import type { Aircraft } from "../types";
 
@@ -27,22 +27,20 @@ const age = (a: Aircraft) => formatAge(a.stateSince ? props.now - a.stateSince :
 // while mounted so only the strips paint (restored on unmount for normal browsing).
 let prevHtml = "", prevBody = "";
 
-// Tell the native panel where the strips are + whether one is revealed, so it can be
-// click-through everywhere except over them (a wider band while one is expanded, so the
-// cursor can move onto the revealed card). Pure CSS :hover does the reveal; this only
-// governs which pixels intercept clicks. A no-op in the browser (no webkit bridge).
-let hoverCount = 0;
+// The native panel is non-activating, so the web view never gets mouseMoved → CSS :hover
+// can't fire there. Instead Swift polls the cursor and drives the reveal: we report each
+// strip's vertical rect, and Swift calls __overlayHover(id) with whichever the cursor is
+// over. In the browser (no bridge) plain :hover handles it. `reveal` is the Swift-driven flag.
+const nativeHoverId = ref<string | null>(null);
 function reportRegion() {
   const bridge = (window as any).webkit?.messageHandlers?.overlay;
   if (!bridge) return;
-  const items = document.querySelectorAll<HTMLElement>(".ov-item");
-  let top = Infinity, bottom = -Infinity;
-  items.forEach((el) => { const r = el.getBoundingClientRect(); top = Math.min(top, r.top); bottom = Math.max(bottom, r.bottom); });
-  if (!isFinite(top)) { top = 0; bottom = 0; }
-  bridge.postMessage({ top: Math.round(top), bottom: Math.round(bottom), expanded: hoverCount > 0 });
+  const strips = [...document.querySelectorAll<HTMLElement>(".ov-item")].map((el) => {
+    const r = el.getBoundingClientRect();
+    return { id: el.dataset.id, top: Math.round(r.top), bottom: Math.round(r.bottom) };
+  });
+  bridge.postMessage({ strips });
 }
-function onEnter() { hoverCount++; reportRegion(); }
-function onLeave() { hoverCount = Math.max(0, hoverCount - 1); reportRegion(); }
 const onResize = () => reportRegion();
 
 watch(() => props.aircraft, () => nextTick(reportRegion), { deep: false });
@@ -53,21 +51,23 @@ onMounted(() => {
   document.documentElement.style.background = "transparent";
   document.body.style.background = "transparent";
   window.addEventListener("resize", onResize);
+  (window as any).__overlayHover = (id: string | null) => { nativeHoverId.value = id ?? null; };
   nextTick(reportRegion);
 });
 onBeforeUnmount(() => {
   document.documentElement.style.background = prevHtml;
   document.body.style.background = prevBody;
   window.removeEventListener("resize", onResize);
-  (window as any).webkit?.messageHandlers?.overlay?.postMessage({ top: 0, bottom: 0, expanded: false });
+  delete (window as any).__overlayHover;
+  (window as any).webkit?.messageHandlers?.overlay?.postMessage({ strips: [] });
 });
 </script>
 
 <template>
   <div class="ov-rail">
     <TransitionGroup tag="div" class="ov-group" name="ov">
-      <div v-for="a in inflight" :key="a.id" class="ov-item" :style="{ '--accent': LANE_COLOR.inflight }">
-        <button class="ov-card" @click="emit('open', a.id)" @mouseenter="onEnter" @mouseleave="onLeave">
+      <div v-for="a in inflight" :key="a.id" class="ov-item" :data-id="a.id" :class="{ reveal: nativeHoverId === a.id }" :style="{ '--accent': LANE_COLOR.inflight }">
+        <button class="ov-card" @click="emit('open', a.id)">
           <span class="ov-spine"></span>
           <span class="ov-body">
             <span class="ov-title">{{ label(a) }}</span>
@@ -78,8 +78,8 @@ onBeforeUnmount(() => {
     </TransitionGroup>
 
     <TransitionGroup tag="div" class="ov-group ov-holding" name="ov">
-      <div v-for="a in holding" :key="a.id" class="ov-item" :class="{ flash: isFlashing(a) }" :style="{ '--accent': LANE_COLOR.holding }">
-        <button class="ov-card" @click="emit('open', a.id)" @mouseenter="onEnter" @mouseleave="onLeave">
+      <div v-for="a in holding" :key="a.id" class="ov-item" :data-id="a.id" :class="{ flash: isFlashing(a), reveal: nativeHoverId === a.id }" :style="{ '--accent': LANE_COLOR.holding }">
+        <button class="ov-card" @click="emit('open', a.id)">
           <span class="ov-spine"></span>
           <span class="ov-body">
             <span class="ov-title">{{ label(a) }}</span>
@@ -114,8 +114,10 @@ onBeforeUnmount(() => {
 .ov-sub { font-size: 10.5px; color: var(--text-dim, #8b98a8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* only the hovered strip flies in — the others stay collapsed as spines. It goes fully
-   opaque (readable) and lifts with a stronger shadow. */
-.ov-card:hover { transform: translateX(0); background: var(--panel, #0d1117); box-shadow: -10px 6px 26px rgba(0, 0, 0, 0.55); }
+   opaque (readable) and lifts with a stronger shadow. `:hover` drives it in the browser;
+   `.reveal` (set by the native panel via __overlayHover) drives it in the overlay. */
+.ov-card:hover,
+.ov-item.reveal .ov-card { transform: translateX(0); background: var(--panel, #0d1117); box-shadow: -10px 6px 26px rgba(0, 0, 0, 0.55); }
 
 /* a holding strip that needs you pulses its spine for attention */
 .ov-item.flash .ov-spine { animation: ov-pulse 1.1s ease-in-out infinite; }
