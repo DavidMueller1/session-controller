@@ -93,9 +93,10 @@ onBeforeUnmount(() => {
 .ov-title { font-size: 12.5px; font-weight: 600; color: var(--text-hi, #e6edf3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ov-sub { font-size: 10.5px; color: var(--text-dim, #8b98a8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* fly-in on rail hover (browser) or when the native panel sets .expanded; stagger to cascade */
+/* fly-in on rail hover (browser) or when the native panel sets .expanded; stagger to cascade.
+   Once expanded, the cards go fully opaque so they're solid and easy to read. */
 .ov-rail:hover .ov-card,
-.ov-rail.expanded .ov-card { transform: translateX(0); }
+.ov-rail.expanded .ov-card { transform: translateX(0); background: var(--panel, #0d1117); }
 /* focus: the hovered strip lifts + brightens, the others recede */
 .ov-rail:hover .ov-item:not(:hover) .ov-card,
 .ov-rail.expanded .ov-item:not(:hover) .ov-card { opacity: 0.55; }
