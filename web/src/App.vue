@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref, w
 import Strip from "./components/Strip.vue";
 import FlightBoard from "./components/FlightBoard.vue";
 import Panel from "./components/Panel.vue";
+import Overlay from "./components/Overlay.vue";
 import FlipCounter from "./components/FlipCounter.vue";
 import Settings from "./components/Settings.vue";
 import Help from "./components/Help.vue";
@@ -13,8 +14,11 @@ import type { Aircraft } from "./types";
 // Compact mode for the menu-bar popover (loaded as /?panel). Renders just the mini-board
 // and tells useBoard to stay silent (the full dashboard owns notifications).
 const panel = new URLSearchParams(location.search).has("panel");
+// Right-edge floating rail (loaded as /?overlay), hosted in a transparent always-on-top
+// panel. Also silent — the full dashboard owns notifications.
+const overlay = new URLSearchParams(location.search).has("overlay");
 
-const { aircraft, status, health, connected, now, version, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel });
+const { aircraft, status, health, connected, now, version, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
 onMounted(start);
 
 // Board layout: the flight-layer (one animated coordinate space) is the default; the
@@ -241,6 +245,7 @@ function onOpen(id: string) { open(id); }
     @unland="onUnland"
     @open="onOpen"
   />
+  <Overlay v-else-if="overlay" :aircraft="boardAircraft" :now="now" @open="onOpen" />
   <div v-else class="wrap">
     <a
       v-if="showStatus && status"

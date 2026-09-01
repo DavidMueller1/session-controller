@@ -9,10 +9,16 @@ import WebKit
 let kPort = 4317
 let kBase = "http://localhost:\(kPort)"
 let kPanelURL = kBase + "/?panel"   // compact mini-board rendered inside the popover
+let kOverlayURL = kBase + "/?overlay"  // right-edge floating rail
 let kBgColor = NSColor(srgbRed: 10 / 255, green: 14 / 255, blue: 20 / 255, alpha: 1)  // board --bg
 let kPanelWidth: CGFloat = 380
 let kPanelMinH: CGFloat = 110       // header + a little; the popover never shrinks below this
 let kPanelMaxH: CGFloat = 560       // …and never grows past this (then the webview scrolls)
+// Overlay: the panel is always this wide (so the strips have room to fly in), but stays
+// click-through except within a band at the right edge — a thin sliver when collapsed, the
+// full width once expanded — so it never blocks clicks to the apps underneath.
+let kOverlayW: CGFloat = 300
+let kOverlaySliver: CGFloat = 14
 
 // The auto-updater targets ONLY the managed clone — never a dev checkout.
 let kRepo = ("~/Library/Application Support/Session Controller/repo" as NSString).expandingTildeInPath
@@ -33,6 +39,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var popover: NSPopover?
     var webView: WKWebView?
 
+    // Right-edge floating overlay (its own always-on-top, non-activating panel).
+    var overlayPanel: NSPanel?
+    var overlayWeb: WKWebView?
+    var overlayTimer: Timer?
+    var overlayExpanded = false
+    let overlayItem = NSMenuItem(title: "Show Overlay", action: #selector(toggleOverlay), keyEquivalent: "l")
+
     let headerItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     let openItem = NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: "o")
     let startItem = NSMenuItem(title: "Start Server", action: #selector(start), keyEquivalent: "s")
@@ -47,11 +60,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.autoenablesItems = false
         headerItem.isEnabled = false
-        for item in [openItem, startItem, stopItem, checkUpdateItem] { item.target = self }
+        for item in [openItem, startItem, stopItem, checkUpdateItem, overlayItem] { item.target = self }
         versionItem.isEnabled = false
         menu.addItem(headerItem)
         menu.addItem(.separator())
         menu.addItem(openItem)
+        menu.addItem(overlayItem)
         menu.addItem(startItem)
         menu.addItem(stopItem)
         menu.addItem(.separator())
@@ -85,6 +99,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // "Check for Updates Now") to apply it.
         refreshVersion()
         DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.runUpdateCheck() }
+
+        // restore the overlay if it was on last time (once the server is up to serve it)
+        if UserDefaults.standard.bool(forKey: "overlayEnabled") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.showOverlay() }
+        }
     }
 
     func applicationWillTerminate(_ note: Notification) {
@@ -199,6 +218,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         p.appearance = NSAppearance(named: .darkAqua)
         p.contentViewController = vc
         return p
+    }
+
+    // MARK: - Overlay (right-edge floating rail)
+
+    @objc func toggleOverlay() {
+        if overlayPanel != nil { hideOverlay() } else { showOverlay() }
+    }
+
+    func showOverlay() {
+        guard overlayPanel == nil else { return }
+        guard let screen = NSScreen.main else { return }
+        let vf = screen.visibleFrame
+        let frame = NSRect(x: vf.maxX - kOverlayW, y: vf.minY, width: kOverlayW, height: vf.height)
+
+        let cfg = WKWebViewConfiguration()
+        let wv = WKWebView(frame: NSRect(origin: .zero, size: frame.size), configuration: cfg)
+        wv.setValue(false, forKey: "drawsBackground") // transparent webview (KVC — no public API)
+        if #available(macOS 12.0, *) { wv.underPageBackgroundColor = .clear }
+        wv.autoresizingMask = [.width, .height]
+        wv.load(URLRequest(url: URL(string: kOverlayURL)!))
+        overlayWeb = wv
+
+        let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.isMovable = false
+        panel.hidesOnDeactivate = false
+        panel.ignoresMouseEvents = true      // click-through until the cursor enters the edge band
+        panel.contentView = wv
+        panel.orderFrontRegardless()
+        overlayPanel = panel
+
+        overlayExpanded = false
+        // poll the cursor: toggle click-through + expand/collapse by its distance from the edge
+        overlayTimer = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { [weak self] _ in self?.overlayTick() }
+
+        UserDefaults.standard.set(true, forKey: "overlayEnabled")
+        overlayItem.state = .on
+    }
+
+    func hideOverlay() {
+        overlayTimer?.invalidate(); overlayTimer = nil
+        overlayPanel?.orderOut(nil)
+        overlayPanel = nil
+        overlayWeb = nil
+        UserDefaults.standard.set(false, forKey: "overlayEnabled")
+        overlayItem.state = .off
+    }
+
+    // Cursor-driven: the panel is always kOverlayW wide but only intercepts clicks within a
+    // band at the right edge — a sliver when collapsed, the full width once expanded. Entering
+    // the sliver expands (flies the strips in); leaving the full band collapses them again.
+    func overlayTick() {
+        guard let panel = overlayPanel, let screen = NSScreen.main else { return }
+        let vf = screen.visibleFrame
+        let m = NSEvent.mouseLocation
+        let band = overlayExpanded ? kOverlayW : kOverlaySliver
+        let fromRight = vf.maxX - m.x
+        let inBand = fromRight >= 0 && fromRight <= band && m.y >= vf.minY && m.y <= vf.maxY
+        panel.ignoresMouseEvents = !inBand
+        if inBand != overlayExpanded {
+            overlayExpanded = inBand
+            overlayWeb?.evaluateJavaScript("window.__setOverlayExpanded && window.__setOverlayExpanded(\(inBand))", completionHandler: nil)
+        }
     }
 
     // MARK: - Self-update
