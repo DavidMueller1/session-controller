@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount } from "vue";
+import { computed, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
 import { laneOf, isFlashing, projectName, formatAge } from "../format";
 import type { Aircraft } from "../types";
 
 // Right-edge rail overlay: normally only the colour-coded spine of each strip peeks at the
-// screen edge; hovering the rail flies the full strips in so they can be read. In-flight on
-// top, Holding below — nothing else. Meant to live in a transparent always-on-top panel.
+// screen edge; hovering a spine flies THAT strip in so it can be read (the others stay
+// collapsed). In-flight on top, Holding below — nothing else. Lives in a transparent
+// always-on-top panel that's click-through except over the strips (driven by reportRegion).
 const props = defineProps<{ aircraft: Aircraft[]; now: number }>();
 const emit = defineEmits<{ open: [id: string] }>();
 
@@ -25,28 +26,48 @@ const age = (a: Aircraft) => formatAge(a.stateSince ? props.now - a.stateSince :
 // the overlay is meant to float transparently over other apps — clear the page background
 // while mounted so only the strips paint (restored on unmount for normal browsing).
 let prevHtml = "", prevBody = "";
-// the native panel drives expand/collapse by cursor position (it can't rely on CSS :hover
-// through a click-through window), toggling `.expanded`; :hover still works for the browser.
-const setExpanded = (b: unknown) => document.querySelector(".ov-rail")?.classList.toggle("expanded", !!b);
+
+// Tell the native panel where the strips are + whether one is revealed, so it can be
+// click-through everywhere except over them (a wider band while one is expanded, so the
+// cursor can move onto the revealed card). Pure CSS :hover does the reveal; this only
+// governs which pixels intercept clicks. A no-op in the browser (no webkit bridge).
+let hoverCount = 0;
+function reportRegion() {
+  const bridge = (window as any).webkit?.messageHandlers?.overlay;
+  if (!bridge) return;
+  const items = document.querySelectorAll<HTMLElement>(".ov-item");
+  let top = Infinity, bottom = -Infinity;
+  items.forEach((el) => { const r = el.getBoundingClientRect(); top = Math.min(top, r.top); bottom = Math.max(bottom, r.bottom); });
+  if (!isFinite(top)) { top = 0; bottom = 0; }
+  bridge.postMessage({ top: Math.round(top), bottom: Math.round(bottom), expanded: hoverCount > 0 });
+}
+function onEnter() { hoverCount++; reportRegion(); }
+function onLeave() { hoverCount = Math.max(0, hoverCount - 1); reportRegion(); }
+const onResize = () => reportRegion();
+
+watch(() => props.aircraft, () => nextTick(reportRegion), { deep: false });
+
 onMounted(() => {
   prevHtml = document.documentElement.style.background;
   prevBody = document.body.style.background;
   document.documentElement.style.background = "transparent";
   document.body.style.background = "transparent";
-  (window as any).__setOverlayExpanded = setExpanded;
+  window.addEventListener("resize", onResize);
+  nextTick(reportRegion);
 });
 onBeforeUnmount(() => {
   document.documentElement.style.background = prevHtml;
   document.body.style.background = prevBody;
-  delete (window as any).__setOverlayExpanded;
+  window.removeEventListener("resize", onResize);
+  (window as any).webkit?.messageHandlers?.overlay?.postMessage({ top: 0, bottom: 0, expanded: false });
 });
 </script>
 
 <template>
   <div class="ov-rail">
     <TransitionGroup tag="div" class="ov-group" name="ov">
-      <div v-for="(a, i) in inflight" :key="a.id" class="ov-item" :style="{ '--i': i, '--accent': LANE_COLOR.inflight }">
-        <button class="ov-card" @click="emit('open', a.id)">
+      <div v-for="a in inflight" :key="a.id" class="ov-item" :style="{ '--accent': LANE_COLOR.inflight }">
+        <button class="ov-card" @click="emit('open', a.id)" @mouseenter="onEnter" @mouseleave="onLeave">
           <span class="ov-spine"></span>
           <span class="ov-body">
             <span class="ov-title">{{ label(a) }}</span>
@@ -57,8 +78,8 @@ onBeforeUnmount(() => {
     </TransitionGroup>
 
     <TransitionGroup tag="div" class="ov-group ov-holding" name="ov">
-      <div v-for="(a, i) in holding" :key="a.id" class="ov-item" :class="{ flash: isFlashing(a) }" :style="{ '--i': i, '--accent': LANE_COLOR.holding }">
-        <button class="ov-card" @click="emit('open', a.id)">
+      <div v-for="a in holding" :key="a.id" class="ov-item" :class="{ flash: isFlashing(a) }" :style="{ '--accent': LANE_COLOR.holding }">
+        <button class="ov-card" @click="emit('open', a.id)" @mouseenter="onEnter" @mouseleave="onLeave">
           <span class="ov-spine"></span>
           <span class="ov-body">
             <span class="ov-title">{{ label(a) }}</span>
@@ -83,24 +104,18 @@ onBeforeUnmount(() => {
   border: 0.5px solid var(--border, #232a33); border-right: none;
   border-radius: 10px 0 0 10px; overflow: hidden; backdrop-filter: blur(8px);
   box-shadow: -6px 4px 18px rgba(0, 0, 0, 0.4);
-  /* collapsed: pushed right so only the spine peeks. hover flies it in (see .ov-rail:hover) */
+  /* collapsed: pushed right so only the spine peeks. hovering THIS card flies it in */
   transform: translateX(calc(100% - var(--collapsed)));
   transition: transform 0.42s cubic-bezier(0.2, 0.85, 0.25, 1), opacity 0.3s ease, box-shadow 0.25s ease;
-  transition-delay: calc(var(--i) * 28ms);
 }
 .ov-spine { flex: none; width: 5px; align-self: stretch; background: var(--accent); box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent); }
 .ov-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 8px 12px 8px 10px; }
 .ov-title { font-size: 12.5px; font-weight: 600; color: var(--text-hi, #e6edf3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ov-sub { font-size: 10.5px; color: var(--text-dim, #8b98a8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* fly-in on rail hover (browser) or when the native panel sets .expanded; stagger to cascade.
-   Once expanded, the cards go fully opaque so they're solid and easy to read. */
-.ov-rail:hover .ov-card,
-.ov-rail.expanded .ov-card { transform: translateX(0); background: var(--panel, #0d1117); }
-/* focus: the hovered strip lifts + brightens, the others recede */
-.ov-rail:hover .ov-item:not(:hover) .ov-card,
-.ov-rail.expanded .ov-item:not(:hover) .ov-card { opacity: 0.55; }
-.ov-card:hover { transform: translateX(0) scale(1.035) !important; opacity: 1 !important; box-shadow: -10px 6px 26px rgba(0, 0, 0, 0.55); }
+/* only the hovered strip flies in — the others stay collapsed as spines. It goes fully
+   opaque (readable) and lifts with a stronger shadow. */
+.ov-card:hover { transform: translateX(0); background: var(--panel, #0d1117); box-shadow: -10px 6px 26px rgba(0, 0, 0, 0.55); }
 
 /* a holding strip that needs you pulses its spine for attention */
 .ov-item.flash .ov-spine { animation: ov-pulse 1.1s ease-in-out infinite; }

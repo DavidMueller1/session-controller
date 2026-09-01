@@ -18,7 +18,7 @@ let kPanelMaxH: CGFloat = 560       // …and never grows past this (then the we
 // click-through except within a band at the right edge — a thin sliver when collapsed, the
 // full width once expanded — so it never blocks clicks to the apps underneath.
 let kOverlayW: CGFloat = 300
-let kOverlaySliver: CGFloat = 14
+let kOverlayTrigger: CGFloat = 44   // right-edge band that catches a spine hover when collapsed
 
 // The auto-updater targets ONLY the managed clone — never a dev checkout.
 let kRepo = ("~/Library/Application Support/Session Controller/repo" as NSString).expandingTildeInPath
@@ -43,7 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var overlayPanel: NSPanel?
     var overlayWeb: WKWebView?
     var overlayTimer: Timer?
-    var overlayExpanded = false
+    // where the web says its strips are (viewport px from the top) + whether one is revealed,
+    // so the panel is click-through everywhere except over them.
+    var overlayTop: CGFloat = 0
+    var overlayBottom: CGFloat = 0
+    var overlayCardOpen = false
     let overlayItem = NSMenuItem(title: "Show Overlay", action: #selector(toggleOverlay), keyEquivalent: "l")
 
     let headerItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -233,6 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let frame = NSRect(x: vf.maxX - kOverlayW, y: vf.minY, width: kOverlayW, height: vf.height)
 
         let cfg = WKWebViewConfiguration()
+        cfg.userContentController.add(self, name: "overlay") // web reports where the strips are
         let wv = WKWebView(frame: NSRect(origin: .zero, size: frame.size), configuration: cfg)
         wv.setValue(false, forKey: "drawsBackground") // transparent webview (KVC — no public API)
         if #available(macOS 12.0, *) { wv.underPageBackgroundColor = .clear }
@@ -254,9 +259,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless()
         overlayPanel = panel
 
-        overlayExpanded = false
-        // poll the cursor: toggle click-through + expand/collapse by its distance from the edge
-        overlayTimer = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { [weak self] _ in self?.overlayTick() }
+        overlayTop = 0; overlayBottom = 0; overlayCardOpen = false
+        // poll the cursor: intercept clicks only when it's over the strips (per the web's report)
+        overlayTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.overlayTick() }
 
         UserDefaults.standard.set(true, forKey: "overlayEnabled")
         overlayItem.state = .on
@@ -271,21 +276,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayItem.state = .off
     }
 
-    // Cursor-driven: the panel is always kOverlayW wide but only intercepts clicks within a
-    // band at the right edge — a sliver when collapsed, the full width once expanded. Entering
-    // the sliver expands (flies the strips in); leaving the full band collapses them again.
+    // Cursor-driven click-through: the panel is always kOverlayW wide but only intercepts
+    // clicks over the strips — a narrow right-edge band (enough to hover a spine) when nothing
+    // is revealed, widening to the full width once a strip is expanded so the cursor can move
+    // onto it. The reveal itself is pure CSS :hover in the web view; this only decides which
+    // pixels are "live" vs click-through. Region comes from the web (overlay message).
     func overlayTick() {
         guard let panel = overlayPanel, let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame
         let m = NSEvent.mouseLocation
-        let band = overlayExpanded ? kOverlayW : kOverlaySliver
+        // map the web's viewport-y (from top) to screen-y (bottom-left origin): panel top = vf.maxY
+        let yTop = vf.maxY - overlayTop
+        let yBot = vf.maxY - overlayBottom
+        let band = overlayCardOpen ? kOverlayW : kOverlayTrigger
         let fromRight = vf.maxX - m.x
-        let inBand = fromRight >= 0 && fromRight <= band && m.y >= vf.minY && m.y <= vf.maxY
-        panel.ignoresMouseEvents = !inBand
-        if inBand != overlayExpanded {
-            overlayExpanded = inBand
-            overlayWeb?.evaluateJavaScript("window.__setOverlayExpanded && window.__setOverlayExpanded(\(inBand))", completionHandler: nil)
-        }
+        let hasStrips = overlayBottom > overlayTop
+        let inRegion = hasStrips && fromRight >= 0 && fromRight <= band && m.y <= yTop && m.y >= yBot
+        panel.ignoresMouseEvents = !inRegion
     }
 
     // MARK: - Self-update
@@ -505,6 +512,12 @@ extension AppDelegate: WKScriptMessageHandler {
             // Footer buttons in the panel drive the same native actions as the menu.
             guard let c = message.body as? String else { return }
             handleCommand(c)
+        case "overlay":
+            // The overlay web view reports its strips' vertical extent + whether one is revealed.
+            guard let d = message.body as? [String: Any] else { return }
+            overlayTop = (d["top"] as? NSNumber).map { CGFloat($0.doubleValue) } ?? 0
+            overlayBottom = (d["bottom"] as? NSNumber).map { CGFloat($0.doubleValue) } ?? 0
+            overlayCardOpen = (d["expanded"] as? NSNumber)?.boolValue ?? false
         default:
             break
         }
