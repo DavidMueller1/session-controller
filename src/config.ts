@@ -48,7 +48,7 @@ export const CONFIG = {
   /** assistant turn ended; wait this short grace before calling it needs-input (HOLDING) */
   needsInputGraceMs: 8_000,
   /** no activity for this long => "cold" (dormant). NOT landed. Overnight-safe. */
-  dormantMs: 2 * 60 * 60_000,
+  dormantMs: 24 * 60 * 60_000,
   /** a session with no activity for this long drops off the board entirely: its transcript
    *  isn't even parsed (a big startup + AV-scan saving), and a persisted/landed row for it
    *  is hidden. EXCEPTION: a session with a note is always kept, at any age. Keeps a fresh

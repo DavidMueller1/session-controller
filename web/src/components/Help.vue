@@ -24,7 +24,7 @@ const badges = [
 // grey, distinguished only by the label. What each one actually means:
 const miaStates = [
   { label: "MIA", desc: "Was working, then radio silence for 5+ minutes — or its process was killed. Still flying; it may pick back up." },
-  { label: "Dormant", desc: "No activity for 2+ hours. Cold and set aside — overnight-safe, not gone." },
+  { label: "Dormant", desc: "No activity for 24+ hours. Cold and set aside — not gone." },
   { label: "Wrapped up", desc: "Looks finished: a terminal session that exited, or a desktop session you archived." },
   { label: "Unknown", desc: "No readable activity to judge from — its state couldn't be determined." },
 ];
