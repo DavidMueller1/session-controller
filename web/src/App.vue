@@ -158,13 +158,26 @@ function closeHelp() {
 }
 onMounted(() => {
   if (!panel && !localStorage.getItem("fc-help-seen")) helpOpen.value = true;
+  if (!panel && !overlay) loadLatestLog(); // for the What's-new dot
 });
 
 // What's new: a dot on the header icon marks unseen changes (no auto-popup — opening is the
 // user's choice). A brand-new install baselines silently, so updates after that light the dot.
 const whatsnewOpen = ref(false);
 const seenBuild = ref<number | null>(Number(localStorage.getItem("fc-seen-build") ?? "") || null);
-const hasUnseen = computed(() => currentBuild.value != null && seenBuild.value != null && currentBuild.value > seenBuild.value);
+// the newest build that actually has a changelog entry — the dot is driven by THIS, not the
+// running build, so releases with no log (build bumps only) never light the dot.
+const latestLogBuild = ref<number | null>(null);
+async function loadLatestLog() {
+  try {
+    const r = await fetch("/api/changelog");
+    const builds = ((await r.json()).entries ?? []).map((e: { build: number | null }) => e.build).filter((b: unknown): b is number => typeof b === "number");
+    latestLogBuild.value = builds.length ? Math.max(...builds) : null;
+  } catch {
+    /* ignore */
+  }
+}
+const hasUnseen = computed(() => latestLogBuild.value != null && seenBuild.value != null && latestLogBuild.value > seenBuild.value);
 function closeWhatsnew() {
   whatsnewOpen.value = false;
   if (currentBuild.value != null) {
