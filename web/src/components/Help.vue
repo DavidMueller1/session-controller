@@ -6,7 +6,7 @@ const lanes = [
   { name: "Holding", color: "#e0a92e", desc: "Finished a turn and waiting on you — the strip flashes for attention." },
   { name: "Parked", color: "#e0823c", desc: "A “needs you” strip you triaged by adding a note — set aside, calm." },
   { name: "MIA", color: "#7d8590", desc: "Lost contact: quiet 5+ min, wrapped up, or dormant. Still tracked — nothing vanishes." },
-  { name: "Landed", color: "#4cc38a", desc: "You marked it done. Landings older than 7 days are hidden." },
+  { name: "Landed", color: "#4cc38a", desc: "You marked it done. Older landings fold into a Cold overflow as the row fills up." },
 ];
 
 // authentic replicas of the strip's state badges (a working/In-flight strip has no badge —
@@ -14,8 +14,6 @@ const lanes = [
 const badges = [
   { label: "Needs you", bg: "#e0a92e", fg: "var(--bg)", desc: "Waiting for your answer — the strip flashes." },
   { label: "Parked", bg: "var(--parked-bg)", fg: "var(--parked)", icon: "ti-parking", desc: "Triaged with a note." },
-  { label: "MIA", bg: "#1c222c", fg: "#8b98a8", icon: "ti-clock", desc: "No activity for 5+ min — still flying, just out of contact." },
-  { label: "Wrapped up", bg: "#1c222c", fg: "#8b98a8", desc: "Looks finished — see the MIA rail below (also “Dormant”, “Unknown”)." },
   { label: "Landed", bg: "#16301f", fg: "#4cc38a", icon: "ti-check", desc: "Marked done by you." },
   { label: "Approach", bg: "rgba(88,166,255,0.14)", fg: "var(--blue)", icon: "ti-plane-inflight", desc: "Its PR is merged — cleared to land. Rides alongside the state badge." },
 ];
@@ -34,9 +32,8 @@ const actions = [
   { icon: "ti-server-2", title: "dev ▾", desc: "Install dependencies, start / stop the dev server, and view live logs." },
   { icon: "ti-pin", title: "note", desc: "Pin a note — turns a flashing “Needs you” into a calm Parked strip." },
   { icon: "ti-plane-arrival", title: "land", desc: "Mark done → Landed. Auto-un-lands if the session starts working again." },
-  { icon: "ti-settings", title: "Settings (gear)", desc: "Per-repo & global dev config: start / install commands, open-URL, env vars." },
-  { icon: "ti-plane", title: "Board toggle", desc: "Switch between the flight board and the simple per-lane list." },
-  { icon: "ti-bell", title: "Bell", desc: "Desktop notification when a session needs you." },
+  { icon: "ti-sparkles", title: "What's new", desc: "The changelog. A dot on the icon marks new entries after an update." },
+  { icon: "ti-settings", title: "Settings (gear)", desc: "Board view & notifications, the overlay rail, check-for-updates / restart / quit, and per-repo dev config." },
 ];
 </script>
 
@@ -115,8 +112,9 @@ const actions = [
 
           <div class="h-sec">Top banners</div>
           <p class="h-note">
-            A banner appears only when something needs attention: <b>Claude service status</b> (from status.claude.com),
-            and a <b>tracking-health</b> warning if the live-state pipeline degrades.
+            A banner appears only when something needs attention: an <b>update available</b> notice (with an
+            <b>Update now</b> button), <b>Claude service status</b> (from status.claude.com), and a
+            <b>tracking-health</b> warning if the live-state pipeline degrades.
           </p>
         </div>
       </div>
