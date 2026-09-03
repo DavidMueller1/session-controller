@@ -155,7 +155,9 @@ export function useBoard(opts: { notify?: boolean } = {}) {
       notifyEnabled.value = true; // first snapshot baselines via the `primed` guard
     }
     connect();
-    setInterval(() => (now.value = Date.now()), 1000);
+    // Drives strip AGE text only (the header clock is its own 1s component). Ages are coarse
+    // ("3m", "2h"), so a 5s cadence is plenty — and it cuts board-wide re-renders 5×.
+    setInterval(() => (now.value = Date.now()), 5000);
   }
 
   async function setNote(id: string, note: string) {

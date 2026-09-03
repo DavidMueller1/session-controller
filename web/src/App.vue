@@ -8,6 +8,7 @@ import FlipCounter from "./components/FlipCounter.vue";
 import Settings from "./components/Settings.vue";
 import Help from "./components/Help.vue";
 import Whatsnew from "./components/Whatsnew.vue";
+import Clock from "./components/Clock.vue";
 import { useBoard } from "./useBoard";
 import { laneOf, isFlashing } from "./format";
 import type { Aircraft } from "./types";
@@ -137,7 +138,6 @@ const holding = computed(() =>
   byLane("holding").sort((a, b) => Number(isFlashing(b)) - Number(isFlashing(a))),
 );
 
-const clock = computed(() => new Date(now.value).toLocaleTimeString());
 
 // true only when served by the Vite dev server (pnpm ui / dev:live on :5173); false in the
 // built bundle the installed app serves — so the DEV badge shows only on a dev board.
@@ -383,7 +383,7 @@ function onOpen(id: string) { open(id); }
         <span class="dot" :style="{ color: connected ? 'var(--green)' : 'var(--red)' }">
           <i class="ti ti-circle-filled"></i>{{ connected ? "live" : "reconnecting" }}
         </span>
-        <span class="mono clock">{{ clock }}</span>
+        <Clock class="mono clock" />
       </div>
     </header>
 
