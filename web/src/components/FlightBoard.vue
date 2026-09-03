@@ -277,6 +277,7 @@ let prevLane: Record<string, Lane> = {};
 let prevOverflow: Record<string, string> = {}; // id → the lane whose drawer it was in
 let prevW = 0;
 let prevH = 0;
+let lastAnimSig = ""; // skip animateChanges when nothing moved (it fires on every re-render)
 
 // constant travel speed: duration scales with distance (clamped), so every move looks
 // like it's going the same pace regardless of how far it travels. travelMs sets the pace
@@ -438,8 +439,17 @@ function animateChanges(): void {
   const root = stage.value;
   if (!root) return;
   const cur = rects.value;
-  const currentIds = new Set(Object.keys(cur));
   const ovf = overflow.value;
+  // The 1s clock tick (via the `now` prop) re-renders us every second. Skip the whole
+  // per-strip querySelector/animation pass unless a position, lane, size, or drawer changed.
+  const sig =
+    `${skyW.value}x${skyH.value}|` +
+    placed.value.map((a) => `${a.id}:${laneOf(a)}:${cur[a.id]?.x},${cur[a.id]?.y},${cur[a.id]?.w},${cur[a.id]?.h}`).join(";") +
+    "|" +
+    Object.keys(ovf).map((k) => `${k}:${ovf[k].map((a) => a.id).join(",")}`).join(";");
+  if (sig === lastAnimSig) return;
+  lastAnimSig = sig;
+  const currentIds = new Set(Object.keys(cur));
   const currentOverflow: Record<string, string> = {};
   for (const k of Object.keys(ovf)) for (const a of ovf[k]) currentOverflow[a.id] = k;
 

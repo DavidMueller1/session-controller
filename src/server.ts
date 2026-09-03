@@ -157,6 +157,18 @@ async function main(): Promise<void> {
     devScanning = true;
     try {
       const list = baseList();
+      // Nothing to detect if no strip has a folder — skip the system-wide `lsof` entirely.
+      if (!list.some((a) => a.project)) {
+        devRunner.reconcile();
+        if (devByAircraft.size || rootByAircraft.size || repoKeyByAircraft.size) {
+          devByAircraft = new Map();
+          rootByAircraft = new Map();
+          repoKeyByAircraft = new Map();
+          devSig = "";
+          pushUpdate();
+        }
+        return;
+      }
       const map = await devScanner.scan(list);
       // resolve each strip's worktree root + repo key (both cached) so decorate can attach
       // managed-server state and the configured command
@@ -287,7 +299,7 @@ async function main(): Promise<void> {
   // can perform (toggle the overlay, restart/quit the app, check for updates). The app drains
   // them on its /api/badge poll. It also reports its own state back (overlay on/off) so the
   // web toggle reflects reality. No-op in dev (no menu-bar app polling).
-  const VALID_CMDS = new Set(["overlay-toggle", "overlay-show", "overlay-hide", "restart", "quit", "check-update"]);
+  const VALID_CMDS = new Set(["overlay-toggle", "overlay-show", "overlay-hide", "restart", "quit"]);
   let pendingCommands: string[] = [];
   const appState = { overlayShown: false };
   app.post<{ Body: { cmd?: string } }>("/api/app/command", async (req, reply) => {

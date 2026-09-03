@@ -196,16 +196,26 @@ watch(currentBuild, (b) => {
   }
 });
 
-// cross-column FLIP: measure before patch, tween from old → new screen position
+// cross-column FLIP: measure before patch, tween from old → new screen position. This fires
+// on every re-render (incl. the 1s clock tick), so guard it with a signature of the ordered
+// strips — when nothing reordered we skip the querySelectorAll + getBoundingClientRect passes
+// entirely (which would otherwise force a synchronous layout over every strip each second).
 let firstRects = new Map<string, DOMRect>();
 const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+const laneSig = () => [inflight.value, holding.value, parked.value, mia.value, landed.value].map((l) => l.map((a) => a.id).join(",")).join("|");
+let lastLaneSig = "";
+let flipReorder = false;
 onBeforeUpdate(() => {
   if (flight.value) return; // the flight-layer handles its own movement
+  const sig = laneSig();
+  flipReorder = sig !== lastLaneSig;
+  lastLaneSig = sig;
+  if (!flipReorder) return; // no reorder → don't measure
   firstRects = new Map();
   document.querySelectorAll<HTMLElement>("[data-fid]").forEach((el) => firstRects.set(el.dataset.fid!, el.getBoundingClientRect()));
 });
 onUpdated(() => {
-  if (flight.value || reduceMotion) return;
+  if (flight.value || reduceMotion || !flipReorder) return;
   document.querySelectorAll<HTMLElement>("[data-fid]").forEach((el) => {
     const first = firstRects.get(el.dataset.fid!);
     if (!first) return;

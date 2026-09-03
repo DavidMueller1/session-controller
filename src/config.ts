@@ -63,7 +63,10 @@ export const CONFIG = {
    *  Small live dirs (hook-state + registry) poll fast for snappy state; the big
    *  transcript trees poll a little slower. */
   livePollMs: 1_000,
-  filePollMs: 3_000,
+  // The big transcript trees are AV-scanned; a couple extra seconds of latency here is
+  // invisible (exact live state comes from the fast hook/registry dirs above), so poll them
+  // less often to cut the recursive-walk + stat cost.
+  filePollMs: 5_000,
 
   /** API server (Phase 2) */
   apiPort: Number(process.env.PORT ?? 4317),
@@ -78,8 +81,9 @@ export const CONFIG = {
   /** how often to poll `gh` for PR status of non-cold sessions with a branch */
   prPollMs: 60_000,
 
-  /** how often to scan (via lsof) for dev servers listening in a strip's folder */
-  devScanMs: 3_000,
+  /** how often to scan (via lsof) for dev servers listening in a strip's folder. `lsof` stats
+   *  every fd on the machine, so keep this slow — dev servers start/stop rarely. */
+  devScanMs: 8_000,
 
   /** Claude/Anthropic service status (Statuspage) — drives the top status banner */
   statusSummaryUrl: process.env.CLAUDE_STATUS_URL ?? "https://status.claude.com/api/v2/summary.json",

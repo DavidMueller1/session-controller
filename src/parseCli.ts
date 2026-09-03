@@ -266,8 +266,3 @@ export async function parseCliIncremental(
     await fh.close();
   }
 }
-
-/** one-shot full parse (kept for callers that don't track a cursor) */
-export async function parseCliTranscript(filePath: string): Promise<SessionFacts | null> {
-  return (await parseCliIncremental(filePath, null))?.facts ?? null;
-}

@@ -171,6 +171,19 @@ export class Engine extends EventEmitter {
   }
 
   /** sessionId → registry entry (rebuilt cheaply; only a handful of live sessions) */
+  // `process.kill(pid, 0)` is a syscall; the same pids get probed several times per recompute
+  // (registry dedup + the pidDead check per aircraft). Memoize within a pass — cleared at the
+  // top of each recompute so liveness is still re-checked every tick.
+  private pidAliveCache = new Map<number, boolean>();
+  private pidAlive(pid: number): boolean {
+    let v = this.pidAliveCache.get(pid);
+    if (v === undefined) {
+      v = isPidAlive(pid);
+      this.pidAliveCache.set(pid, v);
+    }
+    return v;
+  }
+
   private registryBySession(): Map<string, RegistryEntry> {
     const m = new Map<string, RegistryEntry>();
     for (const e of this.registry.values()) {
@@ -182,8 +195,8 @@ export class Engine extends EventEmitter {
       // A relaunch of the same session id leaves a stale <pid>.json whose process is dead.
       // Prefer the entry whose process is still alive, then the newest — otherwise a dead
       // pid can win, and the pidDead safety net wrongly forces a live session to MIA.
-      const eAlive = e.pid != null && isPidAlive(e.pid);
-      const curAlive = cur.pid != null && isPidAlive(cur.pid);
+      const eAlive = e.pid != null && this.pidAlive(e.pid);
+      const curAlive = cur.pid != null && this.pidAlive(cur.pid);
       if (eAlive !== curAlive ? eAlive : e.mtimeMs > cur.mtimeMs) m.set(e.sessionId, e);
     }
     return m;
@@ -191,13 +204,14 @@ export class Engine extends EventEmitter {
 
   private recompute(force = false): void {
     const now = Date.now();
+    this.pidAliveCache.clear();
     const reg = this.registryBySession();
     const seen = new Set<string>();
     const list = correlate([...this.facts.values()].map((f) => resolve(f, now))).map((a0) => {
       const entry = reg.get(a0.id);
       // A registry entry whose process is gone = a hard-killed / force-closed session
       // (SessionEnd never fired). We must not trust its live signals below.
-      const pidDead = !!entry && entry.pid != null && !isPidAlive(entry.pid);
+      const pidDead = !!entry && entry.pid != null && !this.pidAlive(entry.pid);
       // Use the registry callsign only when it's a real rename. Newer desktop builds
       // auto-derive names (nameSource:"derived", e.g. "feat-traffic-controller-af") —
       // ignore those and keep the correlated ai-title / desktop title, which is far more
@@ -309,16 +323,34 @@ export class Engine extends EventEmitter {
     this.emit("update", list);
   }
 
-  /** refresh PR status for non-cold sessions that have a branch (bounded `gh` calls) */
+  /** refresh PR status for non-cold sessions that have a branch. Each `fetchPr` spawns a `gh`
+   *  subprocess, so results are cached per branch (a PR's review state changes slowly) and
+   *  fetches are bounded — we never fan out a swarm of `gh` processes at once. */
+  private prCache = new Map<string, { pr: PrInfo | null; at: number }>();
   private async pollPrs(): Promise<void> {
     const targets = this.current.filter((a) => a.project && a.branch && a.state !== "dormant" && a.state !== "unknown");
-    await Promise.all(
-      targets.map(async (a) => {
-        this.prById.set(a.id, await fetchPr(a.project!, a.branch!));
-      }),
-    );
+    const key = (a: DiscoveredSession) => `${a.project} ${a.branch}`;
+    const now = Date.now();
+    const PR_TTL = 3 * 60_000; // branches with a PR: re-check at most this often
+    const NULL_TTL = 8 * 60_000; // branches with no PR back off further
+    const stale = targets.filter((a) => {
+      const c = this.prCache.get(key(a));
+      return !c || now - c.at > (c.pr ? PR_TTL : NULL_TTL);
+    });
+    const LIMIT = 4;
+    for (let i = 0; i < stale.length; i += LIMIT) {
+      await Promise.all(
+        stale.slice(i, i + LIMIT).map(async (a) => {
+          this.prCache.set(key(a), { pr: await fetchPr(a.project!, a.branch!), at: Date.now() });
+        }),
+      );
+    }
+    for (const a of targets) this.prById.set(a.id, this.prCache.get(key(a))?.pr ?? null);
     const ids = new Set(this.current.map((a) => a.id));
     for (const id of [...this.prById.keys()]) if (!ids.has(id)) this.prById.delete(id);
+    // keep the branch cache from growing unbounded
+    const liveKeys = new Set(targets.map(key));
+    for (const k of [...this.prCache.keys()]) if (!liveKeys.has(k)) this.prCache.delete(k);
     this.recompute(true);
   }
 

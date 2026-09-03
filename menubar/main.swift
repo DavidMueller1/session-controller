@@ -50,13 +50,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var overlayStrips: [(id: String, top: CGFloat, bottom: CGFloat)] = []
     var overlayActiveId: String?
     var overlayNilTicks = 0   // consecutive polls with the cursor off any strip (collapse grace)
-    let overlayItem = NSMenuItem(title: "Show Overlay", action: #selector(toggleOverlay), keyEquivalent: "l")
 
+    // The menu is a minimal fallback (header + restart + quit); all normal controls live in
+    // the web app now. Only these two items are shown — see applicationDidFinishLaunching.
     let headerItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    let openItem = NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: "o")
-    let startItem = NSMenuItem(title: "Start Server", action: #selector(start), keyEquivalent: "s")
-    let stopItem = NSMenuItem(title: "Stop Server", action: #selector(stop), keyEquivalent: "x")
-    // Minimal fallback menu, shown only when the server is unreachable (see statusClicked).
     let restartItem = NSMenuItem(title: "Restart Server", action: #selector(restartServerClicked), keyEquivalent: "r")
 
     // Server supervisor: keep the website up whenever the app runs.
@@ -67,8 +64,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var unreachableTicks = 0           // consecutive failed polls before we intervene
 
     var checkingUpdate = false
-    let versionItem = NSMenuItem(title: "Checking…", action: nil, keyEquivalent: "")
-    let checkUpdateItem = NSMenuItem(title: "Check for Updates Now", action: #selector(checkForUpdatesClicked), keyEquivalent: "u")
 
     func applicationDidFinishLaunching(_ note: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -107,9 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Update ON STARTUP only — apply once, shortly after launch. We deliberately do NOT
         // poll-and-apply on an interval anymore; while running, the server detects a newer
-        // build and shows an "update available" banner, and the user restarts (or uses
-        // "Check for Updates Now") to apply it.
-        refreshVersion()
+        // build and shows an "update available" banner, and the user applies it from the web.
         DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.runUpdateCheck() }
 
         // restore the overlay if it was on last time (once the server is up to serve it)
@@ -167,10 +160,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.refresh()
         }
         render(running: false, holding: 0)
-    }
-
-    @objc func openDashboard() {
-        if let url = URL(string: kBase) { NSWorkspace.shared.open(url) }
     }
 
     @objc func quit() { intentionalStop = true; NSApp.terminate(nil) }
@@ -277,7 +266,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.overlayTick() }
 
         UserDefaults.standard.set(true, forKey: "overlayEnabled")
-        overlayItem.state = .on
         postAppState()   // let the web Settings toggle reflect it
     }
 
@@ -287,7 +275,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayPanel = nil
         overlayWeb = nil
         UserDefaults.standard.set(false, forKey: "overlayEnabled")
-        overlayItem.state = .off
         postAppState()
     }
 
@@ -330,25 +317,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Self-update
 
-    @objc func checkForUpdatesClicked() { runUpdateCheck() }
-
     // Run the update engine off the main thread; act on its exit-code contract.
     func runUpdateCheck() {
         guard !checkingUpdate else { return }
         guard FileManager.default.fileExists(atPath: kUpdateScript) else { return }
         checkingUpdate = true
-        versionItem.title = "Updating…"
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let code = self?.runCode("/bin/bash", [kUpdateScript]) ?? -1
             DispatchQueue.main.async {
                 self?.checkingUpdate = false
                 switch code {
                 case 10: self?.restartServer()
-                case 20: self?.relaunchApp(); return   // process is terminating
-                case 1:  self?.versionItem.title = "Update failed — staying put"
+                case 20: self?.relaunchApp() // process is terminating
                 default: break
                 }
-                self?.refreshVersion()
             }
         }
     }
@@ -375,26 +357,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
-    func refreshVersion() {
-        // Lead with the commit count ("Version 104") — a monotonic build number that ticks
-        // up on every update, so "did it update?" is answerable at a glance even for two
-        // updates the same day. Time + short hash disambiguate further.
-        let g: ([String]) -> String = { args in
-            self.run("/usr/bin/git", ["-C", kRepo] + args).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        let build = g(["rev-list", "--count", "HEAD"])
-        let sha = g(["rev-parse", "--short", "HEAD"])
-        let dt = g(["log", "-1", "--format=%cd", "--date=format:%b %d, %H:%M"])
-        if build.isEmpty && sha.isEmpty {
-            versionItem.title = "Session Controller"
-        } else {
-            let head = build.isEmpty ? sha : build
-            var tail: [String] = []
-            if !dt.isEmpty { tail.append(dt) }
-            if !sha.isEmpty && !build.isEmpty { tail.append(sha) }
-            versionItem.title = "Version " + head + (tail.isEmpty ? "" : " · " + tail.joined(separator: " · "))
-        }
-    }
 
     // Like run(), but returns the process exit code instead of stdout.
     @discardableResult
@@ -468,7 +430,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "overlay-hide": if overlayPanel != nil { hideOverlay() }
         case "restart": restartServerClicked()
         case "quit": quit()
-        case "check-update": runUpdateCheck()
         default: break
         }
     }
@@ -512,19 +473,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 button.title = ""
             }
         }
-
-        if running {
-            headerItem.title = holding > 0
-                ? "● \(holding) holding — need you"
-                : "● Nothing waiting on you"
-        } else if starting {
-            headerItem.title = "Starting…"
-        } else {
-            headerItem.title = "○ Server stopped"
-        }
-        startItem.isEnabled = !running && !starting
-        stopItem.isEnabled = running || starting
-        openItem.isEnabled = running
+        // (the menu header is set fresh in showMenu(), so render only touches the status button)
     }
 
     // MARK: - Icon
@@ -623,8 +572,6 @@ extension AppDelegate: WKScriptMessageHandler {
         case "restart": popover?.performClose(nil); restartServer()
         case "stop":    popover?.performClose(nil); stop()
         case "quit":    quit()
-        case "dashboard": openDashboard()
-        case "menu":    showMenu()
         default: break
         }
     }
