@@ -14,8 +14,40 @@ interface RepoRow extends Cfg {
 }
 
 const GLOBAL_KEY = "__global__";
-defineProps<{ flight: boolean; notifySupported: boolean; notifyEnabled: boolean }>();
+defineProps<{ flight: boolean; notifySupported: boolean; notifyEnabled: boolean; version?: string }>();
 const emit = defineEmits<{ close: []; toggleFlight: []; toggleNotify: [] }>();
+
+// App controls (moved out of the native menu). These queue a command the menu-bar app runs
+// on its ~1s poll; overlay state is read back so the toggle reflects reality.
+const overlayShown = ref(false);
+async function loadAppState() {
+  try {
+    const r = await fetch("/api/app/state");
+    overlayShown.value = !!(await r.json()).overlayShown;
+  } catch {
+    /* no app polling (dev) — leave as-is */
+  }
+}
+async function appCmd(cmd: string) {
+  try {
+    await fetch("/api/app/command", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cmd }) });
+  } catch {
+    /* ignore */
+  }
+}
+function toggleOverlay() {
+  overlayShown.value = !overlayShown.value; // optimistic; reconciled below
+  appCmd("overlay-toggle");
+  setTimeout(loadAppState, 1600);
+}
+const checkUpdate = () => appCmd("check-update");
+function restartServer() {
+  if (confirm("Restart the Session Controller server? The dashboard will briefly disconnect and reload.")) appCmd("restart");
+}
+function quitApp() {
+  if (confirm("Quit Session Controller? The menu-bar app and its server will exit.")) appCmd("quit");
+}
+onMounted(loadAppState);
 
 const repos = ref<RepoRow[]>([]);
 const globals = ref<Cfg>({ urlTemplate: "", command: "", install: "", env: "" });
@@ -83,6 +115,32 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
           <button class="s-toggle" :class="{ on: notifyEnabled }" @click="emit('toggleNotify')">
             <i class="ti" :class="notifyEnabled ? 'ti-bell' : 'ti-bell-off'"></i> {{ notifyEnabled ? "On" : "Off" }}
           </button>
+        </div>
+      </div>
+
+      <div class="s-sep">app</div>
+      <div class="s-prefs">
+        <div class="s-pref">
+          <span class="s-plabel">Overlay rail</span>
+          <button class="s-toggle" :class="{ on: overlayShown }" @click="toggleOverlay">
+            <i class="ti" :class="overlayShown ? 'ti-layout-sidebar-right' : 'ti-layout-sidebar-right-collapse'"></i> {{ overlayShown ? "On" : "Off" }}
+          </button>
+        </div>
+        <div class="s-pref">
+          <span class="s-plabel">Updates</span>
+          <button class="s-btn" @click="checkUpdate"><i class="ti ti-refresh"></i> Check now</button>
+        </div>
+        <div class="s-pref">
+          <span class="s-plabel">Server</span>
+          <button class="s-btn" @click="restartServer"><i class="ti ti-reload"></i> Restart</button>
+        </div>
+        <div class="s-pref">
+          <span class="s-plabel">Application</span>
+          <button class="s-btn s-danger" @click="quitApp"><i class="ti ti-player-power"></i> Quit</button>
+        </div>
+        <div v-if="version" class="s-pref">
+          <span class="s-plabel">Version</span>
+          <span class="s-ver">{{ version }}</span>
         </div>
       </div>
 
@@ -181,6 +239,10 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
 .s-toggle { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 5px 11px; border: 0.5px solid var(--border); border-radius: 8px; color: var(--text-faint); }
 .s-toggle:hover { color: var(--text-dim); }
 .s-toggle.on { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, transparent); }
+.s-btn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 5px 11px; border: 0.5px solid var(--border); border-radius: 8px; color: var(--text-dim); }
+.s-btn:hover { color: var(--text-hi); border-color: var(--gray); }
+.s-btn.s-danger:hover { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, transparent); }
+.s-ver { font-size: 11px; color: var(--text-faint); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 .s-fields { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .s-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .s-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); }

@@ -277,14 +277,35 @@ async function main(): Promise<void> {
     return { ok: true };
   });
 
+  // Native-app control channel: the web app queues commands here that only the menu-bar app
+  // can perform (toggle the overlay, restart/quit the app, check for updates). The app drains
+  // them on its /api/badge poll. It also reports its own state back (overlay on/off) so the
+  // web toggle reflects reality. No-op in dev (no menu-bar app polling).
+  const VALID_CMDS = new Set(["overlay-toggle", "overlay-show", "overlay-hide", "restart", "quit", "check-update"]);
+  let pendingCommands: string[] = [];
+  const appState = { overlayShown: false };
+  app.post<{ Body: { cmd?: string } }>("/api/app/command", async (req, reply) => {
+    const cmd = req.body?.cmd;
+    if (!cmd || !VALID_CMDS.has(cmd)) return reply.code(400).send({ error: "unknown command" });
+    pendingCommands.push(cmd);
+    return { ok: true };
+  });
+  app.get("/api/app/state", async () => appState);
+  app.post<{ Body: { overlayShown?: boolean } }>("/api/app/state", async (req) => {
+    if (typeof req.body?.overlayShown === "boolean") appState.overlayShown = req.body.overlayShown;
+    return { ok: true };
+  });
+
   app.get("/api/badge", async () => {
     const holding = fullList().filter(
       (a) => (a.state === "needs-input" || a.state === "error") && !a.landed && !a.approach && !a.note,
     ).length;
-    // read-and-clear so the app triggers the update exactly once per click
+    // read-and-clear so the app triggers each exactly once
     const wantsUpdate = updateRequested;
     updateRequested = false;
-    return { holding, updateRequested: wantsUpdate, ts: Date.now() };
+    const commands = pendingCommands;
+    pendingCommands = [];
+    return { holding, updateRequested: wantsUpdate, commands, ts: Date.now() };
   });
 
   app.get<{ Params: { id: string } }>("/api/aircraft/:id", async (req, reply) => {

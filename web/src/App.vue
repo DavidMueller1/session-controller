@@ -432,6 +432,7 @@ function onOpen(id: string) { open(id); }
       :flight="flight"
       :notify-supported="notifySupported"
       :notify-enabled="notifyEnabled"
+      :version="version"
       @toggle-flight="toggleFlight"
       @toggle-notify="toggleNotify"
       @close="settingsOpen = false"

@@ -56,6 +56,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let openItem = NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: "o")
     let startItem = NSMenuItem(title: "Start Server", action: #selector(start), keyEquivalent: "s")
     let stopItem = NSMenuItem(title: "Stop Server", action: #selector(stop), keyEquivalent: "x")
+    // Minimal fallback menu, shown only when the server is unreachable (see statusClicked).
+    let restartItem = NSMenuItem(title: "Restart Server", action: #selector(restartServerClicked), keyEquivalent: "r")
+
+    // Server supervisor: keep the website up whenever the app runs.
+    var serverReachable = false        // last /api/badge poll succeeded
+    var intentionalStop = false        // don't auto-restart a server we stopped on purpose
+    var restartTimes: [Date] = []      // recent auto-restarts, for crash-loop backoff
+    var supervisorPaused = false       // set after a crash loop; stops the hammering
+    var unreachableTicks = 0           // consecutive failed polls before we intervene
 
     var checkingUpdate = false
     let versionItem = NSMenuItem(title: "Checking…", action: nil, keyEquivalent: "")
@@ -66,24 +75,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.autoenablesItems = false
         headerItem.isEnabled = false
-        for item in [openItem, startItem, stopItem, checkUpdateItem, overlayItem] { item.target = self }
-        versionItem.isEnabled = false
-        menu.addItem(headerItem)
-        menu.addItem(.separator())
-        menu.addItem(openItem)
-        menu.addItem(overlayItem)
-        menu.addItem(startItem)
-        menu.addItem(stopItem)
-        menu.addItem(.separator())
-        menu.addItem(versionItem)
-        menu.addItem(checkUpdateItem)
-        menu.addItem(.separator())
+        // The menu is now MINIMAL — Restart + Quit only (all normal controls live in the web
+        // app's Settings). It's always available on right-click (so the app can always be
+        // quit), and it's also what a left-click falls back to when the server is unreachable.
+        // The other NSMenuItems are kept as properties (their actions still fire from the
+        // web/popover) but are no longer shown here.
+        restartItem.target = self
         let quit = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
+        menu.addItem(headerItem)
+        menu.addItem(.separator())
+        menu.addItem(restartItem)
         menu.addItem(quit)
 
-        // Route clicks ourselves so left and right can differ: left → popover mini-board,
-        // right (or ctrl-click) → this menu. Setting statusItem.menu would hijack both.
+        // Route clicks ourselves: when the server is reachable, a click opens the popover
+        // mini-board; when it's NOT, it shows the fallback menu so you can restart/quit.
         if let b = statusItem.button {
             b.target = self
             b.action = #selector(statusClicked)
@@ -92,7 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         render(running: false, holding: 0)
         refresh()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in self?.refresh() }
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in self?.refresh() }
 
         // Hands-off: launch the server on start-up so the app (as a Login Item) keeps the
         // dashboard always-on. Skips if something is already listening on the port —
@@ -113,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ note: Notification) {
+        intentionalStop = true
         // only tear down the server if this app is the one that launched it.
         if serverProcess != nil, isPortOpen() { killPort() }
     }
@@ -125,6 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert("launch.sh missing from app bundle.")
             return
         }
+        intentionalStop = false   // we want it up; let the supervisor keep it up
         starting = true
         render(running: false, holding: 0)
 
@@ -149,6 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func stop() {
+        intentionalStop = true    // don't let the supervisor fight a deliberate stop
         killPort()
         serverProcess?.terminate()
         serverProcess = nil
@@ -164,20 +173,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let url = URL(string: kBase) { NSWorkspace.shared.open(url) }
     }
 
-    @objc func quit() { NSApp.terminate(nil) }
+    @objc func quit() { intentionalStop = true; NSApp.terminate(nil) }
 
     // MARK: - Click routing & popover
 
     @objc func statusClicked() {
         let ev = NSApp.currentEvent
         let rightish = ev?.type == .rightMouseUp || (ev?.modifierFlags.contains(.control) ?? false)
-        // Left-click opens the mini-board — but only when the server is up to render it;
-        // otherwise fall back to the menu (which offers Start Server).
-        if rightish || !isPortOpen() { showMenu() } else { togglePopover() }
+        // Right-click (or ctrl-click) always shows the minimal menu, so Quit is always one
+        // click away. Left-click opens the popover when reachable, else falls back to the menu.
+        if rightish || !serverReachable { showMenu() } else { togglePopover() }
     }
 
     // Show the menu on demand without leaving it bound (which would steal left-clicks).
     func showMenu() {
+        headerItem.title = serverReachable ? "Session Controller" : "Server unreachable"
+        restartItem.title = serverReachable ? "Restart Server" : "Start Server"
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         DispatchQueue.main.async { self.statusItem.menu = nil }
@@ -267,6 +278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         UserDefaults.standard.set(true, forKey: "overlayEnabled")
         overlayItem.state = .on
+        postAppState()   // let the web Settings toggle reflect it
     }
 
     func hideOverlay() {
@@ -276,6 +288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayWeb = nil
         UserDefaults.standard.set(false, forKey: "overlayEnabled")
         overlayItem.state = .off
+        postAppState()
     }
 
     // Cursor-driven reveal (a non-activating panel gets no mouseMoved, so CSS :hover can't
@@ -340,8 +353,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // Exit 10: new server/web code — bounce the server so it reloads.
+    // Exit 10: new server/web code — bounce the server so it reloads. Also the supervisor's
+    // recovery path. Sets intentionalStop=false so the fresh server is kept up.
     func restartServer() {
+        intentionalStop = false
         killPort(force: true)
         serverProcess?.terminate(); serverProcess = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in self?.start() }
@@ -405,18 +420,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var running = false
             var holding = 0
             var wantsUpdate = false
+            var commands: [String] = []
             if let http = resp as? HTTPURLResponse, http.statusCode == 200, let data,
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 running = true
                 holding = (obj["holding"] as? Int) ?? 0
                 wantsUpdate = (obj["updateRequested"] as? Bool) ?? false
+                commands = (obj["commands"] as? [String]) ?? []
             }
             DispatchQueue.main.async {
-                self?.render(running: running, holding: holding)
-                // the board's "Update now" button asked us to update — run our normal path
-                if wantsUpdate { self?.runUpdateCheck() }
+                guard let self = self else { return }
+                let wasReachable = self.serverReachable
+                self.serverReachable = running
+                self.render(running: running, holding: holding)
+                if running {
+                    self.unreachableTicks = 0
+                    self.restartTimes.removeAll { Date().timeIntervalSince($0) > 60 }
+                    if !wasReachable { self.postAppState() }        // fresh server → sync overlay state
+                    if wantsUpdate { self.runUpdateCheck() }
+                    for c in commands { self.executeCommand(c) }    // web-app requests (overlay/quit/…)
+                } else {
+                    self.superviseIfNeeded()                        // keep the website up
+                }
             }
         }.resume()
+    }
+
+    // Bring a crashed/wedged server back — the guarantee behind "website up while the app runs".
+    func superviseIfNeeded() {
+        if intentionalStop || supervisorPaused || starting { return }
+        unreachableTicks += 1
+        if unreachableTicks < 2 { return }   // ~2s of silence before intervening
+        unreachableTicks = 0
+        restartTimes.append(Date())
+        restartTimes.removeAll { Date().timeIntervalSince($0) > 60 }
+        if restartTimes.count > 3 {          // crash loop → stop hammering, leave the fallback menu
+            supervisorPaused = true
+            return
+        }
+        restartServer()                      // force-kill any wedged process + start fresh
+    }
+
+    func executeCommand(_ c: String) {
+        switch c {
+        case "overlay-toggle": toggleOverlay()
+        case "overlay-show": if overlayPanel == nil { showOverlay() }
+        case "overlay-hide": if overlayPanel != nil { hideOverlay() }
+        case "restart": restartServerClicked()
+        case "quit": quit()
+        case "check-update": runUpdateCheck()
+        default: break
+        }
+    }
+
+    // Tell the server our native state (overlay on/off) so the web Settings toggle matches.
+    func postAppState() {
+        guard let url = URL(string: "\(kBase)/api/app/state") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 1.5
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["overlayShown": overlayPanel != nil])
+        URLSession.shared.dataTask(with: req).resume()
+    }
+
+    @objc func restartServerClicked() {
+        supervisorPaused = false
+        restartTimes = []
+        restartServer()
     }
 
     // Apply state to the menu bar, but only when it actually changed.
