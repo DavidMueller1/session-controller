@@ -17,8 +17,10 @@ let kPanelMaxH: CGFloat = 560       // …and never grows past this (then the we
 // Overlay: the panel is always this wide (so the strips have room to fly in), but stays
 // click-through except within a band at the right edge — a thin sliver when collapsed, the
 // full width once expanded — so it never blocks clicks to the apps underneath.
-let kOverlayW: CGFloat = 300
-let kOverlayTrigger: CGFloat = 44   // right-edge band that catches a spine hover when collapsed
+let kOverlayW: CGFloat = 300         // panel width — room for the card to fly in and be read
+let kOverlayBand: CGFloat = 56       // the "live" band at the right edge: a strip stays revealed
+                                     // only while the cursor is within this of the edge, in any
+                                     // direction — so leaving left/up/down all collapse the same
 
 // The auto-updater targets ONLY the managed clone — never a dev checkout.
 let kRepo = ("~/Library/Application Support/Session Controller/repo" as NSString).expandingTildeInPath
@@ -291,25 +293,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let rowId = overlayStrips.first { s in
             m.y <= (vf.maxY - s.top) && m.y >= (vf.maxY - s.bottom)
         }?.id
-        let band: CGFloat = (rowId != nil && rowId == overlayActiveId) ? kOverlayW : kOverlayTrigger
-        let active = (rowId != nil && fromRight >= 0 && fromRight <= band) ? rowId : nil
+        // one narrow edge band for both reveal AND stay-open, so leaving in any direction collapses
+        let active = (rowId != nil && fromRight >= 0 && fromRight <= kOverlayBand) ? rowId : nil
 
+        // clicks land only while the cursor is genuinely over a strip's edge band (immediate)
+        panel.ignoresMouseEvents = (active == nil)
         if let active = active {
-            // reveal / switch is instant; being over a strip keeps clicks live and resets grace
             overlayNilTicks = 0
-            panel.ignoresMouseEvents = false
-            if active != overlayActiveId { setOverlayActive(active) }
+            if active != overlayActiveId { setOverlayActive(active) } // reveal / switch is instant
         } else if overlayActiveId != nil {
-            // cursor is off every strip — but a board re-render can shift the rects for a poll
-            // or two, so only collapse after a few consecutive empty polls (~150ms grace).
+            // a board re-render can blip the reported rects for a poll or two, so only collapse
+            // the reveal after a couple consecutive empty polls (~100ms) to avoid flicker.
             overlayNilTicks += 1
-            if overlayNilTicks >= 3 {
-                overlayNilTicks = 0
-                panel.ignoresMouseEvents = true
-                setOverlayActive(nil)
-            }
-        } else {
-            panel.ignoresMouseEvents = true
+            if overlayNilTicks >= 2 { overlayNilTicks = 0; setOverlayActive(nil) }
         }
     }
 
