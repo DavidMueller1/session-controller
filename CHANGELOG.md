@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 131 — 2026-09-03
+- Header icons now show a small **MCDU-style tooltip** on hover telling you what each one is.
+
 ## Build 130 — 2026-09-03
 - **What's new** panel — this changelog, opened from the header, and shown once automatically after an update.
 - Tidied the header: the board/list switch and notification toggle moved into **Settings**.

@@ -339,20 +339,20 @@ function onOpen(id: string) { open(id); }
         <span v-if="parked.length" class="stat"><FlipCounter :value="parked.length" color="var(--parked)" /> parked</span>
         <span v-if="mia.length" class="stat"><FlipCounter :value="mia.length" color="var(--gray)" /> mia</span>
         <span v-if="landed.length" class="stat"><FlipCounter :value="landed.length" color="#4cc38a" /> landed</span>
-        <button class="bell wn-btn" title="What's new" aria-label="What's new" @click="whatsnewOpen = true">
+        <button class="bell wn-btn" data-tip="WHAT'S NEW" aria-label="What's new" @click="whatsnewOpen = true">
           <i class="ti ti-sparkles"></i>
           <span v-if="hasUnseen" class="wn-dot"></span>
         </button>
-        <button class="bell" title="Settings" aria-label="Settings" @click="settingsOpen = true">
+        <button class="bell" data-tip="SETTINGS" aria-label="Settings" @click="settingsOpen = true">
           <i class="ti ti-settings"></i>
         </button>
-        <button class="bell help-btn" title="Help — reading the board" aria-label="Help" @click="helpOpen = true">?</button>
+        <button class="bell help-btn" data-tip="HELP · READING THE BOARD" aria-label="Help" @click="helpOpen = true">?</button>
         <a
-          class="bell coffee"
+          class="bell coffee tip-right"
           href="https://buymeacoffee.com/davidsaysthankyou"
           target="_blank"
           rel="noreferrer"
-          title="Buy me a coffee ☕"
+          data-tip="BUY ME A COFFEE"
           aria-label="Buy me a coffee"
         >
           <svg class="coffee-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="m20.216 6.415-.132-.666c-.119-.598-.388-1.163-1.001-1.379-.197-.069-.42-.098-.57-.241-.152-.143-.196-.366-.231-.572-.065-.378-.125-.756-.192-1.133-.057-.325-.102-.69-.25-.987-.195-.4-.597-.634-.996-.788a5.723 5.723 0 0 0-.626-.194c-1-.263-2.05-.36-3.077-.416a25.834 25.834 0 0 0-3.7.062c-.915.083-1.88.184-2.75.5-.318.116-.646.256-.888.501-.297.302-.393.77-.177 1.146.154.267.415.456.692.58.36.162.737.284 1.123.366 1.075.238 2.189.331 3.287.37 1.218.05 2.437.01 3.65-.118.299-.033.598-.073.896-.119.352-.054.578-.513.474-.834-.124-.383-.457-.531-.834-.473-.466.074-.96.108-1.382.146-1.177.08-2.358.082-3.536.006a22.228 22.228 0 0 1-1.157-.107c-.086-.01-.18-.025-.258-.036-.243-.036-.484-.08-.724-.13-.111-.027-.111-.185 0-.212h.005c.277-.06.557-.108.838-.147h.002c.131-.009.263-.032.394-.048a25.076 25.076 0 0 1 3.426-.12c.674.019 1.347.067 2.017.144l.228.031c.267.04.533.088.798.145.392.085.895.113 1.07.542.055.137.08.288.111.431l.319 1.484a.237.237 0 0 1-.199.284h-.003c-.037.006-.075.01-.112.015a36.704 36.704 0 0 1-4.743.295 37.059 37.059 0 0 1-4.699-.304c-.14-.017-.293-.042-.417-.06-.326-.048-.649-.108-.973-.161-.393-.065-.768-.032-1.123.161-.29.16-.527.404-.675.701-.154.316-.199.66-.267 1-.069.34-.176.707-.135 1.056.087.753.613 1.365 1.37 1.502a39.69 39.69 0 0 0 11.343.376.483.483 0 0 1 .535.53l-.071.697-1.018 9.907c-.041.41-.047.832-.125 1.237-.122.637-.553 1.028-1.182 1.171-.577.131-1.165.2-1.756.205-.656.004-1.31-.025-1.966-.022-.699.004-1.556-.06-2.095-.58-.475-.458-.54-1.174-.605-1.793l-.731-7.013-.322-3.094c-.037-.351-.286-.695-.678-.678-.336.015-.718.3-.678.679l.228 2.185.949 9.112c.147 1.344 1.174 2.068 2.446 2.272.742.12 1.503.144 2.257.156.966.016 1.942.053 2.892-.122 1.408-.258 2.465-1.198 2.616-2.657.34-3.332.683-6.663 1.024-9.995l.215-2.087a.484.484 0 0 1 .39-.426c.402-.078.787-.212 1.074-.518.455-.488.546-1.124.385-1.766zm-1.478.772c-.145.137-.363.201-.578.233-2.416.359-4.866.54-7.308.46-1.748-.06-3.477-.254-5.207-.498-.17-.024-.353-.055-.47-.18-.22-.236-.111-.71-.054-.995.052-.26.152-.609.463-.646.484-.057 1.046.148 1.526.22.577.088 1.156.159 1.737.212 2.48.226 5.002.19 7.472-.14.45-.06.899-.13 1.345-.21.399-.072.84-.206 1.08.206.166.281.188.657.162.974a.544.544 0 0 1-.169.364zm-6.159 3.9c-.862.37-1.84.788-3.109.788a5.884 5.884 0 0 1-1.569-.217l.877 9.004c.065.78.717 1.38 1.5 1.38 0 0 1.243.065 1.658.065.447 0 1.786-.065 1.786-.065.783 0 1.434-.6 1.499-1.38l.94-9.95a3.996 3.996 0 0 0-1.322-.238c-.826 0-1.491.284-2.26.613z"/></svg>
@@ -487,6 +487,28 @@ header { flex: none; display: flex; align-items: center; justify-content: space-
 .bell.on { color: var(--amber); }
 .wn-btn { position: relative; }
 .wn-dot { position: absolute; top: 1px; right: 1px; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 5px color-mix(in srgb, var(--amber) 70%, transparent); }
+
+/* MCDU-style tooltip: phosphor-green monospace on a dark CRT screen — fits the ATC theme */
+.bell[data-tip] { position: relative; }
+.bell[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%) translateY(3px);
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; white-space: nowrap;
+  color: #5ef0a0; background: #04080c; border: 0.5px solid rgba(94, 240, 160, 0.4); border-radius: 4px;
+  padding: 4px 8px; text-shadow: 0 0 6px rgba(94, 240, 160, 0.55);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55), inset 0 0 10px rgba(94, 240, 160, 0.07);
+  opacity: 0; pointer-events: none; z-index: 70; transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.bell[data-tip]::before {
+  content: ""; position: absolute; top: calc(100% + 2px); left: 50%; transform: translateX(-50%) translateY(3px);
+  border: 4px solid transparent; border-bottom-color: rgba(94, 240, 160, 0.5);
+  opacity: 0; pointer-events: none; z-index: 70; transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.bell[data-tip]:hover::after, .bell[data-tip]:hover::before { opacity: 1; transform: translateX(-50%) translateY(0); }
+/* rightmost icon: anchor the tooltip to the right so it can't spill off-screen */
+.bell[data-tip].tip-right::after { left: auto; right: 0; transform: translateX(0) translateY(3px); }
+.bell[data-tip].tip-right:hover::after { transform: translateX(0) translateY(0); }
 .coffee:hover { background: rgba(255, 221, 0, 0.14); color: #ffdd00; }
 .coffee-icon { display: block; }
 /* help "?" is text, not a glyph — the font lacks a plain question mark, and the circled
