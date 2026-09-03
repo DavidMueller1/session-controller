@@ -21,6 +21,7 @@ export function useBoard(opts: { notify?: boolean } = {}) {
   const now = ref(Date.now());
   // build version (for the bottom stamp) + whether the tracked branch is ahead (banner)
   const version = ref("");
+  const currentBuild = ref<number | null>(null); // monotonic build number (drives "What's new")
   const update = ref<{ available: boolean; latest: { pretty: string } | null }>({ available: false, latest: null });
 
   const notifySupported = typeof Notification !== "undefined";
@@ -136,6 +137,7 @@ export function useBoard(opts: { notify?: boolean } = {}) {
         health.value = msg.health;
       } else if (msg.type === "version") {
         version.value = msg.current?.pretty ?? "";
+        currentBuild.value = msg.current?.build ?? null;
         update.value = { available: msg.updateAvailable, latest: msg.latest };
         maybeReloadOnNewBuild(msg.current);
       }
@@ -213,5 +215,5 @@ export function useBoard(opts: { notify?: boolean } = {}) {
     }
   }
 
-  return { aircraft, status, health, connected, now, version, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify };
+  return { aircraft, status, health, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify };
 }

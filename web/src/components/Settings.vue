@@ -14,7 +14,8 @@ interface RepoRow extends Cfg {
 }
 
 const GLOBAL_KEY = "__global__";
-const emit = defineEmits<{ close: [] }>();
+defineProps<{ flight: boolean; notifySupported: boolean; notifyEnabled: boolean }>();
+const emit = defineEmits<{ close: []; toggleFlight: []; toggleNotify: [] }>();
 
 const repos = ref<RepoRow[]>([]);
 const globals = ref<Cfg>({ urlTemplate: "", command: "", install: "", env: "" });
@@ -65,10 +66,27 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
   <div class="s-overlay" @click.self="emit('close')">
     <div class="s-panel">
       <div class="s-h">
-        <span><i class="ti ti-settings"></i> Settings — Dev servers</span>
+        <span><i class="ti ti-settings"></i> Settings</span>
         <button class="icon" aria-label="close" @click="emit('close')"><i class="ti ti-x"></i></button>
       </div>
 
+      <div class="s-prefs">
+        <div class="s-pref">
+          <span class="s-plabel">Board view</span>
+          <div class="s-seg">
+            <button :class="{ on: flight }" @click="flight || emit('toggleFlight')"><i class="ti ti-plane"></i> Board</button>
+            <button :class="{ on: !flight }" @click="!flight || emit('toggleFlight')"><i class="ti ti-layout-list"></i> List</button>
+          </div>
+        </div>
+        <div v-if="notifySupported" class="s-pref">
+          <span class="s-plabel">Notify when a session needs you</span>
+          <button class="s-toggle" :class="{ on: notifyEnabled }" @click="emit('toggleNotify')">
+            <i class="ti" :class="notifyEnabled ? 'ti-bell' : 'ti-bell-off'"></i> {{ notifyEnabled ? "On" : "Off" }}
+          </button>
+        </div>
+      </div>
+
+      <div class="s-sep">dev servers</div>
       <p class="s-note">
         <b>Global defaults</b> apply to every repo; a per-repo value overrides just that field (blank inherits the
         global — shown as its placeholder). <b>Start</b>/<b>Install</b> run in the worktree via your login shell
@@ -151,6 +169,18 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
 .s-name { font-size: 12px; font-weight: 500; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 4px; display: inline-flex; align-items: center; gap: 5px; }
 .s-name i { color: var(--text-faint); }
 .s-sep { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); padding: 12px 8px 4px; }
+
+/* Preferences (board view + notifications), moved out of the header */
+.s-prefs { flex: none; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-bottom: 0.5px solid var(--border-soft); }
+.s-pref { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.s-plabel { font-size: 12.5px; color: var(--text); }
+.s-seg { display: inline-flex; border: 0.5px solid var(--border); border-radius: 8px; overflow: hidden; }
+.s-seg button { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 5px 11px; color: var(--text-faint); }
+.s-seg button:hover { color: var(--text-dim); }
+.s-seg button.on { background: var(--chip); color: var(--text-hi); }
+.s-toggle { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 5px 11px; border: 0.5px solid var(--border); border-radius: 8px; color: var(--text-faint); }
+.s-toggle:hover { color: var(--text-dim); }
+.s-toggle.on { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, transparent); }
 .s-fields { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .s-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .s-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); }

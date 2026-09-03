@@ -14,6 +14,7 @@ import { startStatusPolling } from "./status.js";
 import { Store } from "./store.js";
 import type { ActivityState, AnthropicStatus, DevServerInfo, DiscoveredSession, HooksHealth } from "./types.js";
 import { type UpdateStatus, checkForUpdate, getVersion } from "./version.js";
+import { readChangelog } from "./changelog.js";
 
 /** the ws socket type, sourced from @fastify/websocket to avoid importing ws directly */
 type WebSocket = import("@fastify/websocket").WebSocket;
@@ -257,6 +258,7 @@ async function main(): Promise<void> {
   setTimeout(() => void refreshUpdate(), 20_000);
   const updateTimer = setInterval(() => void refreshUpdate(), 20 * 60_000);
   app.get("/api/version", async () => ({ ...version, updateAvailable: updateStatus.available, latest: updateStatus.latest }));
+  app.get("/api/changelog", async () => ({ currentBuild: version.build, entries: readChangelog() }));
 
   app.get("/api/aircraft", async () => fullList());
 

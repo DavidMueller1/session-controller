@@ -7,6 +7,7 @@ import Overlay from "./components/Overlay.vue";
 import FlipCounter from "./components/FlipCounter.vue";
 import Settings from "./components/Settings.vue";
 import Help from "./components/Help.vue";
+import Whatsnew from "./components/Whatsnew.vue";
 import { useBoard } from "./useBoard";
 import { laneOf, isFlashing } from "./format";
 import type { Aircraft } from "./types";
@@ -18,7 +19,7 @@ const panel = new URLSearchParams(location.search).has("panel");
 // panel. Also silent — the full dashboard owns notifications.
 const overlay = new URLSearchParams(location.search).has("overlay");
 
-const { aircraft, status, health, connected, now, version, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
+const { aircraft, status, health, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
 onMounted(start);
 
 // Board layout: the flight-layer (one animated coordinate space) is the default; the
@@ -157,6 +158,31 @@ function closeHelp() {
 }
 onMounted(() => {
   if (!panel && !localStorage.getItem("fc-help-seen")) helpOpen.value = true;
+});
+
+// What's new: auto-open once after the build number rises past what the user last saw. A dot
+// on the header icon marks unseen changes. A brand-new install baselines silently (Help
+// greets new users; the changelog is for returning ones after an update).
+const whatsnewOpen = ref(false);
+const seenBuild = ref<number | null>(Number(localStorage.getItem("fc-seen-build") ?? "") || null);
+const hasUnseen = computed(() => currentBuild.value != null && seenBuild.value != null && currentBuild.value > seenBuild.value);
+function closeWhatsnew() {
+  whatsnewOpen.value = false;
+  if (currentBuild.value != null) {
+    seenBuild.value = currentBuild.value;
+    localStorage.setItem("fc-seen-build", String(currentBuild.value));
+  }
+}
+let whatsnewChecked = false;
+watch(currentBuild, (b) => {
+  if (whatsnewChecked || panel || overlay || b == null) return;
+  whatsnewChecked = true;
+  if (localStorage.getItem("fc-seen-build") == null) {
+    seenBuild.value = b;
+    localStorage.setItem("fc-seen-build", String(b)); // baseline a fresh install, no popup
+  } else if (b > (seenBuild.value ?? 0)) {
+    whatsnewOpen.value = true;
+  }
 });
 
 // cross-column FLIP: measure before patch, tween from old → new screen position
@@ -313,28 +339,14 @@ function onOpen(id: string) { open(id); }
         <span v-if="parked.length" class="stat"><FlipCounter :value="parked.length" color="var(--parked)" /> parked</span>
         <span v-if="mia.length" class="stat"><FlipCounter :value="mia.length" color="var(--gray)" /> mia</span>
         <span v-if="landed.length" class="stat"><FlipCounter :value="landed.length" color="#4cc38a" /> landed</span>
-        <button
-          class="bell"
-          :title="flight ? 'Flight board — switch to the simple list' : 'Simple list — switch to the flight board'"
-          aria-label="Toggle board layout"
-          @click="toggleFlight"
-        >
-          <i class="ti" :class="flight ? 'ti-plane' : 'ti-layout-list'"></i>
+        <button class="bell wn-btn" title="What's new" aria-label="What's new" @click="whatsnewOpen = true">
+          <i class="ti ti-sparkles"></i>
+          <span v-if="hasUnseen" class="wn-dot"></span>
         </button>
         <button class="bell" title="Settings" aria-label="Settings" @click="settingsOpen = true">
           <i class="ti ti-settings"></i>
         </button>
         <button class="bell help-btn" title="Help — reading the board" aria-label="Help" @click="helpOpen = true">?</button>
-        <button
-          v-if="notifySupported"
-          class="bell"
-          :class="{ on: notifyEnabled }"
-          :title="notifyEnabled ? 'Holding notifications on — click to mute' : 'Notify me when a session needs me'"
-          :aria-label="notifyEnabled ? 'Mute holding notifications' : 'Enable holding notifications'"
-          @click="toggleNotify"
-        >
-          <i class="ti" :class="notifyEnabled ? 'ti-bell' : 'ti-bell-off'"></i>
-        </button>
         <a
           class="bell coffee"
           href="https://buymeacoffee.com/davidsaysthankyou"
@@ -415,8 +427,17 @@ function onOpen(id: string) { open(id); }
       </div>
     </div>
 
-    <Settings v-if="settingsOpen" @close="settingsOpen = false" />
+    <Settings
+      v-if="settingsOpen"
+      :flight="flight"
+      :notify-supported="notifySupported"
+      :notify-enabled="notifyEnabled"
+      @toggle-flight="toggleFlight"
+      @toggle-notify="toggleNotify"
+      @close="settingsOpen = false"
+    />
     <Help v-if="helpOpen" @close="closeHelp" />
+    <Whatsnew v-if="whatsnewOpen" :since-build="seenBuild" @close="closeWhatsnew" />
     <div v-if="version" class="version-tag">{{ version }}</div>
   </div>
 </template>
@@ -464,6 +485,8 @@ header { flex: none; display: flex; align-items: center; justify-content: space-
 .bell { all: unset; cursor: pointer; display: inline-flex; align-items: center; padding: 3px; border-radius: 6px; color: var(--text-faint); font-size: 14px; }
 .bell:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-dim); }
 .bell.on { color: var(--amber); }
+.wn-btn { position: relative; }
+.wn-dot { position: absolute; top: 1px; right: 1px; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 5px color-mix(in srgb, var(--amber) 70%, transparent); }
 .coffee:hover { background: rgba(255, 221, 0, 0.14); color: #ffdd00; }
 .coffee-icon { display: block; }
 /* help "?" is text, not a glyph — the font lacks a plain question mark, and the circled
