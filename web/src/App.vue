@@ -160,9 +160,8 @@ onMounted(() => {
   if (!panel && !localStorage.getItem("fc-help-seen")) helpOpen.value = true;
 });
 
-// What's new: auto-open once after the build number rises past what the user last saw. A dot
-// on the header icon marks unseen changes. A brand-new install baselines silently (Help
-// greets new users; the changelog is for returning ones after an update).
+// What's new: a dot on the header icon marks unseen changes (no auto-popup — opening is the
+// user's choice). A brand-new install baselines silently, so updates after that light the dot.
 const whatsnewOpen = ref(false);
 const seenBuild = ref<number | null>(Number(localStorage.getItem("fc-seen-build") ?? "") || null);
 const hasUnseen = computed(() => currentBuild.value != null && seenBuild.value != null && currentBuild.value > seenBuild.value);
@@ -177,11 +176,10 @@ let whatsnewChecked = false;
 watch(currentBuild, (b) => {
   if (whatsnewChecked || panel || overlay || b == null) return;
   whatsnewChecked = true;
+  // a fresh install starts "caught up" (no dot); updates after that light the dot.
   if (localStorage.getItem("fc-seen-build") == null) {
     seenBuild.value = b;
-    localStorage.setItem("fc-seen-build", String(b)); // baseline a fresh install, no popup
-  } else if (b > (seenBuild.value ?? 0)) {
-    whatsnewOpen.value = true;
+    localStorage.setItem("fc-seen-build", String(b));
   }
 });
 

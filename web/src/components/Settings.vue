@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { devUrl } from "../format";
 
 interface Cfg {
@@ -40,9 +40,45 @@ function toggleOverlay() {
   appCmd("overlay-toggle");
   setTimeout(loadAppState, 1600);
 }
-const checkUpdate = () => appCmd("check-update");
+// "Check now" with real feedback: ask the server to fetch the branch → if there's an update,
+// trigger it (the app applies + restarts, and the board auto-reloads); otherwise say so.
+type UpdState = "idle" | "checking" | "uptodate" | "updating" | "failed";
+const updState = ref<UpdState>("idle");
+let updTimer: ReturnType<typeof setTimeout> | undefined;
+const UPD: Record<UpdState, { label: string; icon: string }> = {
+  idle: { label: "Check now", icon: "ti-refresh" },
+  checking: { label: "Checking…", icon: "ti-loader-2 spin" },
+  updating: { label: "Updating…", icon: "ti-loader-2 spin" },
+  uptodate: { label: "Up to date", icon: "ti-check" },
+  failed: { label: "Check failed", icon: "ti-alert-triangle" },
+};
+const upd = computed(() => UPD[updState.value]);
+async function checkUpdate() {
+  if (updState.value === "checking" || updState.value === "updating") return;
+  clearTimeout(updTimer);
+  updState.value = "checking";
+  try {
+    const r = await fetch("/api/check", { method: "POST" });
+    const d = (await r.json()) as { available?: boolean };
+    if (d.available) {
+      updState.value = "updating";
+      await fetch("/api/update", { method: "POST" }); // app applies + restarts → board auto-reloads
+      // if the apply fails (rolls back, no reload), fall back to idle after a grace period
+      updTimer = setTimeout(() => (updState.value = "idle"), 60_000);
+    } else {
+      updState.value = "uptodate";
+      updTimer = setTimeout(() => (updState.value = "idle"), 3500);
+    }
+  } catch {
+    updState.value = "failed";
+    updTimer = setTimeout(() => (updState.value = "idle"), 4000);
+  }
+}
 function restartServer() {
-  if (confirm("Restart the Session Controller server? The dashboard will briefly disconnect and reload.")) appCmd("restart");
+  if (confirm("Restart the Session Controller server? The dashboard will briefly disconnect and reload.")) {
+    appCmd("restart");
+    emit("close"); // close so the header's "reconnecting" state is visible
+  }
 }
 function quitApp() {
   if (confirm("Quit Session Controller? The menu-bar app and its server will exit.")) appCmd("quit");
@@ -102,6 +138,7 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
         <button class="icon" aria-label="close" @click="emit('close')"><i class="ti ti-x"></i></button>
       </div>
 
+      <div class="s-body">
       <div class="s-prefs">
         <div class="s-pref">
           <span class="s-plabel">Board view</span>
@@ -128,7 +165,14 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
         </div>
         <div class="s-pref">
           <span class="s-plabel">Updates</span>
-          <button class="s-btn" @click="checkUpdate"><i class="ti ti-refresh"></i> Check now</button>
+          <button
+            class="s-btn"
+            :class="{ 's-ok': updState === 'uptodate', 's-err': updState === 'failed' }"
+            :disabled="updState === 'checking' || updState === 'updating'"
+            @click="checkUpdate"
+          >
+            <i class="ti" :class="upd.icon"></i> {{ upd.label }}
+          </button>
         </div>
         <div class="s-pref">
           <span class="s-plabel">Server</span>
@@ -207,6 +251,7 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
           <span class="s-saved" :class="{ show: savedKey === r.key }"><i class="ti ti-check"></i> saved</span>
         </div>
       </div>
+      </div>
     </div>
   </div>
 </template>
@@ -220,7 +265,8 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
 .s-note { flex: none; margin: 0; padding: 10px 14px; font-size: 12px; line-height: 1.5; color: var(--text-dim); border-bottom: 0.5px solid var(--border-soft); }
 .s-note code { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; background: var(--chip); border-radius: 4px; padding: 1px 4px; color: var(--text); }
 .s-empty { padding: 20px 14px; font-size: 12px; color: var(--text-faint); }
-.s-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; }
+.s-body { flex: 1; min-height: 0; overflow-y: auto; }
+.s-list { padding: 6px; }
 .s-row { display: grid; grid-template-columns: 160px 1fr auto; align-items: start; gap: 12px; padding: 10px 8px; border-radius: 8px; }
 .s-row:hover { background: rgba(255, 255, 255, 0.02); }
 .s-global { background: rgba(88, 166, 255, 0.05); border: 0.5px solid var(--border-soft); }
@@ -242,6 +288,11 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
 .s-btn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 5px 11px; border: 0.5px solid var(--border); border-radius: 8px; color: var(--text-dim); }
 .s-btn:hover { color: var(--text-hi); border-color: var(--gray); }
 .s-btn.s-danger:hover { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, transparent); }
+.s-btn.s-ok { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
+.s-btn.s-err { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
+.s-btn:disabled { cursor: default; opacity: 0.85; }
+.s-btn .spin { animation: s-spin 0.8s linear infinite; }
+@keyframes s-spin { to { transform: rotate(360deg); } }
 .s-ver { font-size: 11px; color: var(--text-faint); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 .s-fields { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .s-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }

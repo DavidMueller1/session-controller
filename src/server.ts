@@ -258,6 +258,12 @@ async function main(): Promise<void> {
   setTimeout(() => void refreshUpdate(), 20_000);
   const updateTimer = setInterval(() => void refreshUpdate(), 20 * 60_000);
   app.get("/api/version", async () => ({ ...version, updateAvailable: updateStatus.available, latest: updateStatus.latest }));
+  // On-demand check (Settings → App "Check now"): fetch the branch now and report the result
+  // so the web can show real feedback, rather than the 20-min background poll.
+  app.post("/api/check", async () => {
+    await refreshUpdate();
+    return { available: updateStatus.available, latest: updateStatus.latest };
+  });
   app.get("/api/changelog", async () => ({ currentBuild: version.build, entries: readChangelog() }));
 
   app.get("/api/aircraft", async () => fullList());
