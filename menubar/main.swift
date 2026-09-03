@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // tell which one the cursor is over and reveal exactly that one.
     var overlayStrips: [(id: String, top: CGFloat, bottom: CGFloat)] = []
     var overlayActiveId: String?
+    var overlayNilTicks = 0   // consecutive polls with the cursor off any strip (collapse grace)
     let overlayItem = NSMenuItem(title: "Show Overlay", action: #selector(toggleOverlay), keyEquivalent: "l")
 
     let headerItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -258,7 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless()
         overlayPanel = panel
 
-        overlayStrips = []; overlayActiveId = nil
+        overlayStrips = []; overlayActiveId = nil; overlayNilTicks = 0
         // poll the cursor: reveal the strip it's over + intercept clicks only there
         overlayTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.overlayTick() }
 
@@ -292,12 +293,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }?.id
         let band: CGFloat = (rowId != nil && rowId == overlayActiveId) ? kOverlayW : kOverlayTrigger
         let active = (rowId != nil && fromRight >= 0 && fromRight <= band) ? rowId : nil
-        panel.ignoresMouseEvents = (active == nil)
-        if active != overlayActiveId {
-            overlayActiveId = active
-            let arg = active.map { "\"\($0.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\"" } ?? "null"
-            overlayWeb?.evaluateJavaScript("window.__overlayHover && window.__overlayHover(\(arg))", completionHandler: nil)
+
+        if let active = active {
+            // reveal / switch is instant; being over a strip keeps clicks live and resets grace
+            overlayNilTicks = 0
+            panel.ignoresMouseEvents = false
+            if active != overlayActiveId { setOverlayActive(active) }
+        } else if overlayActiveId != nil {
+            // cursor is off every strip — but a board re-render can shift the rects for a poll
+            // or two, so only collapse after a few consecutive empty polls (~150ms grace).
+            overlayNilTicks += 1
+            if overlayNilTicks >= 3 {
+                overlayNilTicks = 0
+                panel.ignoresMouseEvents = true
+                setOverlayActive(nil)
+            }
+        } else {
+            panel.ignoresMouseEvents = true
         }
+    }
+
+    func setOverlayActive(_ id: String?) {
+        overlayActiveId = id
+        let arg = id.map { "\"\($0.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\"" } ?? "null"
+        overlayWeb?.evaluateJavaScript("window.__overlayHover && window.__overlayHover(\(arg))", completionHandler: nil)
     }
 
     // MARK: - Self-update
