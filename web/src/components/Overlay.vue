@@ -32,6 +32,10 @@ let prevHtml = "", prevBody = "";
 // strip's vertical rect, and Swift calls __overlayHover(id) with whichever the cursor is
 // over. In the browser (no bridge) plain :hover handles it. `reveal` is the Swift-driven flag.
 const nativeHoverId = ref<string | null>(null);
+// In the native panel the reveal is Swift-driven (`.reveal`); CSS `:hover` must NOT drive it
+// there, because a click leaves a stuck `:hover` (the non-activating panel gets no mouse-exit
+// to clear it), which would lock the strip open. `:hover` is only for the browser preview.
+const isNative = typeof (window as unknown as { webkit?: { messageHandlers?: { overlay?: unknown } } }).webkit?.messageHandlers?.overlay !== "undefined";
 function reportRegion() {
   const bridge = (window as any).webkit?.messageHandlers?.overlay;
   if (!bridge) return;
@@ -64,7 +68,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="ov-rail">
+  <div class="ov-rail" :class="{ native: isNative }">
     <TransitionGroup tag="div" class="ov-group" name="ov">
       <div v-for="a in inflight" :key="a.id" class="ov-item" :data-id="a.id" :class="{ reveal: nativeHoverId === a.id }" :style="{ '--accent': LANE_COLOR.inflight }">
         <button class="ov-card" @click="emit('open', a.id)">
@@ -116,7 +120,7 @@ onBeforeUnmount(() => {
 /* only the hovered strip flies in — the others stay collapsed as spines. It goes fully
    opaque (readable) and lifts with a stronger shadow. `:hover` drives it in the browser;
    `.reveal` (set by the native panel via __overlayHover) drives it in the overlay. */
-.ov-card:hover,
+.ov-rail:not(.native) .ov-card:hover,
 .ov-item.reveal .ov-card { transform: translateX(0); background: var(--panel, #0d1117); box-shadow: -10px 6px 26px rgba(0, 0, 0, 0.55); }
 
 /* a holding strip that needs you pulses its spine for attention */

@@ -232,11 +232,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if overlayPanel != nil { hideOverlay() } else { showOverlay() }
     }
 
+    // Right edge of the current main screen, full usable height — recomputed live so the
+    // panel can be re-anchored when displays change.
+    func overlayFrame() -> NSRect {
+        let vf = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: kOverlayW, height: 800)
+        return NSRect(x: vf.maxX - kOverlayW, y: vf.minY, width: kOverlayW, height: vf.height)
+    }
+
+    // Displays added/removed/rearranged/resolution-changed: the panel's old frame may now be
+    // off-screen or the wrong size, and the cursor math would be anchored to the wrong screen.
+    // Re-anchor to the current main screen (debounced — the arrangement settles over a moment).
+    @objc func screensChanged() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self = self, let panel = self.overlayPanel else { return }
+            panel.setFrame(self.overlayFrame(), display: true) // resizing the webview re-fires the web's reportRegion
+        }
+    }
+
     func showOverlay() {
         guard overlayPanel == nil else { return }
-        guard let screen = NSScreen.main else { return }
-        let vf = screen.visibleFrame
-        let frame = NSRect(x: vf.maxX - kOverlayW, y: vf.minY, width: kOverlayW, height: vf.height)
+        let frame = overlayFrame()
 
         let cfg = WKWebViewConfiguration()
         cfg.userContentController.add(self, name: "overlay") // web reports where the strips are
@@ -264,6 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayStrips = []; overlayActiveId = nil; overlayNilTicks = 0
         // poll the cursor: reveal the strip it's over + intercept clicks only there
         overlayTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.overlayTick() }
+        NotificationCenter.default.addObserver(self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
         UserDefaults.standard.set(true, forKey: "overlayEnabled")
         postAppState()   // let the web Settings toggle reflect it
@@ -271,6 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func hideOverlay() {
         overlayTimer?.invalidate(); overlayTimer = nil
+        NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
         overlayPanel?.orderOut(nil)
         overlayPanel = nil
         overlayWeb = nil
@@ -285,13 +302,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // click-through. Hysteresis: once a strip is active the whole width is live so the cursor
     // can move left onto the revealed card; otherwise only a narrow right-edge band (a spine).
     func overlayTick() {
-        guard let panel = overlayPanel, let screen = NSScreen.main else { return }
-        let vf = screen.visibleFrame
+        guard let panel = overlayPanel else { return }
+        // Anchor the cursor math to the panel's ACTUAL frame (not NSScreen.main), so it stays
+        // correct wherever the panel currently sits — including right after a display change.
+        let f = panel.frame
         let m = NSEvent.mouseLocation
-        let fromRight = vf.maxX - m.x
-        // strip whose vertical range contains the cursor (screen y = vf.maxY - web viewport y)
+        let fromRight = f.maxX - m.x
+        // strip whose vertical range contains the cursor (screen y = panel top − web viewport y)
         let rowId = overlayStrips.first { s in
-            m.y <= (vf.maxY - s.top) && m.y >= (vf.maxY - s.bottom)
+            m.y <= (f.maxY - s.top) && m.y >= (f.maxY - s.bottom)
         }?.id
         // one narrow edge band for both reveal AND stay-open, so leaving in any direction collapses
         let active = (rowId != nil && fromRight >= 0 && fromRight <= kOverlayBand) ? rowId : nil
