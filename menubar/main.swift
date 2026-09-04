@@ -45,11 +45,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var overlayPanel: NSPanel?
     var overlayWeb: WKWebView?
     var overlayTimer: Timer?
-    // each strip's vertical rect (viewport px from the top), reported by the web, so we can
-    // tell which one the cursor is over and reveal exactly that one.
+    // each strip's vertical rect + the pin's rect (viewport px from the top/left), reported by
+    // the web, so we know when the cursor is over an interactive element (to capture clicks).
     var overlayStrips: [(id: String, top: CGFloat, bottom: CGFloat)] = []
-    var overlayActiveId: String?
-    var overlayNilTicks = 0   // consecutive polls with the cursor off any strip (collapse grace)
+    var overlayPinRect: (top: CGFloat, bottom: CGFloat, left: CGFloat, right: CGFloat)?
+    var overlayRevealed = false   // whole rail flown in (all strips readable)
+    var overlayPinned = false     // pin held → stays revealed even when the cursor leaves
+    var overlayNilTicks = 0   // consecutive polls with the cursor off the rail (collapse grace)
 
     // The menu is a minimal fallback (header + restart + quit); all normal controls live in
     // the web app now. Only these two items are shown — see applicationDidFinishLaunching.
@@ -105,10 +107,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // build and shows an "update available" banner, and the user applies it from the web.
         DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.runUpdateCheck() }
 
-        // restore the overlay if it was on last time (once the server is up to serve it)
-        if UserDefaults.standard.bool(forKey: "overlayEnabled") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.showOverlay() }
-        }
+        // NB: the overlay is NOT restored on a fixed timer here — the badge poll reconciles it
+        // (see refresh): whenever the option is enabled and the server is reachable, a live rail
+        // is (re)shown. That fixes it having to be toggled off/on after an update, where a fixed
+        // delay would race the server coming back up.
     }
 
     func applicationWillTerminate(_ note: Notification) {
@@ -259,6 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wv.setValue(false, forKey: "drawsBackground") // transparent webview (KVC — no public API)
         if #available(macOS 12.0, *) { wv.underPageBackgroundColor = .clear }
         wv.autoresizingMask = [.width, .height]
+        wv.navigationDelegate = self   // retry the load if the server is momentarily down
         wv.load(URLRequest(url: URL(string: kOverlayURL)!))
         overlayWeb = wv
 
@@ -276,8 +279,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless()
         overlayPanel = panel
 
-        overlayStrips = []; overlayActiveId = nil; overlayNilTicks = 0
-        // poll the cursor: reveal the strip it's over + intercept clicks only there
+        overlayStrips = []; overlayPinRect = nil; overlayRevealed = false; overlayPinned = false; overlayNilTicks = 0
+        // poll the cursor: reveal the rail when it's over the edge + intercept clicks only on cards/pin
         overlayTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.overlayTick() }
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
@@ -291,6 +294,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayPanel?.orderOut(nil)
         overlayPanel = nil
         overlayWeb = nil
+        overlayRevealed = false; overlayPinned = false; overlayPinRect = nil
         UserDefaults.standard.set(false, forKey: "overlayEnabled")
         postAppState()
     }
@@ -308,30 +312,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let f = panel.frame
         let m = NSEvent.mouseLocation
         let fromRight = f.maxX - m.x
-        // strip whose vertical range contains the cursor (screen y = panel top − web viewport y)
-        let rowId = overlayStrips.first { s in
-            m.y <= (f.maxY - s.top) && m.y >= (f.maxY - s.bottom)
-        }?.id
-        // one narrow edge band for both reveal AND stay-open, so leaving in any direction collapses
-        let active = (rowId != nil && fromRight >= 0 && fromRight <= kOverlayBand) ? rowId : nil
+        let inPanelV = m.y >= f.minY && m.y <= f.maxY
 
-        // clicks land only while the cursor is genuinely over a strip's edge band (immediate)
-        panel.ignoresMouseEvents = (active == nil)
-        if let active = active {
+        // hovering the rail reveals ALL strips. Hysteresis: collapsed needs the narrow right-edge
+        // band; once revealed the whole panel width keeps it open (so the cursor can move left
+        // onto the cards). A held pin forces it open regardless of the cursor.
+        let hovering = inPanelV && (overlayRevealed ? (fromRight >= 0 && fromRight <= f.width)
+                                                    : (fromRight >= 0 && fromRight <= kOverlayBand))
+        let wantReveal = overlayPinned || hovering
+        if wantReveal {
             overlayNilTicks = 0
-            if active != overlayActiveId { setOverlayActive(active) } // reveal / switch is instant
-        } else if overlayActiveId != nil {
+            if !overlayRevealed { setOverlayRevealed(true) }
+        } else if overlayRevealed {
             // a board re-render can blip the reported rects for a poll or two, so only collapse
-            // the reveal after a couple consecutive empty polls (~100ms) to avoid flicker.
+            // after a couple consecutive empty polls (~100ms) to avoid flicker.
             overlayNilTicks += 1
-            if overlayNilTicks >= 2 { overlayNilTicks = 0; setOverlayActive(nil) }
+            if overlayNilTicks >= 2 { overlayNilTicks = 0; setOverlayRevealed(false) }
         }
+
+        // Capture clicks ONLY over an interactive element — a card, or the pin — so the gaps
+        // between cards stay click-through (crucial while pinned, or the right edge is a dead zone).
+        let overStrip = overlayStrips.contains { s in m.y <= (f.maxY - s.top) && m.y >= (f.maxY - s.bottom) }
+        let stripLive = overStrip && (overlayRevealed ? (fromRight >= 0 && fromRight <= f.width)
+                                                      : (fromRight >= 0 && fromRight <= kOverlayBand))
+        var overPin = false
+        if overlayRevealed, let r = overlayPinRect {
+            overPin = m.x >= (f.minX + r.left) && m.x <= (f.minX + r.right)
+                   && m.y >= (f.maxY - r.bottom) && m.y <= (f.maxY - r.top)
+        }
+        panel.ignoresMouseEvents = !(stripLive || overPin)
     }
 
-    func setOverlayActive(_ id: String?) {
-        overlayActiveId = id
-        let arg = id.map { "\"\($0.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\"" } ?? "null"
-        overlayWeb?.evaluateJavaScript("window.__overlayHover && window.__overlayHover(\(arg))", completionHandler: nil)
+    func setOverlayRevealed(_ on: Bool) {
+        overlayRevealed = on
+        overlayWeb?.evaluateJavaScript("window.__overlayReveal && window.__overlayReveal(\(on))", completionHandler: nil)
     }
 
     // MARK: - Self-update
@@ -418,6 +432,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.unreachableTicks = 0
                     self.restartTimes.removeAll { Date().timeIntervalSince($0) > 60 }
                     if !wasReachable { self.postAppState() }        // fresh server → sync overlay state
+                    // Invariant: overlay option ON + server reachable ⇒ a live rail exists. If the
+                    // panel went missing (never restored, or torn down), bring it back now that the
+                    // server can serve it — no manual toggle needed after an update.
+                    if UserDefaults.standard.bool(forKey: "overlayEnabled"), self.overlayPanel == nil {
+                        self.showOverlay()
+                    }
                     if wantsUpdate { self.runUpdateCheck() }
                     for c in commands { self.executeCommand(c) }    // web-app requests (overlay/quit/…)
                 } else {
@@ -572,14 +592,24 @@ extension AppDelegate: WKScriptMessageHandler {
             guard let c = message.body as? String else { return }
             handleCommand(c)
         case "overlay":
-            // The overlay web view reports each strip's vertical rect (viewport px from top).
-            guard let d = message.body as? [String: Any], let arr = d["strips"] as? [[String: Any]] else { overlayStrips = []; return }
+            // The overlay web view reports each strip's vertical rect, the pin's rect, and the
+            // pin state (viewport px). Strips + pin drive click-capture; pinned holds it open.
+            guard let d = message.body as? [String: Any] else { overlayStrips = []; overlayPinRect = nil; return }
+            let arr = (d["strips"] as? [[String: Any]]) ?? []
             overlayStrips = arr.compactMap { s in
                 guard let id = s["id"] as? String,
                       let t = (s["top"] as? NSNumber)?.doubleValue,
                       let b = (s["bottom"] as? NSNumber)?.doubleValue else { return nil }
                 return (id, CGFloat(t), CGFloat(b))
             }
+            if let p = d["pin"] as? [String: Any],
+               let t = (p["top"] as? NSNumber)?.doubleValue, let b = (p["bottom"] as? NSNumber)?.doubleValue,
+               let l = (p["left"] as? NSNumber)?.doubleValue, let r = (p["right"] as? NSNumber)?.doubleValue {
+                overlayPinRect = (CGFloat(t), CGFloat(b), CGFloat(l), CGFloat(r))
+            } else {
+                overlayPinRect = nil
+            }
+            overlayPinned = (d["pinned"] as? Bool) ?? false
         default:
             break
         }
@@ -603,6 +633,29 @@ extension AppDelegate: WKUIDelegate {
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = navigationAction.request.url { NSWorkspace.shared.open(url) }
         return nil
+    }
+}
+
+extension AppDelegate: WKNavigationDelegate {
+    // The overlay loads (and, after an update, reloads itself) against the local server. If it
+    // races the server being briefly down — during a restart/relaunch — the load fails and the
+    // rail would sit dead until toggled off/on. Instead we retry until the server answers, so an
+    // enabled overlay always ends up showing a live rail.
+    func webView(_ wv: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        retryOverlayLoad(wv, error)
+    }
+    func webView(_ wv: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        retryOverlayLoad(wv, error)
+    }
+    private func retryOverlayLoad(_ wv: WKWebView, _ error: Error) {
+        guard wv === overlayWeb else { return }   // only the overlay web view; ignore stale ones
+        // a cancelled load (a newer load, incl. the web's own reload, superseded it) is not a
+        // failure — retrying it would reload a page that's already loading fine.
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self, weak wv] in
+            guard let self = self, let wv = wv, wv === self.overlayWeb else { return }
+            wv.load(URLRequest(url: URL(string: kOverlayURL)!))
+        }
     }
 }
 

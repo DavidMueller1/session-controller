@@ -3,6 +3,10 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 141 — 2026-09-04
+- Overlay rail: hovering now reveals **all** strips at once, and a new **pin** keeps the rail open after your cursor leaves.
+- Fixed: the overlay rail no longer needs toggling off/on after an update — it restores itself once the server is back.
+
 ## Build 140 — 2026-09-04
 - ✋ Give the logo a high five and keep an eye on the sky.
 
