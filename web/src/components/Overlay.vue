@@ -61,7 +61,44 @@ function togglePin() {
   reportState(); // let Swift keep the rail open (or release it) immediately
 }
 
-watch(() => props.aircraft, () => nextTick(reportState), { deep: false });
+// State-change glow: on ANY change to a strip's state, its spine blooms a soft glow in the
+// (new) lane colour that fades in and out — so changes are noticeable even when the rail is
+// collapsed to spines. We diff each strip's state signature against the last update; the first
+// update just baselines (so the initial set doesn't all glow at once).
+const GLOW_MS = 1500;
+const glowing = ref<Set<string>>(new Set());
+const lastSig = new Map<string, string>();
+const glowTimers = new Map<string, ReturnType<typeof setTimeout>>();
+let primed = false;
+const stateSig = (a: Aircraft) => `${a.state}|${a.approach ? 1 : 0}|${a.landed ? 1 : 0}`;
+
+function setGlow(id: string, on: boolean) {
+  const s = new Set(glowing.value);
+  on ? s.add(id) : s.delete(id);
+  glowing.value = s;
+}
+function fireGlow(id: string) {
+  const t = glowTimers.get(id);
+  if (t) clearTimeout(t);
+  setGlow(id, false); // clear first so the CSS animation restarts if it re-fires mid-glow
+  requestAnimationFrame(() => {
+    setGlow(id, true);
+    glowTimers.set(id, setTimeout(() => { setGlow(id, false); glowTimers.delete(id); }, GLOW_MS));
+  });
+}
+function detectChanges(list: Aircraft[]) {
+  const seen = new Set<string>();
+  for (const a of list) {
+    seen.add(a.id);
+    const sig = stateSig(a);
+    if (primed && sig !== lastSig.get(a.id)) fireGlow(a.id);
+    lastSig.set(a.id, sig);
+  }
+  for (const id of [...lastSig.keys()]) if (!seen.has(id)) lastSig.delete(id);
+  primed = true;
+}
+
+watch(() => props.aircraft, () => { detectChanges(props.aircraft); nextTick(reportState); }, { deep: false });
 watch(pinned, () => nextTick(reportState));
 
 onMounted(() => {
@@ -71,12 +108,14 @@ onMounted(() => {
   document.body.style.background = "transparent";
   window.addEventListener("resize", onResize);
   (window as any).__overlayReveal = (v: boolean) => { revealed.value = !!v; };
+  detectChanges(props.aircraft); // baseline current strips (no glow on the initial set)
   nextTick(reportState);
 });
 onBeforeUnmount(() => {
   document.documentElement.style.background = prevHtml;
   document.body.style.background = prevBody;
   window.removeEventListener("resize", onResize);
+  glowTimers.forEach(clearTimeout);
   delete (window as any).__overlayReveal;
   (window as any).webkit?.messageHandlers?.overlay?.postMessage({ strips: [], pin: null, pinned: false });
 });
@@ -89,7 +128,7 @@ onBeforeUnmount(() => {
     </button>
 
     <TransitionGroup tag="div" class="ov-group" name="ov">
-      <div v-for="a in inflight" :key="a.id" class="ov-item" :data-id="a.id" :style="{ '--accent': LANE_COLOR.inflight }">
+      <div v-for="a in inflight" :key="a.id" class="ov-item" :data-id="a.id" :class="{ glowing: glowing.has(a.id) }" :style="{ '--accent': LANE_COLOR.inflight }">
         <button class="ov-card" @click="emit('open', a.id)">
           <span class="ov-spine"></span>
           <span class="ov-body">
@@ -101,7 +140,7 @@ onBeforeUnmount(() => {
     </TransitionGroup>
 
     <TransitionGroup tag="div" class="ov-group ov-holding" name="ov">
-      <div v-for="a in holding" :key="a.id" class="ov-item" :data-id="a.id" :class="{ flash: isFlashing(a) }" :style="{ '--accent': LANE_COLOR.holding }">
+      <div v-for="a in holding" :key="a.id" class="ov-item" :data-id="a.id" :class="{ flash: isFlashing(a), glowing: glowing.has(a.id) }" :style="{ '--accent': LANE_COLOR.holding }">
         <button class="ov-card" @click="emit('open', a.id)">
           <span class="ov-spine"></span>
           <span class="ov-body">
@@ -121,6 +160,21 @@ onBeforeUnmount(() => {
 /* Holding sits directly below the in-flight block (the rail's gap separates them) */
 
 .ov-item { position: relative; }
+/* state-change glow: a soft halo in the lane colour, blooming out from the card and fading in/
+   out. It sits BEHIND the card (z-index:-1) and mirrors the card's slide so it stays aligned
+   whether the rail is collapsed (halo at the screen edge) or revealed (halo around the card). */
+.ov-item::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: 10px 0 0 10px;
+  pointer-events: none; opacity: 0;
+  box-shadow: 0 0 34px 12px var(--accent), 0 0 14px 4px var(--accent);
+  transform: translateX(calc(100% - var(--collapsed)));
+  transition: transform 0.42s cubic-bezier(0.2, 0.85, 0.25, 1);
+}
+.ov-rail.reveal .ov-item::after,
+.ov-rail:not(.native):hover .ov-item::after { transform: translateX(0); }
+.ov-item.glowing::after { animation: ov-glow 1500ms ease-out; }
+@keyframes ov-glow { 0% { opacity: 0; } 20% { opacity: 1; } 100% { opacity: 0; } }
+
 .ov-card {
   all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: stretch; gap: 0; cursor: pointer;
   background: color-mix(in srgb, var(--panel, #0d1117) 82%, transparent);
@@ -168,6 +222,6 @@ onBeforeUnmount(() => {
 .ov-enter-from, .ov-leave-to { opacity: 0; transform: translateX(110%); }
 
 @media (prefers-reduced-motion: reduce) {
-  .ov-card, .ov-pin, .ov-move, .ov-enter-active, .ov-leave-active, .ov-item.flash .ov-spine { transition: none !important; animation: none !important; }
+  .ov-card, .ov-pin, .ov-move, .ov-enter-active, .ov-leave-active, .ov-item.flash .ov-spine, .ov-item::after, .ov-item.glowing::after { transition: none !important; animation: none !important; }
 }
 </style>
