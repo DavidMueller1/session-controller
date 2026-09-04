@@ -9,6 +9,7 @@ import Settings from "./components/Settings.vue";
 import Help from "./components/Help.vue";
 import Whatsnew from "./components/Whatsnew.vue";
 import Clock from "./components/Clock.vue";
+import Clouds from "./components/Clouds.vue";
 import { useBoard } from "./useBoard";
 import { laneOf, isFlashing } from "./format";
 import type { Aircraft } from "./types";
@@ -148,6 +149,25 @@ const isDev = import.meta.env.DEV;
 // and goes stale when the file changes (the header showed the old logo while the favicon
 // updated). A runtime binding is fetched as a plain URL, so it always reflects the file.
 const logoUrl = "/logo.svg";
+
+// Easter egg: mouse-interactive smoke over the board. Hidden trigger — click the logo 5×
+// in quick succession to toggle it (the counter resets if you pause between clicks).
+const cloudsOn = ref(false);
+// keep the layer mounted through its 2s dissipate-out; it emits `faded` when fully gone.
+const cloudsMounted = ref(false);
+watch(cloudsOn, (on) => { if (on) cloudsMounted.value = true; });
+let logoClicks = 0;
+let logoTimer: ReturnType<typeof setTimeout> | null = null;
+function onLogoClick() {
+  logoClicks++;
+  if (logoTimer) clearTimeout(logoTimer);
+  logoTimer = setTimeout(() => (logoClicks = 0), 1200);
+  if (logoClicks >= 5) {
+    cloudsOn.value = !cloudsOn.value;
+    logoClicks = 0;
+    clearTimeout(logoTimer);
+  }
+}
 
 const settingsOpen = ref(false);
 const helpOpen = ref(false);
@@ -350,7 +370,7 @@ function onOpen(id: string) { open(id); }
 
     <header>
       <div class="brand">
-        <img :src="logoUrl" class="brand-logo" alt="" />
+        <img :src="logoUrl" class="brand-logo" alt="" @click="onLogoClick" />
         <span class="name"><span class="w1">Session</span><span class="w2">Controller</span></span>
         <span v-if="isDev" class="dev-badge" title="Development build (Vite dev server) — not the installed app">DEV</span>
       </div>
@@ -463,6 +483,7 @@ function onOpen(id: string) { open(id); }
     <Help v-if="helpOpen" @close="closeHelp" />
     <Whatsnew v-if="whatsnewOpen" :since-build="seenBuild" @close="closeWhatsnew" />
     <div v-if="version" class="version-tag">{{ version }}</div>
+    <Clouds v-if="cloudsMounted" :active="cloudsOn" @faded="cloudsMounted = false" />
   </div>
 </template>
 

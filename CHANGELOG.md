@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 140 — 2026-09-04
+- ✋ Give the logo a high five and keep an eye on the sky.
+
 ## Build 132 — 2026-09-03
 - The menu-bar menu is now minimal — just **Restart** and **Quit** on right-click (so Quit is always one click away). Its old controls moved into the app under **Settings → App**.
 - The app keeps the dashboard **always up** while running: it restarts the server automatically if it crashes or wedges.
