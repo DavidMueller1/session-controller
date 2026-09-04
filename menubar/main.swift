@@ -18,9 +18,9 @@ let kPanelMaxH: CGFloat = 560       // …and never grows past this (then the we
 // click-through except within a band at the right edge — a thin sliver when collapsed, the
 // full width once expanded — so it never blocks clicks to the apps underneath.
 let kOverlayW: CGFloat = 300         // panel width — room for the card to fly in and be read
-let kOverlayBand: CGFloat = 56       // the "live" band at the right edge: a strip stays revealed
-                                     // only while the cursor is within this of the edge, in any
-                                     // direction — so leaving left/up/down all collapse the same
+let kOverlaySpine: CGFloat = 18      // the colour-spine hit-zone at the right edge: the rail only
+                                     // reveals (and a collapsed spine is clickable) while the
+                                     // cursor is within this of the edge AND over a strip's row
 
 // The auto-updater targets ONLY the managed clone — never a dev checkout.
 let kRepo = ("~/Library/Application Support/Session Controller/repo" as NSString).expandingTildeInPath
@@ -313,12 +313,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let m = NSEvent.mouseLocation
         let fromRight = f.maxX - m.x
         let inPanelV = m.y >= f.minY && m.y <= f.maxY
+        // cursor over a strip's vertical rect — i.e. over its colour spine at the screen edge
+        let overStrip = overlayStrips.contains { s in m.y <= (f.maxY - s.top) && m.y >= (f.maxY - s.bottom) }
 
-        // hovering the rail reveals ALL strips. Hysteresis: collapsed needs the narrow right-edge
-        // band; once revealed the whole panel width keeps it open (so the cursor can move left
-        // onto the cards). A held pin forces it open regardless of the cursor.
-        let hovering = inPanelV && (overlayRevealed ? (fromRight >= 0 && fromRight <= f.width)
-                                                    : (fromRight >= 0 && fromRight <= kOverlayBand))
+        // Reveal ALL strips only when the cursor is on a strip's colour spine (collapsed) — not
+        // the empty edge between/around strips. Once revealed, the whole panel width keeps it open
+        // so the cursor can move left onto the cards. A held pin forces it open.
+        let hovering = overlayRevealed ? (inPanelV && fromRight >= 0 && fromRight <= f.width)
+                                       : (overStrip && fromRight >= 0 && fromRight <= kOverlaySpine)
         let wantReveal = overlayPinned || hovering
         if wantReveal {
             overlayNilTicks = 0
@@ -332,9 +334,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Capture clicks ONLY over an interactive element — a card, or the pin — so the gaps
         // between cards stay click-through (crucial while pinned, or the right edge is a dead zone).
-        let overStrip = overlayStrips.contains { s in m.y <= (f.maxY - s.top) && m.y >= (f.maxY - s.bottom) }
         let stripLive = overStrip && (overlayRevealed ? (fromRight >= 0 && fromRight <= f.width)
-                                                      : (fromRight >= 0 && fromRight <= kOverlayBand))
+                                                      : (fromRight >= 0 && fromRight <= kOverlaySpine))
         var overPin = false
         if overlayRevealed, let r = overlayPinRect {
             overPin = m.x >= (f.minX + r.left) && m.x <= (f.minX + r.right)

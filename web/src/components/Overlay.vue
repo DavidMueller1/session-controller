@@ -85,7 +85,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="ov-rail" :class="{ native: isNative, reveal: showAll }">
     <button ref="pinEl" class="ov-pin" :class="{ on: pinned }" :title="pinned ? 'Unpin — collapse when the cursor leaves' : 'Pin — keep the rail open'" aria-label="Pin overlay" @click="togglePin">
-      <i class="ti" :class="pinned ? 'ti-pin-filled' : 'ti-pin'"></i>
+      <i class="ti ti-pin"></i>
     </button>
 
     <TransitionGroup tag="div" class="ov-group" name="ov">
@@ -116,7 +116,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* card geometry — collapsed shows only COLLAPSED px (the spine) at the screen's right edge */
-.ov-rail { --w: 280px; --collapsed: 8px; position: fixed; top: 0; right: 0; height: 100vh; width: var(--w); display: flex; flex-direction: column; align-items: stretch; gap: 18px; padding: 14px 0; font-family: ui-sans-serif, -apple-system, system-ui, sans-serif; }
+.ov-rail { --w: 280px; --collapsed: 8px; position: fixed; top: 0; right: 0; height: 100vh; width: var(--w); display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 18px; padding: 14px 0; font-family: ui-sans-serif, -apple-system, system-ui, sans-serif; }
 .ov-group { display: flex; flex-direction: column; gap: 7px; }
 /* Holding sits directly below the in-flight block (the rail's gap separates them) */
 
