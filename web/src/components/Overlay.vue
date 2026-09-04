@@ -170,8 +170,10 @@ onBeforeUnmount(() => {
   transform: translateX(calc(100% - var(--collapsed)));
   transition: transform 0.42s cubic-bezier(0.2, 0.85, 0.25, 1);
 }
+/* revealed: the glow hugs the card as a tight rim instead of a big cloud (collapsed keeps the
+   wider bloom above, so it still reads at the screen edge). */
 .ov-rail.reveal .ov-item::after,
-.ov-rail:not(.native):hover .ov-item::after { transform: translateX(0); }
+.ov-rail:not(.native):hover .ov-item::after { transform: translateX(0); box-shadow: 0 0 16px 2px var(--accent); }
 .ov-item.glowing::after { animation: ov-glow 1500ms ease-out; }
 @keyframes ov-glow { 0% { opacity: 0; } 20% { opacity: 1; } 100% { opacity: 0; } }
 
@@ -193,7 +195,7 @@ onBeforeUnmount(() => {
 /* revealed → EVERY card flies in (native uses the `.reveal` class set by Swift; the browser
    preview uses :hover). They go fully opaque and lift with a stronger shadow. */
 .ov-rail.reveal .ov-card,
-.ov-rail:not(.native):hover .ov-card { transform: translateX(0); background: var(--panel, #0d1117); box-shadow: -10px 6px 26px rgba(0, 0, 0, 0.55); }
+.ov-rail:not(.native):hover .ov-card { transform: translateX(0); background: var(--panel, #0d1117); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45); }
 
 /* pin: a small tab at the top-right. Only its opacity animates (its layout slot stays put, so
    the rect we report to Swift is stable). Amber when engaged. */
