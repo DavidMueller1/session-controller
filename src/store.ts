@@ -209,6 +209,7 @@ export class Store {
   /** record the host of a live session, so a later click still lands in the right app */
   setHost(id: string, kind: string, bin: string | null): void {
     this.db.prepare(`UPDATE sessions SET host_kind = ?, host_bin = ? WHERE id = ?`).run(kind, bin, id);
+    this.sessionsCache = null;
   }
 
   /** all notes as { aircraftId: note } — notes outlive sessions (kept, not pruned) */
@@ -276,11 +277,18 @@ export class Store {
       }
     });
     tx(list);
+    this.sessionsCache = null;
   }
 
+  /** Cache of the mapped session rows. The 1 Hz badge poll (and several calls per engine
+   *  tick: update handler + health + summary + badge) all read this; without the cache each
+   *  re-ran `SELECT *` + a JSON.parse per row. Invalidated by every writer to the sessions
+   *  table (syncSessions / setHost / reassign). Callers must treat the result as read-only. */
+  private sessionsCache: DiscoveredSession[] | null = null;
   getSessions(): DiscoveredSession[] {
+    if (this.sessionsCache) return this.sessionsCache;
     const rows = this.db.prepare(`SELECT * FROM sessions`).all() as SessionRow[];
-    return rows.map(rowToSession);
+    return (this.sessionsCache = rows.map(rowToSession));
   }
 
   /**
@@ -313,7 +321,9 @@ export class Store {
       if (this.db.prepare(`DELETE FROM sessions WHERE id = ?`).run(fromId).changes > 0) changed = true;
       return changed;
     });
-    return tx();
+    const changed = tx();
+    if (changed) this.sessionsCache = null;
+    return changed;
   }
 
   close(): void {

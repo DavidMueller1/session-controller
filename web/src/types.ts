@@ -81,6 +81,15 @@ export interface Aircraft {
 
 export type Lane = "inflight" | "mia" | "holding" | "parked" | "cold" | "landed";
 
+/** the board's five rendered lanes, partitioned + sorted once and shared (App + FlightBoard) */
+export interface LanePartition {
+  inflight: Aircraft[];
+  holding: Aircraft[];
+  parked: Aircraft[];
+  landed: Aircraft[];
+  mia: Aircraft[];
+}
+
 export interface AnthropicStatus {
   indicator: string;
   description: string;

@@ -12,7 +12,7 @@ import Clock from "./components/Clock.vue";
 import Clouds from "./components/Clouds.vue";
 import { useBoard } from "./useBoard";
 import { laneOf, isFlashing } from "./format";
-import type { Aircraft } from "./types";
+import type { Aircraft, LanePartition } from "./types";
 
 // Compact mode for the menu-bar popover (loaded as /?panel). Renders just the mini-board
 // and tells useBoard to stay silent (the full dashboard owns notifications).
@@ -127,17 +127,30 @@ const boardAircraft = computed<Aircraft[]>(() => effectiveAircraft.value);
 // board — a strip only moves when its state actually changes.
 const orderKey = (a: { stateSince?: number | null; lastActivityAt: number | null }) =>
   a.stateSince ?? a.lastActivityAt ?? 0;
-const byLane = (lane: string) =>
-  boardAircraft.value.filter((a) => laneOf(a) === lane).sort((a, b) => orderKey(b) - orderKey(a));
 
-const inflight = computed(() => byLane("inflight"));
-const mia = computed(() => byLane("mia"));
-const parked = computed(() => byLane("parked"));
-const landed = computed(() => byLane("landed"));
-// holding: everything actively flashing "needs you" (parked ones live in their own lane now)
-const holding = computed(() =>
-  byLane("holding").sort((a, b) => Number(isFlashing(b)) - Number(isFlashing(a))),
-);
+// Partition into the five rendered lanes in ONE pass (was five filter+sort passes here, and
+// FlightBoard used to re-derive the same five from the same data). Computed once, shared.
+const lanes = computed<LanePartition>(() => {
+  const p: LanePartition = { inflight: [], holding: [], parked: [], landed: [], mia: [] };
+  for (const a of boardAircraft.value) {
+    const l = laneOf(a);
+    if (l === "inflight" || l === "holding" || l === "parked" || l === "landed" || l === "mia") p[l].push(a);
+  }
+  const byTime = (x: Aircraft, y: Aircraft) => orderKey(y) - orderKey(x);
+  p.inflight.sort(byTime);
+  p.parked.sort(byTime);
+  p.landed.sort(byTime);
+  p.mia.sort(byTime);
+  // holding: time order, then the flashing "needs you" ones first (stable sort keeps the time order)
+  p.holding.sort(byTime);
+  p.holding.sort((a, b) => Number(isFlashing(b)) - Number(isFlashing(a)));
+  return p;
+});
+const inflight = computed(() => lanes.value.inflight);
+const mia = computed(() => lanes.value.mia);
+const parked = computed(() => lanes.value.parked);
+const landed = computed(() => lanes.value.landed);
+const holding = computed(() => lanes.value.holding);
 
 
 // true only when served by the Vite dev server (pnpm ui / dev:live on :5173); false in the
@@ -409,7 +422,7 @@ function onOpen(id: string) { open(id); }
 
     <FlightBoard
       v-if="flight"
-      :aircraft="boardAircraft"
+      :lanes="lanes"
       :now="now"
       :debug="debug"
       @set-note="onSet"

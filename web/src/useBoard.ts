@@ -30,6 +30,18 @@ export function useBoard(opts: { notify?: boolean } = {}) {
   let ws: WebSocket | null = null;
   let retry = 0;
 
+  // Reconcile an incoming board against the current one BY ID: reuse the existing object for
+  // any strip whose data is unchanged, so its reference is stable and Vue skips re-rendering
+  // that Strip. Without this, every update replaced all objects and re-rendered every strip.
+  // (The array itself is always new, so reorders/adds/removes still patch.)
+  function reconcile(incoming: Aircraft[]): Aircraft[] {
+    const prev = new Map(aircraft.value.map((a) => [a.id, a] as const));
+    return incoming.map((a) => {
+      const old = prev.get(a.id);
+      return old && JSON.stringify(old) === JSON.stringify(a) ? old : a;
+    });
+  }
+
   // Auto-reload when the server comes back on a NEW build (e.g. after "Update now" restarts
   // it): the running page's JS/CSS are then stale, so reconnecting onto a different build/sha
   // means we reload to pick up the new assets. A plain restart on the SAME code just
@@ -129,7 +141,7 @@ export function useBoard(opts: { notify?: boolean } = {}) {
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data) as WsMessage;
       if (msg.type === "snapshot" || msg.type === "update") {
-        aircraft.value = msg.aircraft;
+        aircraft.value = reconcile(msg.aircraft);
         reconcileNotifications(msg.aircraft);
       } else if (msg.type === "status") {
         status.value = msg.status;
