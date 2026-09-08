@@ -312,14 +312,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let f = panel.frame
         let m = NSEvent.mouseLocation
         let fromRight = f.maxX - m.x
-        let inPanelV = m.y >= f.minY && m.y <= f.maxY
         // cursor over a strip's vertical rect — i.e. over its colour spine at the screen edge
         let overStrip = overlayStrips.contains { s in m.y <= (f.maxY - s.top) && m.y >= (f.maxY - s.bottom) }
 
+        // Once revealed, keep it open only while the cursor is NEAR the strip block (its vertical
+        // extent + the pin, plus a little slack) — not the whole screen height. The block is
+        // centred, so the empty top/bottom of the panel must not hold it open.
+        let nearBand: CGFloat = 44   // vertical slack above/below the block before it collapses
+        var nearStrips = false
+        if !overlayStrips.isEmpty {
+            var top = overlayStrips.map { $0.top }.min()!
+            let bottom = overlayStrips.map { $0.bottom }.max()!
+            if let p = overlayPinRect { top = min(top, p.top) } // include the pin tab above the strips
+            nearStrips = m.y <= (f.maxY - top + nearBand) && m.y >= (f.maxY - bottom - nearBand)
+        }
+
         // Reveal ALL strips only when the cursor is on a strip's colour spine (collapsed) — not
-        // the empty edge between/around strips. Once revealed, the whole panel width keeps it open
-        // so the cursor can move left onto the cards. A held pin forces it open.
-        let hovering = overlayRevealed ? (inPanelV && fromRight >= 0 && fromRight <= f.width)
+        // the empty edge between/around strips. Once revealed, staying near the block (any width)
+        // keeps it open so the cursor can move left onto the cards. A held pin forces it open.
+        let hovering = overlayRevealed ? (nearStrips && fromRight >= 0 && fromRight <= f.width)
                                        : (overStrip && fromRight >= 0 && fromRight <= kOverlaySpine)
         let wantReveal = overlayPinned || hovering
         if wantReveal {
