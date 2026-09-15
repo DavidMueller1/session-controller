@@ -63,10 +63,20 @@ if [ ! -s "$NVM_DIR/nvm.sh" ]; then
   info "nvm not found — installing…"
   curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
 fi
+# Sourcing nvm.sh runs nvm's "auto use": it picks up the .nvmrc here in $REPO and tries to
+# activate that version. Right after the bootstrap above there is no such version yet, so the
+# source fails with 3 — and under `set -e` that kills the installer silently, one line before
+# the `nvm install` that would have provided it. Every first-time install on an nvm-less
+# machine died here, leaving a bare clone and no error message.
+# `. nvm.sh || true` does NOT fix it: on the bash 3.2 that macOS still ships — the shell a
+# `curl | bash` install actually runs under — errexit fires for the failure inside the
+# sourced file before the `|| true` applies. Drop errexit around the source itself.
+set +e
 # shellcheck disable=SC1091
 . "$NVM_DIR/nvm.sh"
-nvm install >/dev/null   # reads .nvmrc
-nvm use >/dev/null
+set -e
+nvm install >/dev/null || die "nvm install failed (Node version from .nvmrc)."
+nvm use >/dev/null || die "nvm use failed."
 ok "node $(node -v)"
 if ! command -v pnpm >/dev/null 2>&1; then
   corepack enable >/dev/null 2>&1 || true
