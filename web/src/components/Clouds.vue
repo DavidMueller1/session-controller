@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { heli } from "../eggState";
 
 // Easter egg: soft smoke drifting over the whole screen that parts around the cursor.
 // A curl-noise flow field advects a few thousand light particles — the curl (a
@@ -178,6 +179,17 @@ onMounted(() => {
         const ux = dxm / d, uy = dym / d;
         ivx[i] += (ux * f * f * PUSH + -uy * f * SWIRL + mvx * f * WAKE) * dt;
         ivy[i] += (uy * f * f * PUSH + ux * f * SWIRL + mvy * f * WAKE) * dt;
+      }
+      // helicopter rotor downwash: a strong radial blast out of the heli's position
+      if (heli.active) {
+        const hx = px[i] - heli.x, hy = py[i] - heli.y;
+        const hd2 = hx * hx + hy * hy;
+        if (hd2 < heli.r * heli.r) {
+          const hd = Math.sqrt(hd2) + 0.001;
+          const hf = 1 - hd / heli.r;
+          ivx[i] += (hx / hd) * hf * hf * heli.force * dt;
+          ivy[i] += (hy / hd) * hf * hf * heli.force * dt;
+        }
       }
       ivx[i] *= impDecay; ivy[i] *= impDecay;
       px[i] += (fx + ivx[i]) * dt;

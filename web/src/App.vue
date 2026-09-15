@@ -10,6 +10,7 @@ import Help from "./components/Help.vue";
 import Whatsnew from "./components/Whatsnew.vue";
 import Clock from "./components/Clock.vue";
 import Clouds from "./components/Clouds.vue";
+import Helicopter from "./components/Helicopter.vue";
 import { useBoard } from "./useBoard";
 import { laneOf, isFlashing } from "./format";
 import type { Aircraft, LanePartition } from "./types";
@@ -166,6 +167,9 @@ const logoUrl = "/logo.svg";
 // Easter egg: mouse-interactive smoke over the board. Hidden trigger — click the logo 5×
 // in quick succession to toggle it (the counter resets if you pause between clicks).
 const cloudsOn = ref(false);
+// Easter egg: helicopter that chases the cursor and blasts the clouds aside. Hidden for now
+// (work in progress — tuning the flight feel + deciding a trigger).
+const heliOn = ref(false);
 // keep the layer mounted through its 2s dissipate-out; it emits `faded` when fully gone.
 const cloudsMounted = ref(false);
 watch(cloudsOn, (on) => { if (on) cloudsMounted.value = true; });
@@ -497,6 +501,7 @@ function onOpen(id: string) { open(id); }
     <Whatsnew v-if="whatsnewOpen" :since-build="seenBuild" @close="closeWhatsnew" />
     <div v-if="version" class="version-tag">{{ version }}</div>
     <Clouds v-if="cloudsMounted" :active="cloudsOn" @faded="cloudsMounted = false" />
+    <Helicopter v-if="heliOn" />
   </div>
 </template>
 
