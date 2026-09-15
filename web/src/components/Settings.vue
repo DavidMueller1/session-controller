@@ -180,7 +180,7 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
         </div>
         <div class="s-pref">
           <span class="s-plabel">Application</span>
-          <button class="s-btn s-danger" @click="quitApp"><i class="ti ti-player-power"></i> Quit</button>
+          <button class="s-btn s-danger" @click="quitApp"><i class="ti ti-power"></i> Quit</button>
         </div>
         <div v-if="version" class="s-pref">
           <span class="s-plabel">Version</span>
