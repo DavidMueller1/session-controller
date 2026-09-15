@@ -11,7 +11,7 @@ import Whatsnew from "./components/Whatsnew.vue";
 import Clock from "./components/Clock.vue";
 import Clouds from "./components/Clouds.vue";
 import { useBoard } from "./useBoard";
-import { laneOf, isFlashing } from "./format";
+import { laneOf, isFlashing, formatUsd } from "./format";
 import type { Aircraft, LanePartition } from "./types";
 
 // Compact mode for the menu-bar popover (loaded as /?panel). Renders just the mini-board
@@ -21,8 +21,28 @@ const panel = new URLSearchParams(location.search).has("panel");
 // panel. Also silent — the full dashboard owns notifications.
 const overlay = new URLSearchParams(location.search).has("overlay");
 
-const { aircraft, status, health, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
+const { aircraft, status, health, cost, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
 onMounted(start);
+
+// Cost readout: today's spend leads (it's the number that changes), the running month
+// trails it — the figure you'd weigh against a subscription. Deliberately no all-time
+// total: it only covers transcripts Claude Code hasn't cleaned up yet, so it reads as a
+// precise number while meaning something nobody can state.
+const costLabel = computed(() => {
+  const c = cost.value;
+  if (!c) return null;
+  return `${formatUsd(c.today)} today · ${formatUsd(c.month)} this month`;
+});
+const costTip = computed(() => {
+  const c = cost.value;
+  if (!c) return "";
+  const parts = [
+    "API-equivalent cost of the tokens — on a subscription this is not an amount billed.",
+    !c.scanned ? "Still scanning the transcript history; earlier days this month may be missing." : "",
+    c.unpricedSessions ? `${c.unpricedSessions} session(s) ran on a model with no price on file — both figures are lower bounds.` : "",
+  ];
+  return parts.filter(Boolean).join(" ");
+});
 
 // Board layout: the flight-layer (one animated coordinate space) is the default; the
 // toggle drops to the simple per-lane list. Only an explicit "0" opts out of flight,
@@ -393,6 +413,10 @@ function onOpen(id: string) { open(id); }
         <span v-if="parked.length" class="stat"><FlipCounter :value="parked.length" color="var(--parked)" /> parked</span>
         <span v-if="mia.length" class="stat"><FlipCounter :value="mia.length" color="var(--gray)" /> mia</span>
         <span v-if="landed.length" class="stat"><FlipCounter :value="landed.length" color="#4cc38a" /> landed</span>
+        <span v-if="costLabel" class="hdr-div" aria-hidden="true"></span>
+        <span v-if="costLabel" class="stat cost" :class="{ 'cost-partial': cost && (!cost.scanned || cost.unpricedSessions > 0) }" :title="costTip">
+          <i class="ti ti-coin"></i>{{ costLabel }}<span v-if="cost && (!cost.scanned || cost.unpricedSessions > 0)" class="cost-approx">*</span>
+        </span>
         <span class="hdr-div" aria-hidden="true"></span>
         <button class="bell wn-btn" data-tip="WHAT'S NEW" aria-label="What's new" @click="whatsnewOpen = true">
           <i class="ti ti-sparkles"></i>
@@ -519,6 +543,13 @@ function onOpen(id: string) { open(id); }
 .s-action { all: unset; margin-left: auto; cursor: pointer; font-size: 11px; font-weight: 600; color: var(--blue); border: 0.5px solid color-mix(in srgb, var(--blue) 50%, transparent); border-radius: 6px; padding: 3px 10px; white-space: nowrap; }
 .s-action:hover { background: color-mix(in srgb, var(--blue) 15%, transparent); }
 .s-action:disabled { opacity: 0.6; cursor: default; }
+.stat.cost { display: inline-flex; align-items: center; gap: 5px; color: var(--gray); font-variant-numeric: tabular-nums; cursor: help; }
+.stat.cost .ti { font-size: 13px; opacity: 0.75; }
+/* a total that's still being backfilled, or missing a model's price, is a lower bound —
+   mark it rather than letting it read as exact */
+.stat.cost-partial { opacity: 0.75; }
+.cost-approx { margin-left: 1px; opacity: 0.7; }
+
 header { flex: none; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft); }
 .brand { display: flex; align-items: center; gap: 9px; }
 .brand-logo { width: 26px; height: 26px; display: block; }

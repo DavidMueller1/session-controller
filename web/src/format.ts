@@ -76,3 +76,24 @@ export function projectName(p: string | null): string {
   const parts = p.split("/").filter(Boolean);
   return parts[parts.length - 1] || p;
 }
+
+/**
+ * A dollar figure at a precision that stays readable across four orders of magnitude:
+ * cents for a single session, whole dollars once a lifetime total gets large. Sub-cent
+ * amounts round to "<$0.01" rather than to a misleading "$0.00".
+ */
+export function formatUsd(usd: number | null | undefined): string {
+  if (usd == null || !isFinite(usd)) return "—";
+  if (usd === 0) return "$0.00";
+  if (usd < 0.01) return "<$0.01";
+  if (usd < 100) return `$${usd.toFixed(2)}`;
+  if (usd < 10_000) return `$${Math.round(usd).toLocaleString()}`;
+  return `$${(usd / 1000).toFixed(1)}k`;
+}
+
+/** compact token count for the cost breakdown: 12.3k / 4.5M */
+export function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}

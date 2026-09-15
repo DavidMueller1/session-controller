@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import type { ActivityState, DiscoveredSession, SessionSource } from "./types.js";
+import type { ActivityState, CostSummary, CostTokens, DiscoveredSession, SessionSource } from "./types.js";
 
 interface SessionRow {
   id: string;
@@ -59,6 +59,12 @@ export class Store {
   }
 
   private migrate(): void {
+    // The cost ledger changed shape (keyed by transcript path, not session id). It is a
+    // derived cache — a full rebuild from the transcripts takes seconds — so an old-shaped
+    // table is dropped here, BEFORE the creates below, and refilled by the next scan.
+    this.dropIfKeyedById("session_cost");
+    this.dropIfKeyedById("session_cost_day");
+
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         id                    TEXT PRIMARY KEY,
@@ -94,6 +100,41 @@ export class Store {
         env_vars         TEXT,
         updated_at       INTEGER NOT NULL
       );
+      /* Lifetime cost ledger, one row PER TRANSCRIPT FILE. Keyed by path, not by session
+         id: Claude Code writes subagent transcripts to <project>/<id>/subagents/agent-*.jsonl
+         and stamps them with the PARENT's session id, so one session is many files. Keying
+         by id would let those files overwrite one another (and lose the subagents' very
+         real cost). Per-session figures are summed at read time via the id index.
+
+         Unlike the sessions table -- which mirrors the live board and is pruned -- this is
+         append-and-update only, so spend survives a session ageing off the board. file_size
+         lets the backfill skip a transcript it has already priced. */
+      CREATE TABLE IF NOT EXISTS session_cost (
+        path              TEXT PRIMARY KEY,
+        id                TEXT NOT NULL,
+        cost_usd          REAL NOT NULL,
+        input_tokens      INTEGER NOT NULL DEFAULT 0,
+        output_tokens     INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+        model             TEXT,
+        unpriced          INTEGER NOT NULL DEFAULT 0,
+        last_activity_at  INTEGER,
+        file_size         INTEGER,
+        updated_at        INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS session_cost_id ON session_cost(id);
+      /* Cost attributed to the LOCAL day each turn happened on. Sessions routinely span
+         midnight, so a per-session total cannot answer "what did today cost" -- it would
+         credit a whole multi-day session to whichever day it was last active on. */
+      CREATE TABLE IF NOT EXISTS session_cost_day (
+        path       TEXT NOT NULL,
+        day        TEXT NOT NULL,
+        cost_usd   REAL NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (path, day)
+      );
+      CREATE INDEX IF NOT EXISTS session_cost_day_day ON session_cost_day(day);
       CREATE TABLE IF NOT EXISTS dev_servers (
         root       TEXT PRIMARY KEY,
         pid        INTEGER NOT NULL,
@@ -109,6 +150,12 @@ export class Store {
     // host of the session's terminal/IDE, remembered while it was alive (see src/open.ts)
     this.addColumn("sessions", "host_kind", "TEXT");
     this.addColumn("sessions", "host_bin", "TEXT");
+  }
+
+  /** drop a cost table still carrying the old id-keyed primary key (see migrate) */
+  private dropIfKeyedById(table: string): void {
+    const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string; pk: number }[];
+    if (cols.some((c) => c.name === "id" && c.pk > 0)) this.db.exec(`DROP TABLE ${table}`);
   }
 
   /** add a column if it isn't already present (SQLite has no IF NOT EXISTS for columns) */
@@ -324,6 +371,160 @@ export class Store {
     const changed = tx();
     if (changed) this.sessionsCache = null;
     return changed;
+  }
+
+  /**
+   * Record (or replace) what each session has cost so far. Called with the live sessions'
+   * running totals on every engine update, and with whole batches by the backfill scan —
+   * both are full replacements per id, never increments, so a re-record is idempotent.
+   */
+  recordCost(
+    rows: {
+      id: string;
+      /** the transcript file — the ledger's key, so subagent files sit beside their parent */
+      path: string;
+      costUsd: number;
+      tokens: CostTokens;
+      model: string | null;
+      unpriced: boolean;
+      lastActivityAt: number | null;
+      /** cost per local calendar day (YYYY-MM-DD), cumulative for the session so far */
+      byDay: Record<string, number>;
+      fileSize: number | null;
+    }[],
+  ): void {
+    if (!rows.length) return;
+    const now = Date.now();
+    const up = this.db.prepare(`
+      INSERT INTO session_cost (path, id, cost_usd, input_tokens, output_tokens, cache_read_tokens,
+                                cache_write_tokens, model, unpriced, last_activity_at, file_size, updated_at)
+      VALUES (@path, @id, @cost, @in, @out, @cr, @cw, @model, @unpriced, @last, @size, @now)
+      ON CONFLICT(path) DO UPDATE SET
+        id = excluded.id, cost_usd = excluded.cost_usd,
+        input_tokens = excluded.input_tokens, output_tokens = excluded.output_tokens,
+        cache_read_tokens = excluded.cache_read_tokens, cache_write_tokens = excluded.cache_write_tokens,
+        model = excluded.model, unpriced = excluded.unpriced,
+        last_activity_at = excluded.last_activity_at,
+        /* the live engine records a running cost without a size; keep the last scanned
+           one so the backfill can still skip an unchanged transcript */
+        file_size = COALESCE(excluded.file_size, session_cost.file_size),
+        updated_at = excluded.updated_at
+    `);
+    const upDay = this.db.prepare(`
+      INSERT INTO session_cost_day (path, day, cost_usd, updated_at)
+      VALUES (@path, @day, @cost, @now)
+      ON CONFLICT(path, day) DO UPDATE SET cost_usd = excluded.cost_usd, updated_at = excluded.updated_at
+    `);
+    // A re-record carries the session's cumulative per-day totals, so replacing each day's
+    // row is correct. Days the session no longer reports are dropped: a re-parse from
+    // scratch is authoritative about which days it actually spans.
+    const clearDays = this.db.prepare(`DELETE FROM session_cost_day WHERE path = ?`);
+    this.db.transaction(() => {
+      for (const r of rows) {
+        const days = Object.entries(r.byDay);
+        if (days.length) {
+          clearDays.run(r.path);
+          for (const [day, cost] of days) upDay.run({ path: r.path, day, cost, now });
+        }
+        up.run({
+          id: r.id,
+          path: r.path,
+          cost: r.costUsd,
+          in: r.tokens.input,
+          out: r.tokens.output,
+          cr: r.tokens.cacheRead,
+          cw: r.tokens.cacheWrite,
+          model: r.model,
+          unpriced: r.unpriced ? 1 : 0,
+          last: r.lastActivityAt,
+          size: r.fileSize,
+          now,
+        });
+      }
+    })();
+  }
+
+  /**
+   * Spend on one local calendar day and across the month containing it, plus how many
+   * sessions ran on an unpriced model. `day` is YYYY-MM-DD in local time.
+   *
+   * Both figures come from the per-day table, never from whole sessions, so a session
+   * spanning midnight (or a month boundary) contributes only the turns it actually made
+   * in the period. There is deliberately no lifetime total: it is bounded by which
+   * transcripts Claude Code has not yet cleaned up, which makes it a number without a
+   * meaning anyone can state.
+   */
+  costSummary(day: string): Omit<CostSummary, "scanned"> {
+    const unpriced = this.db
+      .prepare(`SELECT COUNT(DISTINCT id) AS n FROM session_cost WHERE unpriced = 1`)
+      .get() as { n: number };
+    const sums = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(CASE WHEN day = @day THEN cost_usd END), 0) AS today,
+                COALESCE(SUM(CASE WHEN day LIKE @month THEN cost_usd END), 0) AS month
+         FROM session_cost_day`,
+      )
+      .get({ day, month: day.slice(0, 7) + "%" }) as { today: number; month: number };
+    return { today: sums.today, month: sums.month, unpricedSessions: unpriced.n };
+  }
+
+  /**
+   * Transcript path → the file size we last priced it at, so the backfill can skip it.
+   *
+   * Only rows that already carry a per-day breakdown are reported. A row priced before
+   * per-day attribution existed (or one whose day rows were lost) would otherwise be
+   * skipped forever on size alone, leaving today's figure permanently short — withholding
+   * its size makes the next scan re-read it, so the ledger heals itself with no migration.
+   */
+  scannedSizes(): Map<string, number> {
+    const rows = this.db
+      .prepare(
+        `SELECT c.path AS path, c.file_size AS file_size
+         FROM session_cost c
+         WHERE c.path IS NOT NULL AND c.file_size IS NOT NULL
+           AND EXISTS (SELECT 1 FROM session_cost_day d WHERE d.path = c.path)`,
+      )
+      .all() as { path: string; file_size: number }[];
+    return new Map(rows.map((r) => [r.path, r.file_size]));
+  }
+
+  /** per-session cost, for decorating the board */
+  costById(): Map<string, { costUsd: number; tokens: CostTokens; unpriced: boolean }> {
+    const rows = this.db
+      .prepare(
+        `SELECT id,
+                SUM(cost_usd)           AS cost_usd,
+                SUM(input_tokens)       AS input_tokens,
+                SUM(output_tokens)      AS output_tokens,
+                SUM(cache_read_tokens)  AS cache_read_tokens,
+                SUM(cache_write_tokens) AS cache_write_tokens,
+                MAX(unpriced)           AS unpriced
+         FROM session_cost GROUP BY id`,
+      )
+      .all() as {
+      id: string;
+      cost_usd: number;
+      input_tokens: number;
+      output_tokens: number;
+      cache_read_tokens: number;
+      cache_write_tokens: number;
+      unpriced: number;
+    }[];
+    return new Map(
+      rows.map((r) => [
+        r.id,
+        {
+          costUsd: r.cost_usd,
+          tokens: {
+            input: r.input_tokens,
+            output: r.output_tokens,
+            cacheRead: r.cache_read_tokens,
+            cacheWrite: r.cache_write_tokens,
+          },
+          unpriced: r.unpriced === 1,
+        },
+      ]),
+    );
   }
 
   close(): void {

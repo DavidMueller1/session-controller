@@ -43,6 +43,13 @@ export async function parseDesktopSession(filePath: string): Promise<SessionFact
     tailIsError: false,
     tailSummary: "",
     contextTokens: null,
+    // Desktop metadata carries no token usage. A desktop session that mirrors a CLI one
+    // gets the transcript's real figures when the two are merged; a desktop-only session
+    // genuinely has nothing to price, and the UI renders zero tokens as "—", not "$0.00".
+    costUsd: 0,
+    costTokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    costByDay: {},
+    costUnpriced: false,
     archived: o.isArchived === true,
   };
 }

@@ -120,6 +120,28 @@ export type TailKind = "human" | "assistant-text" | "assistant-tool" | "assistan
  * re-derived cheaply (no disk I/O) on a fast tick — that's what makes working→holding
  * update near-instantly. See resolve() in deriveState.ts.
  */
+/** tokens behind a cost figure, split by how each kind is priced */
+export interface CostTokens {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+/** Board-wide cost roll-up: what today and the running month have cost.
+ *  No lifetime figure on purpose — it is bounded by which transcripts Claude Code has not
+ *  yet cleaned up, so it cannot be given a meaning the reader can act on. */
+export interface CostSummary {
+  /** API-equivalent USD spent today (local calendar day) */
+  today: number;
+  /** API-equivalent USD spent in the running calendar month */
+  month: number;
+  /** sessions whose model has no price entry — both figures are lower bounds */
+  unpricedSessions: number;
+  /** true once the one-off backfill over ~/.claude/projects has finished */
+  scanned: boolean;
+}
+
 export interface SessionFacts {
   id: string;
   source: SessionSource;
@@ -137,6 +159,15 @@ export interface SessionFacts {
   tailSummary: string;
   /** context tokens in the most recent turn (input + cache_read + cache_creation) */
   contextTokens: number | null;
+  /** API-equivalent cost of every priced request in this session (see src/pricing.ts).
+   *  On a subscription this is the value of the tokens, not an amount billed. */
+  costUsd: number;
+  /** token totals behind `costUsd`, by kind */
+  costTokens: CostTokens;
+  /** cost split by the local calendar day each turn happened on (YYYY-MM-DD) */
+  costByDay: Record<string, number>;
+  /** at least one turn ran on a model with no price entry, so `costUsd` is a lower bound */
+  costUnpriced: boolean;
   /** desktop: session archived by the app (a "suspected done" signal) */
   archived?: boolean;
   /** CLI: the predecessor session id this transcript continued from after a `/compact`
@@ -191,6 +222,13 @@ export interface DiscoveredSession {
   /** context tokens used in the latest turn, and that as a fraction of the window */
   contextTokens?: number | null;
   contextPct?: number | null;
+  /** API-equivalent cost of this session, and the tokens behind it */
+  costUsd?: number | null;
+  costTokens?: CostTokens | null;
+  /** cost per local calendar day (YYYY-MM-DD) — feeds the board's "today" figure */
+  costByDay?: Record<string, number>;
+  /** this session ran on a model with no price entry — `costUsd` is a lower bound */
+  costUnpriced?: boolean;
   /** PR for the branch (via gh), attached by branch. null = none/unknown */
   pr?: PrInfo | null;
   /** merged-PR overlay (added by the server's decorate). Drives the Approach lane. */

@@ -3,6 +3,12 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 147 — 2026-09-14
+- **Cost tracking** — the header shows what you've spent **today** and **this month**, and each strip's detail view shows that session's cost with its token breakdown. Subagent runs count towards the session that spawned them.
+- The figure is the API-equivalent value of the tokens: on a Max/Pro subscription it is what the work *would* have cost, not an amount you were billed. A `*` marks a figure that's still a lower bound (history still being scanned, or a model with no price on file).
+- No all-time total on purpose: it would only cover the transcripts Claude Code hasn't cleaned up yet, so it would look precise while meaning nothing you could act on.
+- Strips now show the **model** the session actually ran on — that field was always blank before.
+
 ## Build 146 — 2026-09-08
 - Performance: lighter board updates (unchanged strips no longer re-render) and less idle CPU.
 

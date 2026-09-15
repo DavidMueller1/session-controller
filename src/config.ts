@@ -85,6 +85,11 @@ export const CONFIG = {
    *  every fd on the machine, so keep this slow — dev servers start/stop rarely. */
   devScanMs: 8_000,
 
+  /** how often to re-walk ~/.claude/projects to backfill the lifetime cost ledger. The
+   *  walk skips any transcript whose size is unchanged, so a repeat costs a stat per file;
+   *  live sessions keep their own cost current between runs. */
+  costScanMs: 60 * 60_000,
+
   /** Claude/Anthropic service status (Statuspage) — drives the top status banner */
   statusSummaryUrl: process.env.CLAUDE_STATUS_URL ?? "https://status.claude.com/api/v2/summary.json",
   statusPageUrl: "https://status.claude.com",
