@@ -9,10 +9,11 @@ import Settings from "./components/Settings.vue";
 import Help from "./components/Help.vue";
 import Whatsnew from "./components/Whatsnew.vue";
 import Clock from "./components/Clock.vue";
+import SegNumber from "./components/SegNumber.vue";
 import Clouds from "./components/Clouds.vue";
 import Helicopter from "./components/Helicopter.vue";
 import { useBoard } from "./useBoard";
-import { laneOf, isFlashing } from "./format";
+import { laneOf, isFlashing, formatUsd } from "./format";
 import type { Aircraft, LanePartition } from "./types";
 
 // Compact mode for the menu-bar popover (loaded as /?panel). Renders just the mini-board
@@ -22,8 +23,33 @@ const panel = new URLSearchParams(location.search).has("panel");
 // panel. Also silent — the full dashboard owns notifications.
 const overlay = new URLSearchParams(location.search).has("overlay");
 
-const { aircraft, status, health, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
+const { aircraft, status, health, cost, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
 onMounted(start);
+
+// Cost readout: today's spend leads (it's the number that changes), the running month
+// trails it — the figure you'd weigh against a subscription. Deliberately no all-time
+// total: it only covers transcripts Claude Code hasn't cleaned up yet, so it reads as a
+// precise number while meaning something nobody can state.
+// Airbus RMP-style readout: two amber 7-segment windows (TODAY / MONTH). Fixed format
+// "####.##" — four integer digits (leading positions blanked → ghost, right-aligned), a
+// decimal point, then two decimals. Caps at 9999.99 so the decimal stays put.
+function segCost(v: number): string {
+  if (!isFinite(v) || v < 0) return "    .  ";
+  const [intp, decp] = Math.min(v, 9999.99).toFixed(2).split(".");
+  return " ".repeat(Math.max(0, 4 - intp.length)) + intp + "." + decp;
+}
+const segToday = computed(() => (cost.value ? segCost(cost.value.today) : ""));
+const segMonth = computed(() => (cost.value ? segCost(cost.value.month) : ""));
+const costTip = computed(() => {
+  const c = cost.value;
+  if (!c) return "";
+  const parts = [
+    "API-equivalent cost of the tokens —\non a subscription this is not an amount billed.",
+    !c.scanned ? "Still scanning the transcript history; earlier days this month may be missing." : "",
+    c.unpricedSessions ? `${c.unpricedSessions} session(s) ran on a model with no price on file — both figures are lower bounds.` : "",
+  ];
+  return parts.filter(Boolean).join(" ");
+});
 
 // Board layout: the flight-layer (one animated coordinate space) is the default; the
 // toggle drops to the simple per-lane list. Only an explicit "0" opts out of flight,
@@ -397,6 +423,20 @@ function onOpen(id: string) { open(id); }
         <span v-if="parked.length" class="stat"><FlipCounter :value="parked.length" color="var(--parked)" /> parked</span>
         <span v-if="mia.length" class="stat"><FlipCounter :value="mia.length" color="var(--gray)" /> mia</span>
         <span v-if="landed.length" class="stat"><FlipCounter :value="landed.length" color="#4cc38a" /> landed</span>
+        <span v-if="cost" class="hdr-div" aria-hidden="true"></span>
+        <span v-if="cost" class="stat cost" :class="{ 'cost-partial': !cost.scanned || cost.unpricedSessions > 0 }" :data-tip="costTip">
+          <span class="rmp">
+            <span class="rmp-field">
+              <span class="rmp-cap">TODAY</span>
+              <span class="rmp-window"><SegNumber :value="segToday" /><span class="rmp-cur">$</span></span>
+            </span>
+            <span class="rmp-field">
+              <span class="rmp-cap">MONTH</span>
+              <span class="rmp-window"><SegNumber :value="segMonth" /><span class="rmp-cur">$</span></span>
+            </span>
+            <span v-if="!cost.scanned || cost.unpricedSessions > 0" class="cost-approx">*</span>
+          </span>
+        </span>
         <span class="hdr-div" aria-hidden="true"></span>
         <button class="bell wn-btn" data-tip="WHAT'S NEW" aria-label="What's new" @click="whatsnewOpen = true">
           <i class="ti ti-sparkles"></i>
@@ -524,6 +564,25 @@ function onOpen(id: string) { open(id); }
 .s-action { all: unset; margin-left: auto; cursor: pointer; font-size: 11px; font-weight: 600; color: var(--blue); border: 0.5px solid color-mix(in srgb, var(--blue) 50%, transparent); border-radius: 6px; padding: 3px 10px; white-space: nowrap; }
 .s-action:hover { background: color-mix(in srgb, var(--blue) 15%, transparent); }
 .s-action:disabled { opacity: 0.6; cursor: default; }
+.stat.cost { display: inline-flex; align-items: center; cursor: help; }
+/* Airbus RMP: two equal amber 7-segment windows, each with a caption above (like ACTIVE / STBY) */
+.rmp { display: inline-flex; align-items: flex-end; gap: 12px; font-size: 15px; line-height: 1; }
+.rmp-field {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 3px;
+  --seg-on: #ffb020; --seg-off: rgba(255, 176, 32, 0.09); --seg-glow: rgba(255, 176, 32, 0.8);
+}
+.rmp-cap { font: 700 6.5px/1 ui-monospace, "SF Mono", monospace; letter-spacing: 0.2em; text-indent: 0.2em; color: rgba(214, 198, 168, 0.75); }
+.rmp-window {
+  display: inline-flex; align-items: center; gap: 3px; padding: 3px 7px; border-radius: 3px; background: #07090b;
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.85), 0 0 0 0.5px rgba(255, 176, 32, 0.14);
+}
+/* fixed currency mark trailing the digits, in the same amber glow */
+.rmp-cur { font: 700 0.72em/1 ui-monospace, "SF Mono", monospace; color: var(--seg-on, #ffb020); filter: drop-shadow(0 0 1.1px var(--seg-glow, rgba(255, 176, 32, 0.85))); }
+/* a total that's still being backfilled, or missing a model's price, is a lower bound —
+   mark it rather than letting it read as exact */
+.stat.cost-partial { opacity: 0.75; }
+.cost-approx { margin-left: 1px; opacity: 0.7; }
+
 header { flex: none; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft); }
 .brand { display: flex; align-items: center; gap: 9px; }
 .brand-logo { width: 26px; height: 26px; display: block; }
@@ -553,8 +612,8 @@ header { flex: none; display: flex; align-items: center; justify-content: space-
 .wn-dot { position: absolute; top: 1px; right: 1px; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 5px color-mix(in srgb, var(--amber) 70%, transparent); }
 
 /* MCDU-style tooltip: phosphor-green monospace on a dark CRT screen — fits the ATC theme */
-.bell[data-tip] { position: relative; }
-.bell[data-tip]::after {
+.bell[data-tip], .stat.cost[data-tip] { position: relative; }
+.bell[data-tip]::after, .stat.cost[data-tip]::after {
   content: attr(data-tip);
   position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%) translateY(3px);
   font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
@@ -564,12 +623,17 @@ header { flex: none; display: flex; align-items: center; justify-content: space-
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55), inset 0 0 10px rgba(94, 240, 160, 0.07);
   opacity: 0; pointer-events: none; z-index: 70; transition: opacity 0.12s ease, transform 0.12s ease;
 }
-.bell[data-tip]::before {
+.bell[data-tip]::before, .stat.cost[data-tip]::before {
   content: ""; position: absolute; top: calc(100% + 2px); left: 50%; transform: translateX(-50%) translateY(3px);
   border: 4px solid transparent; border-bottom-color: rgba(94, 240, 160, 0.5);
   opacity: 0; pointer-events: none; z-index: 70; transition: opacity 0.12s ease, transform 0.12s ease;
 }
-.bell[data-tip]:hover::after, .bell[data-tip]:hover::before { opacity: 1; transform: translateX(-50%) translateY(0); }
+.bell[data-tip]:hover::after, .bell[data-tip]:hover::before,
+.stat.cost[data-tip]:hover::after, .stat.cost[data-tip]:hover::before { opacity: 1; transform: translateX(-50%) translateY(0); }
+/* the cost tip is a sentence (not a short label) → let it wrap; an EXPLICIT width (not
+   max-width, which shrink-to-fits to the tiny anchor) tuned so it lands on two lines. Keeps
+   the icons' uppercase + letter-spacing (inherited from the base rule). */
+.stat.cost[data-tip]::after { white-space: pre-line; width: 400px; line-height: 1.5; text-align: left; }
 /* rightmost icon: anchor the tooltip to the right so it can't spill off-screen */
 .bell[data-tip].tip-right::after { left: auto; right: 0; transform: translateX(0) translateY(3px); }
 .bell[data-tip].tip-right:hover::after { transform: translateX(0) translateY(0); }

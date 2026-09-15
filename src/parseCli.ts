@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { SessionFacts, TailKind } from "./types.js";
+import { costOf, isPriced, type Usage } from "./pricing.js";
+import type { CostTokens, SessionFacts, TailKind } from "./types.js";
 import { firstLine, truncate } from "./util.js";
 
 /**
@@ -135,6 +136,23 @@ export interface CliCursor {
   contextTokens: number | null;
   lastActivityAt: number | null;
   tail: NormEvent | null;
+  /** model of the most recent assistant turn (last one wins) */
+  model: string | null;
+  /** running API-equivalent cost of every priced request so far */
+  costUsd: number;
+  /** running token totals behind `costUsd` */
+  costTokens: CostTokens;
+  /** cost split by the LOCAL calendar day each turn happened on (YYYY-MM-DD). A session
+   *  routinely spans midnight, so "what did today cost" can only be answered per turn —
+   *  attributing a session's whole spend to its last-active day overstates today badly. */
+  costByDay: Record<string, number>;
+  /** at least one turn ran on a model with no entry in the price table, so `costUsd`
+   *  understates the real figure — the UI shows this as "unknown", not as free */
+  costUnpriced: boolean;
+  /** requestIds already billed. Claude Code writes one transcript line per content block
+   *  of a response, each repeating the SAME `requestId` and the SAME `usage` — without
+   *  this set a multi-block turn is billed once per block. */
+  billed: Set<string>;
 }
 
 function emptyCursor(): CliCursor {
@@ -151,6 +169,12 @@ function emptyCursor(): CliCursor {
     contextTokens: null,
     lastActivityAt: null,
     tail: null,
+    model: null,
+    costUsd: 0,
+    costTokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    costByDay: {},
+    costUnpriced: false,
+    billed: new Set(),
   };
 }
 
@@ -168,8 +192,13 @@ function ingestLine(c: CliCursor, s: string): void {
   if (o.type === "ai-title" && o.aiTitle) c.aiTitle = String(o.aiTitle);
 
   // context = prompt tokens of the most recent assistant turn (last one wins)
-  const u = o.type === "assistant" ? o.message?.usage : null;
-  if (u) c.contextTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+  const u: Usage | null = o.type === "assistant" ? o.message?.usage ?? null : null;
+  if (u) {
+    c.contextTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+    const model = typeof o.message?.model === "string" ? o.message.model : null;
+    if (model) c.model = model;
+    bill(c, o, u, model);
+  }
 
   const ev = classify(o);
   if (ev.ts != null) {
@@ -194,6 +223,48 @@ function ingestLine(c: CliCursor, s: string): void {
   if (CONVERSATIONAL.has(ev.kind)) c.tail = ev; // last conversational event wins
 }
 
+/**
+ * Add one assistant turn's usage to the cursor's running cost, unless its request was
+ * already billed (see `CliCursor.billed`). An unpriced model contributes its tokens but
+ * no dollars, and raises the `costUnpriced` flag so the total is never passed off as
+ * complete.
+ */
+function bill(c: CliCursor, o: any, u: Usage, model: string | null): void {
+  const key = typeof o.requestId === "string" ? o.requestId : typeof o.message?.id === "string" ? o.message.id : null;
+  if (key) {
+    if (c.billed.has(key)) return;
+    c.billed.add(key);
+  }
+
+  const split = u.cache_creation;
+  const cacheWrite = split
+    ? (split.ephemeral_5m_input_tokens ?? 0) + (split.ephemeral_1h_input_tokens ?? 0)
+    : u.cache_creation_input_tokens ?? 0;
+  c.costTokens.input += u.input_tokens ?? 0;
+  c.costTokens.output += u.output_tokens ?? 0;
+  c.costTokens.cacheRead += u.cache_read_input_tokens ?? 0;
+  c.costTokens.cacheWrite += cacheWrite;
+
+  const usd = costOf(u, model);
+  if (usd == null) {
+    if (!isPriced(model)) c.costUnpriced = true;
+    return;
+  }
+  c.costUsd += usd;
+  const day = localDay(o.timestamp);
+  if (day) c.costByDay[day] = (c.costByDay[day] ?? 0) + usd;
+}
+
+/** a transcript timestamp → its LOCAL calendar day as YYYY-MM-DD (the day the user was
+ *  working, which is what a "today" figure has to mean — not the UTC day) */
+function localDay(ts: unknown): string | null {
+  if (typeof ts !== "string") return null;
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function cursorToFacts(filePath: string, c: CliCursor): SessionFacts {
   const sessionId = c.sessionId ?? path.basename(filePath).replace(/\.jsonl$/, "");
   const title = c.aiTitle ?? (c.firstUserText ? truncate(c.firstUserText, 60) : sessionId);
@@ -205,7 +276,7 @@ function cursorToFacts(filePath: string, c: CliCursor): SessionFacts {
     project: c.cwd,
     branch: c.branch,
     title,
-    model: null,
+    model: c.model,
     firstSeenAt: c.firstTs,
     lastActivityAt: c.lastActivityAt,
     linkedCliSessionId: null,
@@ -213,6 +284,10 @@ function cursorToFacts(filePath: string, c: CliCursor): SessionFacts {
     tailIsError: c.tail?.isError ?? false,
     tailSummary: c.tail?.summary || "no conversation yet",
     contextTokens: c.contextTokens,
+    costUsd: c.costUsd,
+    costTokens: { ...c.costTokens },
+    costByDay: { ...c.costByDay },
+    costUnpriced: c.costUnpriced,
     continuedFrom: c.continuedFrom,
   };
 }
@@ -236,7 +311,12 @@ export async function parseCliIncremental(
   try {
     const { size } = await fh.stat();
     // fresh parse, or reset when the file got smaller than we'd already consumed
-    let cursor = prev && size >= prev.offset ? { ...prev } : emptyCursor();
+    // shallow spread would share `costTokens` / `billed` with the caller's cursor, so a
+    // re-parse would mutate the previous snapshot's totals
+    let cursor =
+      prev && size >= prev.offset
+        ? { ...prev, costTokens: { ...prev.costTokens }, costByDay: { ...prev.costByDay }, billed: new Set(prev.billed) }
+        : emptyCursor();
     const readFrom = cursor.offset + Buffer.byteLength(cursor.carry, "utf8");
 
     if (size > readFrom) {

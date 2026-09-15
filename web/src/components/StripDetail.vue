@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type { Aircraft } from "../types";
-import { STATE, formatAge, laneOf, devUrl, isParked, LANDED_COLOR, PARKED_COLOR } from "../format";
+import { STATE, formatAge, formatTokens, formatUsd, laneOf, devUrl, isParked, LANDED_COLOR, PARKED_COLOR } from "../format";
 
 const props = defineProps<{ aircraft: Aircraft; now: number }>();
 const emit = defineEmits<{ close: []; open: [id: string] }>();
@@ -53,6 +53,19 @@ const ctx = computed(() => {
   return `${Math.round(a.value.contextPct * 100)}% · ${(a.value.contextTokens ?? 0).toLocaleString()} tokens`;
 });
 
+// Cost of this flight. A session with no tokens at all (a desktop-only strip, or one that
+// never got a reply) reads "—" rather than a $0.00 that looks like a measurement.
+const cost = computed(() => {
+  const t = a.value.costTokens;
+  const total = t ? t.input + t.output + t.cacheRead + t.cacheWrite : 0;
+  if (!t || total === 0) return null;
+  return {
+    usd: formatUsd(a.value.costUsd),
+    unpriced: !!a.value.costUnpriced,
+    breakdown: `${formatTokens(t.input)} in · ${formatTokens(t.output)} out · ${formatTokens(t.cacheRead)} cache read · ${formatTokens(t.cacheWrite)} cache write`,
+  };
+});
+
 const dev = computed(() => a.value.devServer ?? null);
 const portUrl = (p: number) => devUrl(dev.value?.urlTemplate, p);
 // up to three dev servers as clickable links (best guess first); the rest summarised as "+N"
@@ -91,6 +104,14 @@ const devSummary = computed(() => {
                 <div class="d-tp-row"><span class="d-k">Branch</span><span class="d-v mono">{{ a.branch || "—" }}</span></div>
                 <div class="d-tp-row"><span class="d-k">Model</span><span class="d-v mono">{{ a.model || "—" }}</span></div>
                 <div class="d-tp-row"><span class="d-k">Context</span><span class="d-v">{{ ctx }}</span></div>
+                <div class="d-tp-row">
+                  <span class="d-k">Cost</span>
+                  <span v-if="cost" class="d-v" title="API-equivalent cost of this session's tokens — on a subscription, not an amount billed">
+                    {{ cost.usd }}<span v-if="cost.unpriced" class="d-cost-note">+ unpriced model</span>
+                    <span class="d-cost-break">{{ cost.breakdown }}</span>
+                  </span>
+                  <span v-else class="d-v">—</span>
+                </div>
               </div>
               <div class="d-tp-id mono">{{ a.id }}</div>
             </div>
@@ -202,6 +223,11 @@ const devSummary = computed(() => {
 .d-row:hover { background: rgba(255, 255, 255, 0.02); }
 .d-k { color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px; padding-top: 2px; }
 .d-v { color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+/* the token split rides under the dollar figure — present when you look for it, never
+   competing with the numbers above it */
+.d-cost-break { display: block; margin-top: 2px; font-size: 10px; color: var(--gray); font-variant-numeric: tabular-nums; }
+.d-cost-note { margin-left: 6px; font-size: 10px; color: var(--amber); }
+
 .d-v.mono, .d-v .mono { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; }
 .d-dim { color: var(--text-dim); }
 .d-port { display: inline-flex; align-items: center; gap: 4px; font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; color: var(--green); text-decoration: none; border: 0.5px solid color-mix(in srgb, var(--green) 40%, transparent); border-radius: 6px; padding: 0 6px; margin-right: 6px; }

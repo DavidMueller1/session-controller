@@ -65,6 +65,11 @@ export interface Aircraft {
   landed?: boolean;
   contextTokens?: number | null;
   contextPct?: number | null;
+  /** API-equivalent cost of this flight (its own spend plus any compaction predecessors) */
+  costUsd?: number | null;
+  costTokens?: CostTokens | null;
+  /** ran on a model with no price entry — `costUsd` is a lower bound */
+  costUnpriced?: boolean;
   pr?: PrInfo | null;
   approach?: boolean;
   devServer?: DevServerInfo | null;
@@ -77,6 +82,24 @@ export interface Aircraft {
   /** install status for the strip's repo (null = not a git repo) — drives the Install button */
   devInstall?: { running: boolean; code: number | null; at: number } | null;
   offline?: boolean;
+}
+
+/** tokens behind a cost figure, split by how each kind is priced */
+export interface CostTokens {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+/** board-wide cost roll-up from the server's cost ledger */
+export interface CostSummary {
+  today: number;
+  /** spend in the running calendar month */
+  month: number;
+  unpricedSessions: number;
+  /** the one-off backfill over the full transcript history has finished */
+  scanned: boolean;
 }
 
 export type Lane = "inflight" | "mia" | "holding" | "parked" | "cold" | "landed";
@@ -119,6 +142,7 @@ export type WsMessage =
   | { type: "snapshot" | "update"; ts: number; aircraft: Aircraft[] }
   | { type: "status"; ts: number; status: AnthropicStatus | null }
   | { type: "health"; ts: number; health: HooksHealth | null }
+  | { type: "cost"; ts: number; cost: CostSummary }
   | {
       type: "version";
       ts: number;

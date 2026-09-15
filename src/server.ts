@@ -11,8 +11,9 @@ import { parseEnv, readEnvFile } from "./envfile.js";
 import { type HookSettings, assembleHealth, readHookSettings } from "./hooksHealth.js";
 import { openAircraft } from "./open.js";
 import { startStatusPolling } from "./status.js";
+import { scanCosts } from "./costScan.js";
 import { Store } from "./store.js";
-import type { ActivityState, AnthropicStatus, DevServerInfo, DiscoveredSession, HooksHealth } from "./types.js";
+import type { ActivityState, AnthropicStatus, CostSummary, DevServerInfo, DiscoveredSession, HooksHealth } from "./types.js";
 import { type UpdateStatus, checkForUpdate, getVersion } from "./version.js";
 import { readChangelog } from "./changelog.js";
 
@@ -58,6 +59,50 @@ async function main(): Promise<void> {
     return projectConfig[GLOBAL_KEY]?.[field] ?? "";
   };
 
+  // ---- cost ledger -------------------------------------------------------------
+  // Live sessions write their running cost into the ledger on every engine update; the
+  // backfill fills in everything older than the engine's staleness window (once at start,
+  // then on a slow repeat). The board shows today and the running month from the ledger,
+  // so both are right even for sessions that have long since dropped off the board.
+  let costSummary: CostSummary = { today: 0, month: 0, unpricedSessions: 0, scanned: false };
+  let costById = store.costById();
+
+  /** today as YYYY-MM-DD in local time — the key the per-day cost ledger is written under */
+  const localToday = (): string => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+
+  const refreshCost = () => {
+    const scanned = costSummary.scanned;
+    costSummary = { ...store.costSummary(localToday()), scanned };
+    costById = store.costById();
+  };
+
+  const costMsg = () => ({ type: "cost", ts: Date.now(), cost: costSummary });
+
+  /** write the live sessions' running totals into the ledger */
+  const recordLiveCost = (list: DiscoveredSession[]) => {
+    const rows = list
+      // the ledger is keyed by transcript path, so a strip without one has nothing to record
+      .filter((a) => a.source === "cli" && !!a.path && !!a.costTokens)
+      .map((a) => ({
+        id: a.id,
+        path: a.path,
+        costUsd: a.costUsd ?? 0,
+        tokens: a.costTokens!,
+        model: a.model,
+        unpriced: !!a.costUnpriced,
+        lastActivityAt: a.lastActivityAt,
+        byDay: a.costByDay ?? {},
+        // The engine reads transcripts incrementally and never stats them here, so we
+        // don't know the current size. The store keeps whatever the last backfill recorded.
+        fileSize: null,
+      }));
+    store.recordCost(rows);
+  };
+
   const decorate = (list: DiscoveredSession[]): DiscoveredSession[] =>
     list.map((a) => {
       // note/landed live under this flight's own id once reassign() has run; until then
@@ -82,7 +127,27 @@ async function main(): Promise<void> {
       const devExit = !managed && exit && Date.now() - exit.at < 10 * 60_000 ? exit : null;
       // install affordance for any repo strip; carries running + last-exit state
       const devInstall = root ? (devRunner.installStateFor(root) ?? { running: false, code: null, at: 0 }) : null;
-      return { ...a, note: notes[a.id] ?? carriedNote ?? null, landed: isLanded, approach, devServer, devCommand, devManaged, devExit, devInstall };
+      // Cost of this flight = its own spend plus every predecessor it superseded (a
+      // compaction chain is one piece of work to the user, and the money was all spent on
+      // it). Live figures win over the ledger; the ledger covers offline strips.
+      const ownCost = costById.get(a.id);
+      const chain = [a.costUsd != null ? { costUsd: a.costUsd, tokens: a.costTokens!, unpriced: !!a.costUnpriced } : ownCost, ...(a.supersedes ?? []).map((id) => costById.get(id))].filter(
+        (c): c is NonNullable<typeof ownCost> => !!c,
+      );
+      const costUsd = chain.length ? chain.reduce((n, c) => n + c.costUsd, 0) : null;
+      const costTokens = chain.length
+        ? chain.reduce(
+            (t, c) => ({
+              input: t.input + c.tokens.input,
+              output: t.output + c.tokens.output,
+              cacheRead: t.cacheRead + c.tokens.cacheRead,
+              cacheWrite: t.cacheWrite + c.tokens.cacheWrite,
+            }),
+            { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          )
+        : null;
+      const costUnpriced = chain.some((c) => c.unpriced);
+      return { ...a, note: notes[a.id] ?? carriedNote ?? null, landed: isLanded, approach, devServer, devCommand, devManaged, devExit, devInstall, costUsd, costTokens, costUnpriced };
     });
 
   // Persistence: a tracked session with no live file right now is still shown from the
@@ -121,6 +186,25 @@ async function main(): Promise<void> {
     }
   };
   const pushUpdate = () => broadcast({ type: "update", ts: Date.now(), aircraft: fullList() });
+
+  // Backfill the lifetime ledger in the background — the first run over a long history
+  // reads a lot of AV-scanned files, so it must never block the board coming up. After
+  // that, unchanged transcripts are skipped on size and the repeat is nearly free.
+  const runCostScan = () => {
+    scanCosts(store)
+      .then((r) => {
+        costSummary = { ...store.costSummary(localToday()), scanned: true };
+        costById = store.costById();
+        broadcast(costMsg());
+        if (r.priced) process.stdout.write(`[cost] priced ${r.priced} transcript(s), skipped ${r.skipped}\n`);
+      })
+      .catch(() => {
+        /* a failed scan just leaves the ledger as it was; live sessions keep updating it */
+      });
+  };
+  refreshCost();
+  runCostScan();
+  const costScanTimer = setInterval(runCostScan, CONFIG.costScanMs);
 
   // Claude/Anthropic service status → top banner
   let anthropicStatus: AnthropicStatus | null = null;
@@ -233,7 +317,11 @@ async function main(): Promise<void> {
       syncKeepIds();
     }
     autoUnlandOnWork(list);
+    recordLiveCost(list);
+    const prevCost = costSummary;
+    refreshCost();
     broadcast({ type: "update", ts: Date.now(), aircraft: fullList() });
+    if (costSummary.month !== prevCost.month || costSummary.today !== prevCost.today) broadcast(costMsg());
     refreshHealth();
     const summary = Object.entries(counts(list))
       .map(([k, v]) => `${k} ${v}`)
@@ -279,6 +367,8 @@ async function main(): Promise<void> {
   app.get("/api/changelog", async () => ({ currentBuild: version.build, entries: readChangelog() }));
 
   app.get("/api/aircraft", async () => fullList());
+
+  app.get("/api/cost", async () => costSummary);
 
   app.get("/api/status", async () => anthropicStatus);
 
@@ -543,6 +633,7 @@ async function main(): Promise<void> {
     socket.send(JSON.stringify({ type: "snapshot", ts: Date.now(), aircraft: fullList() }));
     socket.send(JSON.stringify({ type: "status", ts: Date.now(), status: anthropicStatus }));
     socket.send(JSON.stringify({ type: "health", ts: Date.now(), health: hooksHealth }));
+    socket.send(JSON.stringify(costMsg()));
     socket.send(JSON.stringify(versionMsg()));
     socket.on("close", () => clients.delete(socket));
     socket.on("error", () => clients.delete(socket));
@@ -564,7 +655,7 @@ async function main(): Promise<void> {
   process.stdout.write(
     `\n  ✈  Feature Controller on http://${CONFIG.apiHost}:${CONFIG.apiPort}\n` +
       ui +
-      `  REST  /api/health  /api/aircraft  /api/aircraft/:id  /api/summary\n` +
+      `  REST  /api/health  /api/aircraft  /api/aircraft/:id  /api/summary  /api/cost\n` +
       `  WS    /ws  (snapshot + live updates)\n\n`,
   );
 
@@ -573,6 +664,7 @@ async function main(): Promise<void> {
     clearInterval(healthTimer);
     clearInterval(devTimer);
     clearInterval(updateTimer);
+    clearInterval(costScanTimer);
     await engine.stop();
     await app.close();
     store.close();

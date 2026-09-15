@@ -163,6 +163,8 @@ firstSeenAt
 lastActivityAt
 activityState     // working | idle | dormant | needs-input | suspected-done | error
 lastEventSummary  // e.g. "running tool: Bash" / "awaiting confirmation"
+costUsd           // API-equivalent spend, priced from the transcript's token usage
+costTokens        // the input / output / cache-read / cache-write split behind it
 linkedCliSessionId
 aircraftId        // set only when YOU assign it (nullable)
 suggestedAircraft // computed guesses, ranked — never auto-applied
@@ -173,6 +175,20 @@ attached. The daemon computes ranked suggestions from **git branch** and **proje
 (and `cliSessionId` correlation), and the session sits in an **inbound tray** with those
 suggestions surfaced. You pick — or create a new card in one click, or dismiss. You always
 have the last word (decision §9).
+
+**Cost is derived, never reported.** Transcripts carry `message.usage` but no dollar
+figure, so the tower prices the tokens itself (`src/pricing.ts`). Two things make the
+number trustworthy: one API response is written as several transcript lines that all
+repeat the same `requestId` and the same `usage`, so a request is billed once and only
+once; and a model with no entry in the price table contributes its tokens but no dollars,
+raising an "unpriced" flag rather than silently counting as free. On a subscription the
+result is the API-equivalent value of the work, not an amount billed — the UI says so.
+
+Because the board only parses transcripts inside its staleness window, the lifetime total
+comes from a separate SQLite ledger (`session_cost`) that is never pruned with the board.
+A background scan backfills it from the full `~/.claude/projects` history, skipping any
+transcript whose size is unchanged since it was last priced — the same read-avoidance the
+engine uses, and for the same reason (these files are AV-scanned on every open).
 
 ---
 

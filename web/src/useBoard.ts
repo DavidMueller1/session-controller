@@ -1,6 +1,6 @@
 import { ref, shallowRef } from "vue";
 import { isFlashing, projectName } from "./format";
-import type { Aircraft, AnthropicStatus, HooksHealth, WsMessage } from "./types";
+import type { Aircraft, AnthropicStatus, CostSummary, HooksHealth, WsMessage } from "./types";
 
 /** how long a strip must stay in holding before we notify. 0 = fire immediately.
  *  (A larger value would suppress the session you're actively replying to.) */
@@ -17,6 +17,7 @@ export function useBoard(opts: { notify?: boolean } = {}) {
   const aircraft = shallowRef<Aircraft[]>([]);
   const status = ref<AnthropicStatus | null>(null);
   const health = ref<HooksHealth | null>(null);
+  const cost = ref<CostSummary | null>(null);
   const connected = ref(false);
   const now = ref(Date.now());
   // build version (for the bottom stamp) + whether the tracked branch is ahead (banner)
@@ -147,6 +148,8 @@ export function useBoard(opts: { notify?: boolean } = {}) {
         status.value = msg.status;
       } else if (msg.type === "health") {
         health.value = msg.health;
+      } else if (msg.type === "cost") {
+        cost.value = msg.cost;
       } else if (msg.type === "version") {
         version.value = msg.current?.pretty ?? "";
         currentBuild.value = msg.current?.build ?? null;
@@ -229,5 +232,5 @@ export function useBoard(opts: { notify?: boolean } = {}) {
     }
   }
 
-  return { aircraft, status, health, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify };
+  return { aircraft, status, health, cost, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify };
 }

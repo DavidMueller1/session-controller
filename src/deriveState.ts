@@ -65,6 +65,10 @@ export function resolve(f: SessionFacts, now: number): DiscoveredSession {
     linkedCliSessionId: f.linkedCliSessionId,
     contextTokens: f.contextTokens,
     contextPct: contextPctOf(f.contextTokens),
+    costUsd: f.costUsd,
+    costTokens: f.costTokens,
+    costByDay: f.costByDay,
+    costUnpriced: f.costUnpriced,
     continuedFrom: f.continuedFrom ?? null,
   };
 }
