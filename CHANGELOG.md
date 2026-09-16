@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 151 — 2026-09-16
+- **Reopen a closed session** — click a strip whose terminal tab you've closed and it comes back, resuming right where it left off.
+
 ## Build 147 — 2026-09-14
 - **Cost tracking** — the header shows what you've spent **today** and **this month**, and each strip's detail view breaks down that session's cost and tokens. It's the API-equivalent value of the tokens (on a subscription, what the work *would* have cost — not billed); a `*` marks a figure that's still a lower bound.
 - Strips now show the **model** the session ran on.

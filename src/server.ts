@@ -9,7 +9,7 @@ import { DevServerScanner } from "./devServers.js";
 import { Engine } from "./engine.js";
 import { parseEnv, readEnvFile } from "./envfile.js";
 import { type HookSettings, assembleHealth, readHookSettings } from "./hooksHealth.js";
-import { openAircraft } from "./open.js";
+import { detectSessionHost, openAircraft } from "./open.js";
 import { startStatusPolling } from "./status.js";
 import { scanCosts } from "./costScan.js";
 import { Store } from "./store.js";
@@ -304,9 +304,31 @@ async function main(): Promise<void> {
     if (changed) landed = new Set(store.getLanded());
   }
 
+  // Remember each live terminal session's host (iTerm/Terminal/…) while it's running, so a
+  // click after its tab is closed can reopen + `claude --resume` it. Detection walks the pid's
+  // process tree, so it only works while alive — we do it once per session (guarded), lazily.
+  const hostProbed = new Set<string>();
+  async function persistLiveHosts(list: DiscoveredSession[]): Promise<void> {
+    for (const a of list) {
+      if (hostProbed.has(a.id)) continue;
+      const surfaces = a.surfaces ?? [a.source];
+      if (!surfaces.includes("cli")) continue; // desktop-only: no terminal tab to script
+      if (store.getHost(a.id)) {
+        hostProbed.add(a.id);
+        continue;
+      }
+      const pid = engine.registryEntry(a.id)?.pid;
+      if (!pid) continue; // not live yet — leave unprobed so we retry once it is
+      hostProbed.add(a.id);
+      const host = await detectSessionHost(pid);
+      if (host) store.setHost(a.id, host.kind, host.bin ?? null);
+    }
+  }
+
   // engine → persist sessions + push decorated update
   engine.on("update", (list: DiscoveredSession[]) => {
     store.syncSessions(list);
+    void persistLiveHosts(list);
     // fold each compacted predecessor's note/landed onto its live continuation and retire
     // its persisted row (so it can't come back as an offline strip). Idempotent per tick.
     let reassigned = false;
@@ -617,6 +639,8 @@ async function main(): Promise<void> {
         cwd: a.project ?? reg?.cwd ?? null,
         desktopOnly: surfaces.includes("desktop") && !surfaces.includes("cli"),
         knownHost: store.getHost(a.id),
+        // reopen closed terminal tabs by resuming the transcript (cli sessions only)
+        resumeId: surfaces.includes("cli") ? a.id : null,
       });
       // remember a freshly detected host, so a click on this strip still lands in the
       // right app once the session (and its registry entry) is gone

@@ -17,6 +17,8 @@ export interface OpenTarget {
   desktopOnly?: boolean;
   /** host remembered from an earlier click, while the session was still alive */
   knownHost?: { kind: string; bin?: string | null } | null;
+  /** CLI session id to `claude --resume` if the terminal tab was closed (cli sessions only) */
+  resumeId?: string | null;
 }
 
 export type HostKind =
@@ -100,6 +102,16 @@ async function detectHost(pid: number): Promise<Host> {
     if (!p || p === 1) break;
   }
   return { kind: "unknown", tty };
+}
+
+/**
+ * Detect a live session's terminal/IDE host from its pid, for persisting while it's alive —
+ * so a click after the tab is closed still knows where to reopen it. null when we can't tell
+ * (no scriptable host in the process tree).
+ */
+export async function detectSessionHost(pid: number): Promise<{ kind: HostKind; bin?: string } | null> {
+  const host = await detectHost(pid);
+  return host.kind === "unknown" ? null : { kind: host.kind, bin: host.bin };
 }
 
 /** macOS `open -a <app> [path]` */
@@ -204,6 +216,51 @@ async function focusTerminal(host: Host): Promise<OpenResult> {
 }
 
 /**
+ * Relaunch a CLI session whose terminal tab was closed. Its transcript still lives on disk,
+ * so `claude --resume <id>` continues the SAME session in place (no fork). We open a fresh tab
+ * in the remembered host, cd to the session's folder, and resume. Only iTerm2 and Terminal.app
+ * expose scripted new-tab-with-command, so this is limited to them.
+ */
+function reopenScript(kind: HostKind, cwd: string, id: string): string | null {
+  const cmd = asLiteral(`cd ${JSON.stringify(cwd)} && claude --resume ${id}`);
+  if (kind === "iterm") {
+    return `tell application "iTerm2"
+      activate
+      if (count of windows) = 0 then
+        set w to (create window with default profile)
+        tell current session of w to write text "${cmd}"
+      else
+        tell current window
+          set t to (create tab with default profile)
+          tell current session of t to write text "${cmd}"
+        end tell
+      end if
+    end tell
+    return "ok"`;
+  }
+  if (kind === "terminal") {
+    return `tell application "Terminal"
+      activate
+      do script "${cmd}"
+    end tell
+    return "ok"`;
+  }
+  return null;
+}
+
+/** true if we opened a new tab and kicked off `claude --resume` for the closed session */
+async function reopenTerminalSession(kind: HostKind, cwd: string, id: string): Promise<boolean> {
+  const script = reopenScript(kind, cwd, id);
+  if (!script) return false;
+  try {
+    const { stdout } = await exec("osascript", ["-e", script]);
+    return stdout.trim() === "ok";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Bring the session's host to the front: the exact terminal tab where we can resolve it,
  * the matching IDE project window for JetBrains, otherwise the app. macOS-only.
  */
@@ -243,6 +300,14 @@ export async function openAircraft(t: OpenTarget): Promise<OpenResult & { host?:
     } catch {
       // fall through
     }
+  }
+  // Terminal session whose tab was closed: the transcript survives, so reopen a tab and
+  // `claude --resume` it (continues in place, no fork). Only where we can script a new tab.
+  if ((known === "iterm" || known === "terminal") && t.resumeId && t.cwd) {
+    if (await reopenTerminalSession(known, t.cwd, t.resumeId)) {
+      return { ok: true, action: `reopen-${known}`, detail: t.resumeId };
+    }
+    // scripting failed → fall through to app-level focus
   }
   if (known && APP_NAME[known]) {
     await openApp(APP_NAME[known] as string);
