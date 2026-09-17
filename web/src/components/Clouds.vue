@@ -5,8 +5,9 @@ import { heli } from "../eggState";
 // Easter egg: soft smoke drifting over the whole screen that parts around the cursor.
 // A curl-noise flow field advects a few thousand light particles — the curl (a
 // divergence-free field) is what makes them read as turbulent, wispy smoke instead of dots.
-// The cursor injects a local push + swirl + a decaying wake impulse, so the haze curls
-// around the pointer and trails off it. Full-viewport, pointer-events:none, so the app
+// A still cursor parts + swirls the haze around it; a fast sweep lays a wake band along its
+// swept path that flings the smoke along the slash and trails off it (a "swoosh"). Full-
+// viewport, pointer-events:none, so the app
 // underneath stays fully visible and clickable. Self-contained — touches no board state,
 // and fully tears down (RAF + canvas + listeners) on unmount, so there's zero cost when off.
 
@@ -23,11 +24,17 @@ const FREQ = 0.004; // spatial scale of the swirls (smaller = broader, lazier ed
 const FLOW = 28; // base drift speed along the field (px/s)
 const DRIFT_Y = -8; // gentle overall rise (px/s), like warm smoke
 const FIELD_EVO = 0.05; // how fast the field itself churns over time
-const R = 150; // cursor influence radius (px)
+const R = 150; // radius of the gentle "parting" around a still cursor (px)
 const PUSH = 1500; // radial shove out of the cursor
 const SWIRL = 1000; // tangential spin around the cursor
-const WAKE = 1.1; // how much of the pointer's own motion the smoke inherits (trailing wake)
-const IMP_DRAG = 2.0; // how fast a mouse impulse bleeds off (higher = shorter trails)
+// swoosh: sweeping the pointer fast drags the smoke along its path and leaves a decaying wake
+const WAKE_SPEED = 850; // pointer speed (px/s) at which the swoosh reaches full strength
+const WAKE_CAP = 1.8; // clamp so a wild flick can't blow the whole field out
+const WAKE_FORCE = 3400; // peak drag along the direction of travel
+const WAKE_SPREAD = 700; // sideways opening, so the smoke splits along the slash
+const WAKE_R = 120; // half-width of the wake band at low speed…
+const WAKE_R_SPD = 0.055; // …widened by this × speed (a fast sweep gusts wider)
+const IMP_DRAG = 2.0; // how fast a pointer impulse bleeds off (higher = shorter trails)
 const SIZE_MIN = 120, SIZE_MAX = 320; // puff diameters (px) — big & overlapping = cloud, not dust
 const ALPHA_MIN = 0.07, ALPHA_MAX = 0.18; // per-puff opacity (additive, so overlaps build up)
 const LIFE_MIN = 9, LIFE_MAX = 22; // seconds before a puff recycles (fades in/out over life)
@@ -109,7 +116,7 @@ onMounted(() => {
   }
 
   // particle state in parallel typed arrays (a few thousand → keep GC quiet)
-  const COUNT = Math.min(1500, Math.round((W * H) / 2100));
+  const COUNT = Math.min(3000, Math.round((W * H) / 1050));
   const px = new Float32Array(COUNT), py = new Float32Array(COUNT);
   const ivx = new Float32Array(COUNT), ivy = new Float32Array(COUNT); // decaying mouse impulse
   const life = new Float32Array(COUNT), maxlife = new Float32Array(COUNT);
@@ -126,13 +133,11 @@ onMounted(() => {
   }
   for (let i = 0; i < COUNT; i++) spawn(i, true);
 
-  // pointer: window-level (fires even though the canvas is pointer-events:none), with a
-  // smoothed velocity so the smoke inherits the pointer's motion as a trailing wake.
-  let mx = -9999, my = -9999, mvx = 0, mvy = 0, lastMx = 0, lastMy = 0, seen = false;
-  function onMove(e: MouseEvent) {
-    if (seen) { mvx = e.clientX - lastMx; mvy = e.clientY - lastMy; }
-    mx = lastMx = e.clientX; my = lastMy = e.clientY; seen = true;
-  }
+  // pointer: window-level (fires even though the canvas is pointer-events:none). We only track
+  // the latest position; the per-frame sweep (last frame's pos → now) drives the swoosh, so a
+  // fast flick that jumps far in one frame still lays down a wake along its whole path.
+  let mx = -9999, my = -9999, pmx = -9999, pmy = -9999, seen = false;
+  function onMove(e: MouseEvent) { mx = e.clientX; my = e.clientY; seen = true; }
   window.addEventListener("mousemove", onMove, { passive: true });
   window.addEventListener("resize", resize);
 
@@ -161,7 +166,17 @@ onMounted(() => {
     else if (target > 0) notifiedFaded = false;
     const R2 = R * R;
     const impDecay = Math.exp(-IMP_DRAG * dt);
-    mvx *= 0.8; mvy *= 0.8; // the pointer's own velocity relaxes toward rest between moves
+    // pointer sweep this frame → drives the swoosh. Segment (sx0,sy0)→(mx,my), its speed sets
+    // the gust strength and band width; the impulse then decays (impDecay) into a trailing wake.
+    const sx0 = pmx, sy0 = pmy; pmx = mx; pmy = my;
+    const pdx = mx - sx0, pdy = my - sy0;
+    const moveDist = Math.hypot(pdx, pdy);
+    const spd = moveDist / dt;
+    const gust = Math.min(spd / WAKE_SPEED, WAKE_CAP);
+    const swoosh = seen && sx0 > -9000 && moveDist > 1.5 && gust > 0.02;
+    const invMove = moveDist > 0 ? 1 / moveDist : 0;
+    const dirx = pdx * invMove, diry = pdy * invMove;
+    const wakeR = WAKE_R + WAKE_R_SPD * spd, wakeR2 = wakeR * wakeR, mm2 = moveDist * moveDist || 1;
 
     ctx.clearRect(0, 0, W, H); // transparent clear — the app shows straight through
     // normal alpha (NOT additive): overlapping puffs converge toward the puff tone instead of
@@ -170,15 +185,31 @@ onMounted(() => {
 
     for (let i = 0; i < COUNT; i++) {
       const [fx, fy] = flow(px[i], py[i], t);
-      // cursor interaction
+      // cursor, still: the haze gently parts (push) and curls (swirl) around the pointer
       const dxm = px[i] - mx, dym = py[i] - my;
       const d2 = dxm * dxm + dym * dym;
-      if (d2 < R2) {
+      if (seen && d2 < R2) {
         const d = Math.sqrt(d2) + 0.001;
         const f = 1 - d / R;
         const ux = dxm / d, uy = dym / d;
-        ivx[i] += (ux * f * f * PUSH + -uy * f * SWIRL + mvx * f * WAKE) * dt;
-        ivy[i] += (uy * f * f * PUSH + ux * f * SWIRL + mvy * f * WAKE) * dt;
+        ivx[i] += (ux * f * f * PUSH - uy * f * SWIRL) * dt;
+        ivy[i] += (uy * f * f * PUSH + ux * f * SWIRL) * dt;
+      }
+      // cursor, moving fast: a wake band hugging the swept segment flings the smoke along the
+      // direction of travel (plus a little sideways split), scaled by how fast the pointer went.
+      if (swoosh) {
+        let tt = ((px[i] - sx0) * pdx + (py[i] - sy0) * pdy) / mm2;
+        tt = tt < 0 ? 0 : tt > 1 ? 1 : tt;
+        const wdx = px[i] - (sx0 + pdx * tt), wdy = py[i] - (sy0 + pdy * tt);
+        const wd2 = wdx * wdx + wdy * wdy;
+        if (wd2 < wakeR2) {
+          const wd = Math.sqrt(wd2) + 0.001;
+          const wf = 1 - wd / wakeR;
+          const drag = gust * WAKE_FORCE * wf * wf * dt;
+          const spread = gust * WAKE_SPREAD * wf * dt;
+          ivx[i] += dirx * drag + (wdx / wd) * spread;
+          ivy[i] += diry * drag + (wdy / wd) * spread;
+        }
       }
       // helicopter rotor downwash: a strong radial blast out of the heli's position
       if (heli.active) {
