@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 160 — 2026-09-28
+- Approving a permission prompt now moves a strip back to In-flight right away, instead of it flashing until Claude's next step.
+
 ## Build 155 — 2026-09-28
 - **Costs now include Claude Opus 5.5 sessions**, which were previously counted as $0 and marked with `*`.
 

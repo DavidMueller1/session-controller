@@ -24,8 +24,11 @@ const hookCmd = (arg: string): string => `bash "${SCRIPT}" ${arg}`;
 const DESIRED: { event: string; arg: string; matcher?: string }[] = [
   { event: "UserPromptSubmit", arg: "working" },
   { event: "PreToolUse", arg: "working", matcher: "" },
+  // after a tool finishes — flips an answered permission prompt back to working right away
+  { event: "PostToolUse", arg: "working", matcher: "" },
   { event: "Stop", arg: "needs-input" },
   { event: "Notification", arg: "needs-input" },
+  { event: "PermissionRequest", arg: "needs-input" },
   { event: "SessionEnd", arg: "clear" },
 ];
 
