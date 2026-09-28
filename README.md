@@ -8,9 +8,6 @@
     <img alt="self-updating" src="https://img.shields.io/badge/self--updating-3fb950?style=for-the-badge&labelColor=0d1117&color=3fb950" />
     <img alt="read-only" src="https://img.shields.io/badge/read--only-7d8590?style=for-the-badge&labelColor=0d1117&color=7d8590" />
   </p>
-  <p>
-    <a href="https://buymeacoffee.com/davidsaysthankyou"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy_me_a_coffee-davidsaysthankyou-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=0d1117&labelColor=FFDD00" /></a>
-  </p>
 </div>
 
 <p align="center">
@@ -23,6 +20,19 @@ of them for you. Every Claude session, whether it's the Claude Code CLI in a ter
 desktop app, shows up automatically as a live **flight strip**, and strips move between lanes as their
 state changes. It's a local macOS menu-bar app with a browser dashboard, and it never writes to
 Claude's files. See [CONCEPT.md](CONCEPT.md) for the full design.
+
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DavidMueller1/session-controller/main/install.sh | bash
+```
+
+This clones the repo into `~/Library/Application Support/Session Controller/repo`, builds a
+menu-bar app on your Mac, wires the tracking hooks, and adds a Login Item. Because the app is built
+locally, there's no Gatekeeper prompt. The dashboard runs at <http://127.0.0.1:4317>.
+
+Requirements: macOS and [Claude Code](https://code.claude.com). The [GitHub CLI](https://cli.github.com)
+(`gh`) is optional and only needed for the PR pills.
 
 ## Features
 
@@ -73,19 +83,6 @@ Strips move between lanes as each session's state changes:
     <td align="center"><sub>Click a lane's name for the grid</sub></td>
   </tr>
 </table>
-
-## Install
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/DavidMueller1/session-controller/main/install.sh | bash
-```
-
-This clones the repo into `~/Library/Application Support/Session Controller/repo`, builds a
-menu-bar app on your Mac, wires the tracking hooks, and adds a Login Item. Because the app is built
-locally, there's no Gatekeeper prompt. The dashboard runs at <http://127.0.0.1:4317>.
-
-Requirements: macOS and [Claude Code](https://code.claude.com). The [GitHub CLI](https://cli.github.com)
-(`gh`) is optional and only needed for the PR pills.
 
 ## Auto-update
 
@@ -139,3 +136,7 @@ pnpm screenshots       # regenerate docs/screenshots from demo mode (?demo), no 
 
 Open the dashboard with `?demo` to see it filled with made-up sessions (`?demo=tour` also animates a
 few lane changes). Demo mode never connects to the backend.
+
+---
+
+<sub>If Session Controller saves you some tab-hunting, you can <a href="https://buymeacoffee.com/davidsaysthankyou">buy me a coffee</a>.</sub>

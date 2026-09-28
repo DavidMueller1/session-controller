@@ -110,9 +110,10 @@ async function tourGif(browser) {
   const ctx = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, colorScheme: "dark", locale: "en-US" });
   const page = await ctx.newPage();
   await load(page, "?demo=tour");
-  // Freeze looping CSS animations (activity spinners, the "needs you" flash) so static stretches
-  // collapse into single frames. The taxi runs on the Web Animations API and is unaffected.
-  await page.addStyleTag({ content: "*, *::before, *::after { animation-play-state: paused !important; }" });
+  // Freeze the endlessly looping "needs you" flash so static stretches collapse into single frames.
+  // Only that one: pausing everything would also freeze each landing strip's strip-in fade at
+  // opacity 0 and leave a blank slot.
+  await page.addStyleTag({ content: ".strip.flash { animation-play-state: paused !important; }" });
   await sleep(3500 - 1800 - 300); // start just before the first scripted move
 
   const frames = [];
