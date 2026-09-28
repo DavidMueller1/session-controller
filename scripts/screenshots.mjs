@@ -87,11 +87,13 @@ function downscale(src, w, h, dw) {
   return { data: out, width: dw, height: dh };
 }
 
-// share of pixels that differ noticeably — used to fold near-identical frames into one
-function changed(a, b) {
-  let n = 0;
-  for (let i = 0; i < a.length; i += 16) if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > 24) n++;
-  return n / (a.length / 16);
+// Only fold truly identical frames. A looser "barely changed" test drops real content on this dark
+// UI: a strip fading in over a near-black lane moves few pixels by much, so its landing frames were
+// discarded and the GIF kept showing an empty slot. Unchanged frames are nearly free anyway (the
+// encoder writes them as transparent).
+function identical(a, b) {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 // every 4th pixel of every frame, so one shared palette covers the moving tokens too
@@ -127,7 +129,7 @@ async function tourGif(browser) {
   const kept = [];
   for (const f of frames) {
     const last = kept[kept.length - 1];
-    if (last && changed(last.data, f.data) < 0.002) continue;
+    if (last && identical(last.data, f.data)) continue;
     kept.push(f);
   }
   // 255 real colours + one reserved transparent slot: after the first frame, every pixel that
