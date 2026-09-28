@@ -1,7 +1,7 @@
 <div align="center">
   <img src="web/public/logo.svg" width="84" alt="Session Controller logo" />
   <h1>Session Controller</h1>
-  <p><strong>An air-traffic-control dashboard for running multiple Claude Code sessions in parallel.</strong></p>
+  <p><strong>A dashboard for running multiple Claude Code sessions in parallel without getting overwhelmed.</strong></p>
   <p>See every session at a glance, know which one is waiting on you, and jump straight back into it.</p>
   <p>
     <img alt="macOS" src="https://img.shields.io/badge/macOS-06090d?style=for-the-badge&logo=apple&logoColor=white" />
