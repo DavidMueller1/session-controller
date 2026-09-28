@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 161 — 2026-09-28
+- Sturdier session tracking: a turn that fails on a rate limit or API error now shows **Needs you** instead of staying In-flight, login and quota notifications no longer make a strip flash, and resumed sessions come back right away.
+
 ## Build 160 — 2026-09-28
 - Approving a permission prompt now moves a strip back to In-flight right away, instead of it flashing until Claude's next step.
 

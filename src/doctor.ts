@@ -26,13 +26,24 @@ const DESIRED: { event: string; arg: string; matcher?: string }[] = [
   { event: "PreToolUse", arg: "working", matcher: "" },
   // after a tool finishes — flips an answered permission prompt back to working right away
   { event: "PostToolUse", arg: "working", matcher: "" },
+  // a failed tool / an auto-mode denial: Claude carries on, same as a finished tool
+  { event: "PostToolUseFailure", arg: "working", matcher: "" },
+  { event: "PermissionDenied", arg: "working", matcher: "" },
   { event: "Stop", arg: "needs-input" },
+  // the turn died from an API error (rate limit, overload, …) — no Stop fires, so without
+  // this the strip would sit In-flight until the staleness cutoff
+  { event: "StopFailure", arg: "needs-input" },
   { event: "Notification", arg: "needs-input" },
   { event: "PermissionRequest", arg: "needs-input" },
+  // a (re)started session replaces a leftover "ended" marker, e.g. after `claude --resume`
+  { event: "SessionStart", arg: "started" },
   { event: "SessionEnd", arg: "clear" },
 ];
 
-type HookEntry = { type: string; command: string };
+// A hung hook would otherwise hold Claude for the 10-min default; ours finishes in ~0.1s.
+const HOOK_TIMEOUT_S = 5;
+
+type HookEntry = { type: string; command: string; timeout?: number };
 type HookGroup = { matcher?: string; hooks: HookEntry[] };
 type Settings = { hooks?: Record<string, HookGroup[]> } & Record<string, unknown>;
 
@@ -48,7 +59,7 @@ function mergeHooks(settings: Settings): { settings: Settings; touched: string[]
     const cleaned = arr
       .map((g) => ({ ...g, hooks: (g.hooks ?? []).filter((h) => !isOurs(h)) }))
       .filter((g) => (g.hooks ?? []).length > 0);
-    const group: HookGroup = { ...(d.matcher !== undefined ? { matcher: d.matcher } : {}), hooks: [{ type: "command", command: hookCmd(d.arg) }] };
+    const group: HookGroup = { ...(d.matcher !== undefined ? { matcher: d.matcher } : {}), hooks: [{ type: "command", command: hookCmd(d.arg), timeout: HOOK_TIMEOUT_S }] };
     hooks[d.event] = [...cleaned, group];
     touched.push(d.event);
   }
