@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 154 — 2026-09-28
+- **Search** — type in the header's scratchpad (or press `/`) to show only the strips whose title, branch, or folder matches.
+
 ## Build 153 — 2026-09-17
 - **Board lanes scroll now** — every lane holds any number of strips (In-flight/Landed scroll sideways, the rest vertically), with a soft edge-fade where there's more; click a lane's name to see everything in it as a grid.
 

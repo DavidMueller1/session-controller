@@ -13,7 +13,7 @@ import SegNumber from "./components/SegNumber.vue";
 import Clouds from "./components/Clouds.vue";
 import Helicopter from "./components/Helicopter.vue";
 import { useBoard } from "./useBoard";
-import { laneOf, isFlashing, formatUsd } from "./format";
+import { laneOf, isFlashing, formatUsd, projectName } from "./format";
 import type { Aircraft, LanePartition } from "./types";
 
 // Compact mode for the menu-bar popover (loaded as /?panel). Renders just the mini-board
@@ -150,6 +150,29 @@ const healthTitle = computed(() => {
 // server now, so the board renders whatever it sends.
 const boardAircraft = computed<Aircraft[]>(() => effectiveAircraft.value);
 
+// header scratchpad search: the board keeps only strips whose title, branch or folder matches
+const search = ref("");
+const searchEl = ref<HTMLInputElement | null>(null);
+const searchTerm = computed(() => search.value.trim().toLowerCase());
+const searchedAircraft = computed<Aircraft[]>(() => {
+  const q = searchTerm.value;
+  if (!q) return boardAircraft.value;
+  return boardAircraft.value.filter((a) => [a.title, a.branch, projectName(a.project)].some((f) => f?.toLowerCase().includes(q)));
+});
+function clearSearch() {
+  search.value = "";
+  searchEl.value?.blur();
+}
+function onSlash(e: KeyboardEvent) {
+  if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  e.preventDefault();
+  searchEl.value?.focus();
+}
+onMounted(() => window.addEventListener("keydown", onSlash));
+onBeforeUnmount(() => window.removeEventListener("keydown", onSlash));
+
 // order by when each entered its state, so tool calls / thinking don't reshuffle the
 // board — a strip only moves when its state actually changes.
 const orderKey = (a: { stateSince?: number | null; lastActivityAt: number | null }) =>
@@ -159,7 +182,7 @@ const orderKey = (a: { stateSince?: number | null; lastActivityAt: number | null
 // FlightBoard used to re-derive the same five from the same data). Computed once, shared.
 const lanes = computed<LanePartition>(() => {
   const p: LanePartition = { inflight: [], holding: [], parked: [], landed: [], mia: [] };
-  for (const a of boardAircraft.value) {
+  for (const a of searchedAircraft.value) {
     const l = laneOf(a);
     if (l === "inflight" || l === "holding" || l === "parked" || l === "landed" || l === "mia") p[l].push(a);
   }
@@ -423,6 +446,24 @@ function onOpen(id: string) { open(id); }
         <span v-if="parked.length" class="stat"><FlipCounter :value="parked.length" color="var(--parked)" /> parked</span>
         <span v-if="mia.length" class="stat"><FlipCounter :value="mia.length" color="var(--gray)" /> mia</span>
         <span v-if="landed.length" class="stat"><FlipCounter :value="landed.length" color="#4cc38a" /> landed</span>
+        <span class="hdr-div" aria-hidden="true"></span>
+        <label class="scratchpad" :class="{ active: searchTerm }">
+          <span class="sp-prompt" aria-hidden="true">&gt;</span>
+          <input
+            ref="searchEl"
+            v-model="search"
+            class="sp-input"
+            type="text"
+            placeholder="Search"
+            spellcheck="false"
+            autocomplete="off"
+            aria-label="Search strips by title, branch or folder"
+            @keydown.esc="clearSearch"
+          />
+          <span v-if="searchTerm" class="sp-count">{{ searchedAircraft.length }}/{{ boardAircraft.length }}</span>
+          <button v-if="searchTerm" class="sp-clear" aria-label="Clear search" @click.prevent="clearSearch"><i class="ti ti-x"></i></button>
+          <span v-else class="sp-key" aria-hidden="true">/</span>
+        </label>
         <span v-if="cost" class="hdr-div" aria-hidden="true"></span>
         <span v-if="cost" class="stat cost" :class="{ 'cost-partial': !cost.scanned || cost.unpricedSessions > 0 }" :data-tip="costTip">
           <span class="rmp">
@@ -610,6 +651,22 @@ header { flex: none; display: flex; align-items: center; justify-content: space-
 .bell.on { color: var(--amber); }
 .wn-btn { position: relative; }
 .wn-dot { position: absolute; top: 1px; right: 1px; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 5px color-mix(in srgb, var(--amber) 70%, transparent); }
+
+/* MCDU scratchpad — the line pilots type entries into: phosphor green on a dark CRT */
+.scratchpad {
+  display: inline-flex; align-items: center; gap: 6px; width: 190px; height: 23px; box-sizing: border-box; padding: 0 8px; border-radius: 4px; cursor: text;
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: #5ef0a0; background: #04080c; border: 0.5px solid rgba(94, 240, 160, 0.28);
+  box-shadow: inset 0 0 10px rgba(94, 240, 160, 0.05); transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.scratchpad:focus-within, .scratchpad.active { border-color: rgba(94, 240, 160, 0.6); box-shadow: inset 0 0 10px rgba(94, 240, 160, 0.1), 0 0 8px rgba(94, 240, 160, 0.15); }
+.sp-prompt { opacity: 0.7; text-shadow: 0 0 6px rgba(94, 240, 160, 0.55); }
+.sp-input { all: unset; flex: 1; min-width: 0; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; caret-color: #5ef0a0; text-shadow: 0 0 6px rgba(94, 240, 160, 0.55); }
+.sp-input::placeholder { color: rgba(94, 240, 160, 0.35); text-shadow: none; }
+.sp-key { font-size: 9px; line-height: 1; padding: 2px 4px; border: 0.5px solid rgba(94, 240, 160, 0.3); border-radius: 3px; opacity: 0.6; }
+.sp-count { font-size: 9px; opacity: 0.75; white-space: nowrap; }
+.sp-clear { all: unset; cursor: pointer; display: inline-flex; font-size: 11px; opacity: 0.6; }
+.sp-clear:hover { opacity: 1; }
 
 /* MCDU-style tooltip: phosphor-green monospace on a dark CRT screen — fits the ATC theme */
 .bell[data-tip], .stat.cost[data-tip] { position: relative; }
