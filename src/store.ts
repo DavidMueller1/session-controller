@@ -488,6 +488,15 @@ export class Store {
     return new Map(rows.map((r) => [r.path, r.file_size]));
   }
 
+  /** transcripts last priced with an unknown model → path to that model, so a later pricing-table
+   *  entry can get them re-priced even though their size never changes again */
+  unpricedModels(): Map<string, string | null> {
+    const rows = this.db
+      .prepare(`SELECT path, model FROM session_cost WHERE unpriced = 1 AND path IS NOT NULL`)
+      .all() as { path: string; model: string | null }[];
+    return new Map(rows.map((r) => [r.path, r.model]));
+  }
+
   /** per-session cost, for decorating the board */
   costById(): Map<string, { costUsd: number; tokens: CostTokens; unpriced: boolean }> {
     const rows = this.db

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { CONFIG } from "./config.js";
 import { parseCliIncremental } from "./parseCli.js";
+import { isPriced } from "./pricing.js";
 import type { Store } from "./store.js";
 
 /**
@@ -45,6 +46,7 @@ const CONCURRENCY = 4;
 export async function scanCosts(store: Store, root: string = CONFIG.cliProjectsDir): Promise<ScanResult> {
   const files = await transcripts(root);
   const known = store.scannedSizes();
+  const unpriced = store.unpricedModels();
   const result: ScanResult = { priced: 0, skipped: 0 };
 
   const queue = [...files];
@@ -61,7 +63,7 @@ export async function scanCosts(store: Store, root: string = CONFIG.cliProjectsD
       } catch {
         continue; // deleted between listing and stat
       }
-      if (known.get(file) === size) {
+      if (known.get(file) === size && !(unpriced.has(file) && isPriced(unpriced.get(file)))) {
         result.skipped++;
         continue;
       }

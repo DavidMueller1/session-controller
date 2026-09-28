@@ -17,6 +17,7 @@ const RATES: Record<string, [number, number]> = {
   "claude-mythos-5-1": [10, 50],
   "claude-fable-5": [10, 50],
   "claude-mythos-5": [10, 50],
+  "claude-opus-5-5": [4, 20],
   "claude-opus-5": [5, 25],
   "claude-opus-4-8": [5, 25],
   "claude-opus-4-7": [5, 25],
@@ -56,12 +57,18 @@ const SYNTHETIC = "<synthetic>";
 
 /** Fast mode runs the same model at a premium; the turn's `usage.speed` tells us it ran. */
 const FAST_RATES: Record<string, [number, number]> = {
+  "claude-opus-5-5": [8, 40],
   "claude-opus-5": [10, 50],
   "claude-opus-4-8": [10, 50],
 };
 
-/** Cache rates as multiples of the model's input rate (uniform across models). */
+/** Cache rates as multiples of the model's input rate. */
 const CACHE_READ = 0.1;
+/** Newer models price cache reads below the usual 10% ($0.20 on Opus 5.5, $0.25 on Fable 5.1). */
+const CACHE_READ_BY_MODEL: Record<string, number> = {
+  "claude-opus-5-5": 0.05,
+  "claude-fable-5-1": 0.025,
+};
 const CACHE_WRITE_5M = 1.25;
 const CACHE_WRITE_1H = 2;
 
@@ -124,7 +131,7 @@ export function costOf(usage: Usage, model: string | null | undefined): number |
 
   const inputUsd =
     (usage.input_tokens ?? 0) +
-    (usage.cache_read_input_tokens ?? 0) * CACHE_READ +
+    (usage.cache_read_input_tokens ?? 0) * (CACHE_READ_BY_MODEL[id] ?? CACHE_READ) +
     write5m * CACHE_WRITE_5M +
     write1h * CACHE_WRITE_1H;
 
