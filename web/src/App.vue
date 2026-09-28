@@ -13,6 +13,7 @@ import SegNumber from "./components/SegNumber.vue";
 import Clouds from "./components/Clouds.vue";
 import Helicopter from "./components/Helicopter.vue";
 import { useBoard } from "./useBoard";
+import { isDemo } from "./demo";
 import { laneOf, isFlashing, formatUsd, projectName } from "./format";
 import type { Aircraft, LanePartition } from "./types";
 
@@ -205,7 +206,7 @@ const holding = computed(() => lanes.value.holding);
 
 // true only when served by the Vite dev server (pnpm ui / dev:live on :5173); false in the
 // built bundle the installed app serves — so the DEV badge shows only on a dev board.
-const isDev = import.meta.env.DEV;
+const isDev = import.meta.env.DEV && !isDemo;
 
 // Bind the logo URL at runtime rather than `src="/logo.svg"`: a static src makes Vite
 // inline the SVG as a data-URI at compile time, and in dev that inlined copy gets cached
@@ -243,7 +244,7 @@ function closeHelp() {
   localStorage.setItem("fc-help-seen", "1");
 }
 onMounted(() => {
-  if (!panel && !localStorage.getItem("fc-help-seen")) helpOpen.value = true;
+  if (!panel && !isDemo && !localStorage.getItem("fc-help-seen")) helpOpen.value = true;
   if (!panel && !overlay) loadLatestLog(); // for the What's-new dot
 });
 

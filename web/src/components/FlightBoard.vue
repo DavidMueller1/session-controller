@@ -683,7 +683,7 @@ function onSlotClick(id: string, e: Event): void {
     <div v-if="openGrid && gridItems.length" class="drawer-overlay" @click.self="openGrid = null">
       <div class="drawer-panel">
         <div class="drawer-panel-h">
-          <span><i class="ti ti-layers-subtract"></i> {{ openGrid }} — {{ gridItems.length }}</span>
+          <span><i class="ti ti-layers-subtract"></i> {{ zones.find((z) => z.lane === openGrid)?.k ?? openGrid }} — {{ gridItems.length }}</span>
           <button class="icon" aria-label="close" @click="openGrid = null"><i class="ti ti-x"></i></button>
         </div>
         <div class="drawer-panel-grid">

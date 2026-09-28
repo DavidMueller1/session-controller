@@ -10,6 +10,7 @@
     "serve": "tsx src/server.ts",
     "dev": "tsx watch src/server.ts",
     "dev:live": "bash scripts/dev-live.sh",
+    "screenshots": "node scripts/screenshots.mjs",
     "dev:solo": "bash scripts/dev-solo.sh",
     "board": "tsx src/console-app.ts",
     "once": "tsx src/console-app.ts --once",
@@ -29,6 +30,9 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.2",
+    "gifenc": "^1.0.3",
+    "playwright": "^1.63.0",
+    "pngjs": "^7.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

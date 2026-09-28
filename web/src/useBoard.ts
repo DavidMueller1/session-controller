@@ -1,4 +1,5 @@
 import { ref, shallowRef } from "vue";
+import { createDemo, demoCost, isDemo, isDemoTour } from "./demo";
 import { isFlashing, projectName } from "./format";
 import type { Aircraft, AnthropicStatus, CostSummary, HooksHealth, WsMessage } from "./types";
 
@@ -30,6 +31,9 @@ export function useBoard(opts: { notify?: boolean } = {}) {
 
   let ws: WebSocket | null = null;
   let retry = 0;
+
+  const demo = isDemo ? createDemo() : null;
+  const demoRefresh = () => { if (demo) aircraft.value = reconcile(demo.list()); };
 
   // Reconcile an incoming board against the current one BY ID: reuse the existing object for
   // any strip whose data is unchanged, so its reference is stable and Vue skips re-rendering
@@ -166,6 +170,14 @@ export function useBoard(opts: { notify?: boolean } = {}) {
   }
 
   function start() {
+    if (demo) {
+      connected.value = true;
+      cost.value = demoCost;
+      demoRefresh();
+      if (isDemoTour) setInterval(() => (demo.tourStep(), demoRefresh()), 3500);
+      setInterval(() => (now.value = Date.now()), 5000);
+      return;
+    }
     if (notifyAllowed && notifySupported && Notification.permission === "granted" && localStorage.getItem("fc-notify") === "1") {
       notifyEnabled.value = true; // first snapshot baselines via the `primed` guard
     }
@@ -176,6 +188,7 @@ export function useBoard(opts: { notify?: boolean } = {}) {
   }
 
   async function setNote(id: string, note: string) {
+    if (demo) return (demo.setNote(id, note), demoRefresh());
     await fetch(`/api/aircraft/${encodeURIComponent(id)}/note`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -184,14 +197,17 @@ export function useBoard(opts: { notify?: boolean } = {}) {
   }
 
   async function removeNote(id: string) {
+    if (demo) return (demo.removeNote(id), demoRefresh());
     await fetch(`/api/aircraft/${encodeURIComponent(id)}/note`, { method: "DELETE" });
   }
 
   async function land(id: string) {
+    if (demo) return (demo.land(id), demoRefresh());
     await fetch(`/api/aircraft/${encodeURIComponent(id)}/landed`, { method: "POST" });
   }
 
   async function unland(id: string) {
+    if (demo) return (demo.unland(id), demoRefresh());
     await fetch(`/api/aircraft/${encodeURIComponent(id)}/landed`, { method: "DELETE" });
   }
 
@@ -220,6 +236,7 @@ export function useBoard(opts: { notify?: boolean } = {}) {
   }
 
   async function open(id: string) {
+    if (demo) return;
     try {
       const res = await fetch(`/api/aircraft/${encodeURIComponent(id)}/open`, { method: "POST" });
       const body = (await res.json()) as { ok?: boolean; action?: string };
