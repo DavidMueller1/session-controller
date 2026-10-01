@@ -14,8 +14,8 @@ interface RepoRow extends Cfg {
 }
 
 const GLOBAL_KEY = "__global__";
-defineProps<{ flight: boolean; notifySupported: boolean; notifyEnabled: boolean; version?: string }>();
-const emit = defineEmits<{ close: []; toggleFlight: []; toggleNotify: [] }>();
+defineProps<{ flight: boolean; notifySupported: boolean; notifyEnabled: boolean; showApi: boolean; showPlan: boolean; version?: string }>();
+const emit = defineEmits<{ close: []; toggleFlight: []; toggleNotify: []; toggleApi: []; togglePlan: [] }>();
 
 // App controls (moved out of the native menu). These queue a command the menu-bar app runs
 // on its ~1s poll; overlay state is read back so the toggle reflects reality.
@@ -151,6 +151,18 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
           <span class="s-plabel">Notify when a session needs you</span>
           <button class="s-toggle" :class="{ on: notifyEnabled }" @click="emit('toggleNotify')">
             <i class="ti" :class="notifyEnabled ? 'ti-bell' : 'ti-bell-off'"></i> {{ notifyEnabled ? "On" : "Off" }}
+          </button>
+        </div>
+        <div class="s-pref">
+          <span class="s-plabel">Show plan usage</span>
+          <button class="s-toggle" :class="{ on: showPlan }" @click="emit('togglePlan')">
+            <i class="ti" :class="showPlan ? 'ti-eye' : 'ti-eye-off'"></i> {{ showPlan ? "On" : "Off" }}
+          </button>
+        </div>
+        <div class="s-pref">
+          <span class="s-plabel">Show API costs</span>
+          <button class="s-toggle" :class="{ on: showApi }" @click="emit('toggleApi')">
+            <i class="ti" :class="showApi ? 'ti-eye' : 'ti-eye-off'"></i> {{ showApi ? "On" : "Off" }}
           </button>
         </div>
       </div>

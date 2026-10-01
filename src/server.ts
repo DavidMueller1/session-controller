@@ -16,6 +16,7 @@ import { Store } from "./store.js";
 import type { ActivityState, AnthropicStatus, CostSummary, DevServerInfo, DiscoveredSession, HooksHealth } from "./types.js";
 import { type UpdateStatus, checkForUpdate, getVersion } from "./version.js";
 import { readChangelog } from "./changelog.js";
+import { type PlanUsage, fetchPlanUsage } from "./planUsage.js";
 
 /** the ws socket type, sourced from @fastify/websocket to avoid importing ws directly */
 type WebSocket = import("@fastify/websocket").WebSocket;
@@ -380,6 +381,26 @@ async function main(): Promise<void> {
   setTimeout(() => void refreshUpdate(), 20_000);
   const updateTimer = setInterval(() => void refreshUpdate(), 20 * 60_000);
   app.get("/api/version", async () => ({ ...version, updateAvailable: updateStatus.available, latest: updateStatus.latest }));
+
+  // Plan usage (the subscription's weekly limit), asked from Claude Code every 5 min. A failed
+  // ask keeps the last good value rather than blanking the header.
+  let planUsage: PlanUsage | null = null;
+  let planInFlight = false;
+  const planMsg = () => ({ type: "plan", ts: Date.now(), plan: planUsage });
+  const refreshPlan = async () => {
+    if (planInFlight) return;
+    planInFlight = true;
+    try {
+      const next = await fetchPlanUsage();
+      if (!next) return;
+      planUsage = next;
+      broadcast(planMsg());
+    } finally {
+      planInFlight = false;
+    }
+  };
+  setTimeout(() => void refreshPlan(), 5_000);
+  const planTimer = setInterval(() => void refreshPlan(), 5 * 60_000);
   // On-demand check (Settings → App "Check now"): fetch the branch now and report the result
   // so the web can show real feedback, rather than the 20-min background poll.
   app.post("/api/check", async () => {
@@ -658,6 +679,7 @@ async function main(): Promise<void> {
     socket.send(JSON.stringify({ type: "status", ts: Date.now(), status: anthropicStatus }));
     socket.send(JSON.stringify({ type: "health", ts: Date.now(), health: hooksHealth }));
     socket.send(JSON.stringify(costMsg()));
+    socket.send(JSON.stringify(planMsg()));
     socket.send(JSON.stringify(versionMsg()));
     socket.on("close", () => clients.delete(socket));
     socket.on("error", () => clients.delete(socket));
@@ -688,6 +710,7 @@ async function main(): Promise<void> {
     clearInterval(healthTimer);
     clearInterval(devTimer);
     clearInterval(updateTimer);
+    clearInterval(planTimer);
     clearInterval(costScanTimer);
     await engine.stop();
     await app.close();

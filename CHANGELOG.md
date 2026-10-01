@@ -3,6 +3,10 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 162 — 2026-10-01
+- **Plan usage** in the header: see how much of your Claude plan's weekly limit is used, next to any extra credits, and the cost displays are now labelled **API**. Without a plan, the section gets a NO PLAN sticker. Either section can be hidden in Settings.
+- Lane counts moved from the header onto the lane names.
+
 ## Build 161 — 2026-09-28
 - Sturdier session tracking: a turn that fails on a rate limit or API error now shows **Needs you** instead of staying In-flight, login and quota notifications no longer make a strip flash, and resumed sessions come back right away.
 

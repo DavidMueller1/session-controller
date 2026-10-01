@@ -4,12 +4,12 @@ import Strip from "./components/Strip.vue";
 import FlightBoard from "./components/FlightBoard.vue";
 import Panel from "./components/Panel.vue";
 import Overlay from "./components/Overlay.vue";
-import FlipCounter from "./components/FlipCounter.vue";
 import Settings from "./components/Settings.vue";
 import Help from "./components/Help.vue";
 import Whatsnew from "./components/Whatsnew.vue";
 import Clock from "./components/Clock.vue";
 import SegNumber from "./components/SegNumber.vue";
+import ArcGauge from "./components/ArcGauge.vue";
 import Clouds from "./components/Clouds.vue";
 import Helicopter from "./components/Helicopter.vue";
 import { useBoard } from "./useBoard";
@@ -24,7 +24,7 @@ const panel = new URLSearchParams(location.search).has("panel");
 // panel. Also silent — the full dashboard owns notifications.
 const overlay = new URLSearchParams(location.search).has("overlay");
 
-const { aircraft, status, health, cost, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
+const { aircraft, status, health, cost, plan, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
 onMounted(start);
 
 // Cost readout: today's spend leads (it's the number that changes), the running month
@@ -41,11 +41,31 @@ function segCost(v: number): string {
 }
 const segToday = computed(() => (cost.value ? segCost(cost.value.today) : ""));
 const segMonth = computed(() => (cost.value ? segCost(cost.value.month) : ""));
+// PLAN section: the weekly limit gauge + the extra-usage credits window
+const CURRENCY_SIGN: Record<string, string> = { EUR: "€", USD: "$", GBP: "£" };
+const creditSign = computed(() => {
+  const c = plan.value?.credits?.currency ?? "USD";
+  return CURRENCY_SIGN[c] ?? c;
+});
+const segCredits = computed(() => (plan.value?.hasPlan && plan.value.credits ? segCost(plan.value.credits.used) : "    .  "));
+const planTip = computed(() => {
+  const p = plan.value;
+  if (!p) return "";
+  if (!p.hasPlan) return "No Claude plan on this machine —\nusage is billed per token (see API).";
+  const resets = p.weekResetsAt ? new Date(p.weekResetsAt).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "unknown";
+  const fmt = (v: number) => `${creditSign.value}${v.toFixed(2)}`;
+  const c = p.credits;
+  const credits = !c ? "" : !c.enabled ? "Extra credits off." : `Extra credits ${fmt(c.used)}${c.limit != null ? ` of ${fmt(c.limit)}` : ""} used this month.`;
+  return [`Weekly limit ${Math.round(p.weekPct ?? 0)}% used — resets ${resets}.`, credits].filter(Boolean).join("\n");
+});
+
 const costTip = computed(() => {
   const c = cost.value;
   if (!c) return "";
   const parts = [
-    "API-equivalent cost of the tokens —\non a subscription this is not an amount billed.",
+    plan.value && !plan.value.hasPlan
+      ? "Estimated API cost of the tokens —\nno plan on this machine, so this is billed."
+      : "API-equivalent cost of the tokens —\non a subscription this is not an amount billed.",
     !c.scanned ? "Still scanning the transcript history; earlier days this month may be missing." : "",
     c.unpricedSessions ? `${c.unpricedSessions} session(s) ran on a model with no price on file — both figures are lower bounds.` : "",
   ];
@@ -56,6 +76,11 @@ const costTip = computed(() => {
 // toggle drops to the simple per-lane list. Only an explicit "0" opts out of flight,
 // so a fresh visitor (no stored preference) gets the flight board.
 const flight = ref(localStorage.getItem("fc-flight") !== "0");
+// header sections, each hideable from Settings (default on)
+const showApi = ref(localStorage.getItem("fc-show-api") !== "0");
+const showPlan = ref(localStorage.getItem("fc-show-plan") !== "0");
+watch(showApi, (v) => localStorage.setItem("fc-show-api", v ? "1" : "0"));
+watch(showPlan, (v) => localStorage.setItem("fc-show-plan", v ? "1" : "0"));
 function toggleFlight() {
   flight.value = !flight.value;
   localStorage.setItem("fc-flight", flight.value ? "1" : "0");
@@ -442,12 +467,8 @@ function onOpen(id: string) { open(id); }
         <span v-if="isDev" class="dev-badge" title="Development build (Vite dev server) — not the installed app">DEV</span>
       </div>
       <div class="stats">
-        <span class="stat"><FlipCounter :value="holding.length" color="var(--amber)" /> holding</span>
-        <span class="stat"><FlipCounter :value="inflight.length" color="var(--green)" /> in-flight</span>
-        <span v-if="parked.length" class="stat"><FlipCounter :value="parked.length" color="var(--parked)" /> parked</span>
-        <span v-if="mia.length" class="stat"><FlipCounter :value="mia.length" color="var(--gray)" /> mia</span>
-        <span v-if="landed.length" class="stat"><FlipCounter :value="landed.length" color="#4cc38a" /> landed</span>
-        <span class="hdr-div" aria-hidden="true"></span>
+        <span class="rmp-field search-field">
+        <span class="rmp-cap rmp-cap-sect">SEARCH</span>
         <label class="scratchpad" :class="{ active: searchTerm }">
           <span class="sp-prompt" aria-hidden="true">&gt;</span>
           <input
@@ -455,7 +476,6 @@ function onOpen(id: string) { open(id); }
             v-model="search"
             class="sp-input"
             type="text"
-            placeholder="Search"
             spellcheck="false"
             autocomplete="off"
             aria-label="Search strips by title, branch or folder"
@@ -465,13 +485,33 @@ function onOpen(id: string) { open(id); }
           <button v-if="searchTerm" class="sp-clear" aria-label="Clear search" @click.prevent="clearSearch"><i class="ti ti-x"></i></button>
           <span v-else class="sp-key" aria-hidden="true">/</span>
         </label>
-        <span v-if="cost" class="hdr-div" aria-hidden="true"></span>
-        <span v-if="cost" class="stat cost" :class="{ 'cost-partial': !cost.scanned || cost.unpricedSessions > 0 }" :data-tip="costTip">
+        </span>
+        <span v-if="plan && showPlan" class="hdr-div" aria-hidden="true"></span>
+        <span v-if="plan && showPlan" class="stat plan" :class="{ 'no-plan': !plan.hasPlan }" :data-tip="planTip">
+          <span class="rmp">
+            <span class="rmp-field">
+              <span class="rmp-cap">WEEK</span>
+              <ArcGauge :pct="plan.hasPlan ? plan.weekPct : null" :severity="plan.weekSeverity" />
+            </span>
+            <span class="rmp-sect">PLAN</span>
+            <span class="rmp-field">
+              <span class="rmp-cap">CREDITS</span>
+              <span class="rmp-window"><SegNumber :value="segCredits" /><span class="rmp-cur">{{ creditSign }}</span></span>
+            </span>
+          </span>
+          <!-- an inoperative-instrument placard over the whole section when there is no plan -->
+          <button v-if="!plan.hasPlan" class="inop" aria-label="No plan — hide this section" @click="showPlan = false">
+            <span class="inop-face">NO PLAN</span><span class="inop-face inop-hover">HIDE?</span>
+          </button>
+        </span>
+        <span v-if="cost && showApi" class="hdr-div" aria-hidden="true"></span>
+        <span v-if="cost && showApi" class="stat cost" :class="{ 'cost-partial': !cost.scanned || cost.unpricedSessions > 0 }" :data-tip="costTip">
           <span class="rmp">
             <span class="rmp-field">
               <span class="rmp-cap">TODAY</span>
               <span class="rmp-window"><SegNumber :value="segToday" /><span class="rmp-cur">$</span></span>
             </span>
+            <span class="rmp-sect">API</span>
             <span class="rmp-field">
               <span class="rmp-cap">MONTH</span>
               <span class="rmp-window"><SegNumber :value="segMonth" /><span class="rmp-cur">$</span></span>
@@ -574,9 +614,13 @@ function onOpen(id: string) { open(id); }
       :flight="flight"
       :notify-supported="notifySupported"
       :notify-enabled="notifyEnabled"
+      :show-api="showApi"
+      :show-plan="showPlan"
       :version="version"
       @toggle-flight="toggleFlight"
       @toggle-notify="toggleNotify"
+      @toggle-api="showApi = !showApi"
+      @toggle-plan="showPlan = !showPlan"
       @close="settingsOpen = false"
     />
     <Help v-if="helpOpen" @close="closeHelp" />
@@ -608,7 +652,7 @@ function onOpen(id: string) { open(id); }
 .s-action:disabled { opacity: 0.6; cursor: default; }
 .stat.cost { display: inline-flex; align-items: center; cursor: help; }
 /* Airbus RMP: two equal amber 7-segment windows, each with a caption above (like ACTIVE / STBY) */
-.rmp { display: inline-flex; align-items: flex-end; gap: 12px; font-size: 15px; line-height: 1; }
+.rmp { display: inline-flex; align-items: baseline; gap: 6px; font-size: 15px; line-height: 1; }
 .rmp-field {
   display: inline-flex; flex-direction: column; align-items: center; gap: 3px;
   --seg-on: #ffb020; --seg-off: rgba(255, 176, 32, 0.09); --seg-glow: rgba(255, 176, 32, 0.8);
@@ -623,7 +667,30 @@ function onOpen(id: string) { open(id); }
 /* a total that's still being backfilled, or missing a model's price, is a lower bound —
    mark it rather than letting it read as exact */
 .stat.cost-partial { opacity: 0.75; }
-.cost-approx { margin-left: 1px; opacity: 0.7; }
+.cost-approx { align-self: flex-end; margin-left: 1px; opacity: 0.7; }
+/* section placard between a section's two instruments (API / PLAN): the captions' style a size up,
+   sitting up on the caption row. Zero-width and centred, it overflows evenly into the free caption
+   space on both sides, so the two windows close in to just the flex gaps. `.rmp` aligns on
+   baselines — each field's first line is its caption — so the label sits on the captions' baseline
+   in any font. Line-height 0 keeps the bigger text from making the row taller than its captions. */
+.rmp-sect { transform: translateY(-1px); width: 0; display: flex; justify-content: center; white-space: nowrap; font: 700 8.5px/0 ui-monospace, "SF Mono", monospace; letter-spacing: 0.2em; text-indent: 0.2em; color: rgba(214, 198, 168, 0.75); }
+/* the search box's caption, set like the API / PLAN placards; a 6.5px line box (the captions')
+   keeps the box itself on the displays' row */
+.rmp-cap-sect { font-size: 8.5px; line-height: 6.5px; transform: translateY(-1.5px); }
+.stat.plan { display: inline-flex; align-items: center; cursor: help; }
+.stat.plan.no-plan .rmp { opacity: 0.35; filter: grayscale(1); }
+/* INOP placard: the tape sticker maintenance slaps on an inoperative instrument. Hovering offers
+   to hide the section (both faces share one grid cell, so the sticker keeps its size). */
+.inop {
+  all: unset; position: absolute; left: 50%; top: 55%; transform: translate(-50%, -50%) rotate(-5deg); cursor: pointer;
+  display: grid; font: 800 9px/1 ui-monospace, "SF Mono", monospace; letter-spacing: 0.18em; text-indent: 0.18em; white-space: nowrap;
+  color: #1a1404; background: #f2c230; padding: 4px 9px; border-radius: 2px; border: 0.5px solid rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); transition: background 0.12s ease;
+}
+.inop-face { grid-area: 1 / 1; text-align: center; }
+.inop-hover, .inop:hover .inop-face { visibility: hidden; }
+.inop:hover .inop-hover { visibility: visible; }
+.inop:hover { background: #ffd54a; }
 
 header { flex: none; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft); }
 .brand { display: flex; align-items: center; gap: 9px; }
@@ -653,9 +720,10 @@ header { flex: none; display: flex; align-items: center; justify-content: space-
 .wn-btn { position: relative; }
 .wn-dot { position: absolute; top: 1px; right: 1px; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 5px color-mix(in srgb, var(--amber) 70%, transparent); }
 
-/* MCDU scratchpad — the line pilots type entries into: phosphor green on a dark CRT */
+/* MCDU scratchpad — the line pilots type entries into: phosphor green on a dark CRT. Captioned and
+   sized like the RMP windows (22.2px = a 7-segment window) so it sits on the same row as the displays. */
 .scratchpad {
-  display: inline-flex; align-items: center; gap: 6px; width: 190px; height: 23px; box-sizing: border-box; padding: 0 8px; border-radius: 4px; cursor: text;
+  display: inline-flex; align-items: center; gap: 6px; width: 190px; height: 22.2px; box-sizing: border-box; padding: 0 8px; border-radius: 4px; cursor: text;
   font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase;
   color: #5ef0a0; background: #04080c; border: 0.5px solid rgba(94, 240, 160, 0.28);
   box-shadow: inset 0 0 10px rgba(94, 240, 160, 0.05); transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -670,8 +738,8 @@ header { flex: none; display: flex; align-items: center; justify-content: space-
 .sp-clear:hover { opacity: 1; }
 
 /* MCDU-style tooltip: phosphor-green monospace on a dark CRT screen — fits the ATC theme */
-.bell[data-tip], .stat.cost[data-tip] { position: relative; }
-.bell[data-tip]::after, .stat.cost[data-tip]::after {
+.bell[data-tip], .stat.cost[data-tip], .stat.plan[data-tip] { position: relative; }
+.bell[data-tip]::after, .stat.cost[data-tip]::after, .stat.plan[data-tip]::after {
   content: attr(data-tip);
   position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%) translateY(3px);
   font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
@@ -681,17 +749,18 @@ header { flex: none; display: flex; align-items: center; justify-content: space-
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55), inset 0 0 10px rgba(94, 240, 160, 0.07);
   opacity: 0; pointer-events: none; z-index: 70; transition: opacity 0.12s ease, transform 0.12s ease;
 }
-.bell[data-tip]::before, .stat.cost[data-tip]::before {
+.bell[data-tip]::before, .stat.cost[data-tip]::before, .stat.plan[data-tip]::before {
   content: ""; position: absolute; top: calc(100% + 2px); left: 50%; transform: translateX(-50%) translateY(3px);
   border: 4px solid transparent; border-bottom-color: rgba(94, 240, 160, 0.5);
   opacity: 0; pointer-events: none; z-index: 70; transition: opacity 0.12s ease, transform 0.12s ease;
 }
 .bell[data-tip]:hover::after, .bell[data-tip]:hover::before,
-.stat.cost[data-tip]:hover::after, .stat.cost[data-tip]:hover::before { opacity: 1; transform: translateX(-50%) translateY(0); }
+.stat.cost[data-tip]:hover::after, .stat.cost[data-tip]:hover::before,
+.stat.plan[data-tip]:hover::after, .stat.plan[data-tip]:hover::before { opacity: 1; transform: translateX(-50%) translateY(0); }
 /* the cost tip is a sentence (not a short label) → let it wrap; an EXPLICIT width (not
    max-width, which shrink-to-fits to the tiny anchor) tuned so it lands on two lines. Keeps
    the icons' uppercase + letter-spacing (inherited from the base rule). */
-.stat.cost[data-tip]::after { white-space: pre-line; width: 400px; line-height: 1.5; text-align: left; }
+.stat.cost[data-tip]::after, .stat.plan[data-tip]::after { white-space: pre-line; width: 400px; line-height: 1.5; text-align: left; }
 /* rightmost icon: anchor the tooltip to the right so it can't spill off-screen */
 .bell[data-tip].tip-right::after { left: auto; right: 0; transform: translateX(0) translateY(3px); }
 .bell[data-tip].tip-right:hover::after { transform: translateX(0) translateY(0); }

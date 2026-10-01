@@ -35,6 +35,8 @@ the [GitHub CLI](https://cli.github.com) is optional, for PR pills.
 - **One click back in:** focuses the exact iTerm2 or Terminal.app tab, JetBrains window, or Claude app,
   and reopens a closed terminal session with `claude --resume`
 - **Search** by title, branch, or folder (press `/`)
+- **Plan usage:** how much of your Claude plan's weekly limit is used, plus any extra credits
+- **API cost:** what today's and this month's tokens cost at API list prices
 - **Per strip:** PR status, dev server controls, context usage, and token cost
 
 <p align="center">
@@ -77,8 +79,10 @@ new version is out. Your board (notes, landings) is never touched by an update.
 A Claude update may have removed the tracking hooks. The board shows a banner when that happens;
 run `pnpm run doctor` in the repo to re-wire them.
 
-**What does the cost mean?**
-What your tokens would cost at API list prices. On a Pro or Max plan that isn't what you pay.
+**What do PLAN and API in the header show?**
+PLAN is your Claude plan's weekly limit (as in `/usage`) and the extra credits you've used past it.
+API is what your tokens would cost at API list prices. On a plan that isn't what you pay; without a
+plan it is, and PLAN shows a NO PLAN sticker. Either can be hidden in Settings.
 
 ## Develop
 

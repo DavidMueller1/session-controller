@@ -625,7 +625,7 @@ function onSlotClick(id: string, e: Event): void {
     <div v-for="(c, i) in corridors" :key="'c' + i" class="corridor" :style="{ transform: `translate(${c.x}px, ${c.y}px)`, width: c.w + 'px', height: c.h + 'px', borderRadius: c.radius }"></div>
     <svg class="taxi-svg" :viewBox="`0 0 ${skyW} ${skyH}`" preserveAspectRatio="none"><path :d="taxiPath" /></svg>
 
-    <button v-for="z in zones" :key="z.k" class="lane-label" :style="{ transform: `translate(${z.x}px, ${z.y}px)`, width: LABEL_W + 'px', height: z.h + 'px', color: z.c }" :title="`Open ${z.k} grid`" @click="openGrid = z.lane"><span>{{ z.k }}</span></button>
+    <button v-for="z in zones" :key="z.k" class="lane-label" :style="{ transform: `translate(${z.x}px, ${z.y}px)`, width: LABEL_W + 'px', height: z.h + 'px', color: z.c }" :title="`Open ${z.k} grid`" @click="openGrid = z.lane"><span>{{ z.k }}<span class="lane-count">{{ listFor(z.lane).value.length }}</span></span></button>
 
     <!-- resting strips: each lane is a clipped scroll container; strips inside use local coords -->
     <div
@@ -722,6 +722,11 @@ function onSlotClick(id: string, e: Event): void {
 .lane-label { all: unset; position: absolute; top: 0; left: 0; display: flex; align-items: center; justify-content: center; z-index: 3; cursor: pointer; box-sizing: border-box; }
 .lane-label span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 10px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: currentColor; white-space: nowrap; opacity: 0.85; transition: opacity 0.15s ease; }
 .lane-label:hover span { opacity: 1; text-decoration: underline; }
+/* The count trails the name but is taken out of flow (absolute, just past the text's inline
+   end), so the centred name never moves when the count gains a digit — it only grows outward. */
+.lane-label span { position: relative; }
+.lane-label .lane-count { position: absolute; inset-inline-start: 100%; inset-block-start: 0; writing-mode: inherit; transform: none; font-variant-numeric: tabular-nums; letter-spacing: 0.5px; opacity: 1; text-decoration: none; }
+.lane-label .lane-count::before { content: "·"; margin-inline: 5px; }
 /* each lane is a clipping scroll container. Scrollbars are HIDDEN (not just thin): a classic
    space-taking bar — which non-overlay platforms always render — eats into the fixed card
    height/width and clips the strips. Scroll still works by wheel/trackpad; the lane name opens

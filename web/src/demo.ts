@@ -1,4 +1,4 @@
-import type { Aircraft, CostSummary, DevServerInfo, PrInfo } from "./types";
+import type { Aircraft, CostSummary, DevServerInfo, PlanUsage, PrInfo } from "./types";
 
 // `?demo` swaps the live backend for made-up sessions, for screenshots in public docs.
 // Nothing real is read or written: board data, notes/landings and every /api call stay in
@@ -6,6 +6,8 @@ import type { Aircraft, CostSummary, DevServerInfo, PrInfo } from "./types";
 const params = new URLSearchParams(location.search);
 export const isDemo = params.has("demo");
 export const isDemoTour = params.get("demo") === "tour";
+/** `?demo=noplan` previews the board for someone without a Claude plan (INOP placard) */
+export const isDemoNoPlan = params.get("demo") === "noplan";
 
 const MIN = 60_000;
 
@@ -74,6 +76,18 @@ const SEEDS: Seed[] = [
 ];
 
 export const demoCost: CostSummary = { today: 38.42, month: 612.75, unpricedSessions: 0, scanned: true };
+
+export const demoPlan: PlanUsage = isDemoNoPlan
+  ? { hasPlan: false, subscription: null, weekPct: null, weekResetsAt: null, weekSeverity: null, credits: null, asOf: Date.now() }
+  : {
+      hasPlan: true,
+      subscription: "max",
+      weekPct: 62,
+      weekResetsAt: Date.now() + 2.5 * 24 * 3_600_000,
+      weekSeverity: "normal",
+      credits: { enabled: true, used: 12.4, limit: 100, currency: "USD" },
+      asOf: Date.now(),
+    };
 
 /** the in-memory demo board: seeded sessions plus the note/land edits made while clicking around */
 export function createDemo() {

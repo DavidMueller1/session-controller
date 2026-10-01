@@ -138,8 +138,21 @@ export interface HooksHealth {
   checkedAt: number;
 }
 
+/** the user's Claude plan as Claude Code reports it — see src/planUsage.ts */
+export interface PlanUsage {
+  /** false = no subscription: usage is billed per token */
+  hasPlan: boolean;
+  subscription: string | null;
+  weekPct: number | null;
+  weekResetsAt: number | null;
+  weekSeverity: string | null;
+  credits: { enabled: boolean; used: number; limit: number | null; currency: string } | null;
+  asOf: number;
+}
+
 export type WsMessage =
   | { type: "snapshot" | "update"; ts: number; aircraft: Aircraft[] }
+  | { type: "plan"; ts: number; plan: PlanUsage | null }
   | { type: "status"; ts: number; status: AnthropicStatus | null }
   | { type: "health"; ts: number; health: HooksHealth | null }
   | { type: "cost"; ts: number; cost: CostSummary }
