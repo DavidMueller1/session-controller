@@ -18,6 +18,8 @@ export interface RegistryEntry {
    *  recency comparisons — an interrupt flips this to the idle time. Null if absent. */
   statusUpdatedAt: number | null;
   entrypoint: string | null;
+  /** the Claude desktop app's id for a session it hosts (`local_…`) */
+  hostSessionId: string | null;
   pid: number | null;
   cwd: string | null;
   /** file mtime — when Claude Code last wrote this entry; used to tell whether the
@@ -56,6 +58,7 @@ export async function parseRegistryFile(filePath: string): Promise<RegistryEntry
     status: typeof o.status === "string" ? o.status : null,
     statusUpdatedAt: typeof o.statusUpdatedAt === "number" ? o.statusUpdatedAt : null,
     entrypoint: typeof o.entrypoint === "string" ? o.entrypoint : null,
+    hostSessionId: typeof o.hostSessionId === "string" ? o.hostSessionId : null,
     pid: typeof o.pid === "number" ? o.pid : null,
     cwd: typeof o.cwd === "string" ? o.cwd : null,
     mtimeMs,

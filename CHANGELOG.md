@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 164 — 2026-10-05
+- Clicking a desktop-app session now opens exactly that session in the Claude app, instead of just bringing the app to the front.
+
 ## Build 163 — 2026-10-05
 - The header clock is now a split-flap display, in 24-hour time.
 

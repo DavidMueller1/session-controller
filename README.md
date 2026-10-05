@@ -32,7 +32,7 @@ the [GitHub CLI](https://cli.github.com) is optional, for PR pills.
 
 - **Live status** for every session, driven by Claude Code hooks
 - **Knows who needs you:** strips flash when a session is waiting on your answer, with optional notifications
-- **One click back in:** focuses the exact iTerm2 or Terminal.app tab, JetBrains window, or Claude app,
+- **One click back in:** focuses the exact iTerm2 or Terminal.app tab, JetBrains window, or Claude desktop session,
   and reopens a closed terminal session with `claude --resume`
 - **Search** by title, branch, or folder (press `/`)
 - **Plan usage:** how much of your Claude plan's weekly limit is used, plus any extra credits

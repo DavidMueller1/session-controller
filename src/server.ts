@@ -662,6 +662,7 @@ async function main(): Promise<void> {
         knownHost: store.getHost(a.id),
         // reopen closed terminal tabs by resuming the transcript (cli sessions only)
         resumeId: surfaces.includes("cli") ? a.id : null,
+        desktopSessionId: a.desktopSessionId ?? reg?.hostSessionId ?? null,
       });
       // remember a freshly detected host, so a click on this strip still lands in the
       // right app once the session (and its registry entry) is gone

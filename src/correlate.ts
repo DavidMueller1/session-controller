@@ -87,10 +87,10 @@ export function correlate(all: DiscoveredSession[]): DiscoveredSession[] {
       // predecessor: `supersedes` drives offlineSessions() to drop the orphan strip and
       // reassign() to delete its persisted row (carrying any note/landed onto this flight).
       const supersedes = s.id !== merged.id ? [...(merged.supersedes ?? []), s.id] : merged.supersedes;
-      out.push({ ...merged, supersedes });
+      out.push({ ...merged, supersedes, desktopSessionId: s.id });
       consumedCliIds.add(link);
     } else {
-      out.push({ ...s, surfaces: ["desktop"] });
+      out.push({ ...s, surfaces: ["desktop"], desktopSessionId: s.id });
     }
   }
 

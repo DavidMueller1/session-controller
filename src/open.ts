@@ -19,6 +19,8 @@ export interface OpenTarget {
   knownHost?: { kind: string; bin?: string | null } | null;
   /** CLI session id to `claude --resume` if the terminal tab was closed (cli sessions only) */
   resumeId?: string | null;
+  /** the Claude desktop app's id for this session (`local_…`), to open exactly it there */
+  desktopSessionId?: string | null;
 }
 
 export type HostKind =
@@ -261,14 +263,32 @@ async function reopenTerminalSession(kind: HostKind, cwd: string, id: string): P
 }
 
 /**
+ * Open a session in the Claude desktop app. `claude://code/continue?session=local_…` navigates
+ * to that (non-archived) session like a sidebar click — no import or copy, unlike
+ * `claude://resume`. Without a desktop id we can only bring the app forward.
+ */
+const DESKTOP_SESSION_ID = /^local_[A-Za-z0-9-]{1,64}$/;
+async function focusDesktopSession(id: string | null | undefined): Promise<OpenResult> {
+  if (id && DESKTOP_SESSION_ID.test(id)) {
+    try {
+      await exec("open", [`claude://code/continue?session=${id}`]);
+      return { ok: true, action: "focus-claude-session", detail: id };
+    } catch {
+      /* fall back to the app */
+    }
+  }
+  await openApp("Claude");
+  return { ok: true, action: "focus-claude" };
+}
+
+/**
  * Bring the session's host to the front: the exact terminal tab where we can resolve it,
  * the matching IDE project window for JetBrains, otherwise the app. macOS-only.
  */
 export async function openAircraft(t: OpenTarget): Promise<OpenResult & { host?: { kind: string; bin?: string } }> {
   // desktop session → focus the Claude app
   if (t.entrypoint === "claude-desktop" || (t.desktopOnly && !t.pid)) {
-    await openApp("Claude");
-    return { ok: true, action: "focus-claude" };
+    return focusDesktopSession(t.desktopSessionId);
   }
 
   const host = t.pid ? await detectHost(t.pid) : { kind: "unknown" as HostKind };
@@ -313,6 +333,9 @@ export async function openAircraft(t: OpenTarget): Promise<OpenResult & { host?:
     await openApp(APP_NAME[known] as string);
     return { ok: true, action: `focus-${known}` };
   }
+
+  // Gone, no terminal host recorded, but the desktop app has this session: open it there.
+  if (t.desktopSessionId && DESKTOP_SESSION_ID.test(t.desktopSessionId)) return focusDesktopSession(t.desktopSessionId);
 
   // Nothing known — do NOT guess an app. A surprise window is worse than no jump.
   return { ok: false, action: "unknown-host", detail: root ?? undefined };
