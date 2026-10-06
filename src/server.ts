@@ -305,6 +305,29 @@ async function main(): Promise<void> {
     if (changed) landed = new Set(store.getLanded());
   }
 
+  // Auto-land (opt-in): a strip lands once its PR is merged and it isn't working. Each trigger
+  // lands it only once, so after an unland (by hand, or by working again) it stays put until a
+  // new trigger comes along.
+  let autoLand = store.getSetting("autoLand") === "1";
+  let autoLanded = store.getAutoLanded();
+  function autoLandMerged(list: DiscoveredSession[]): boolean {
+    if (!autoLand) return false;
+    let changed = false;
+    for (const a of list) {
+      if (a.pr?.state !== "MERGED" || a.state === "working") continue;
+      const trigger = `pr#${a.pr.number}`;
+      if (autoLanded.get(a.id) === trigger) continue;
+      store.setAutoLanded(a.id, trigger);
+      autoLanded.set(a.id, trigger);
+      if (!landed.has(a.id)) {
+        store.setLanded(a.id);
+        changed = true;
+      }
+    }
+    if (changed) landed = new Set(store.getLanded());
+    return changed;
+  }
+
   // Remember each live terminal session's host (iTerm/Terminal/…) while it's running, so a
   // click after its tab is closed can reopen + `claude --resume` it. Detection walks the pid's
   // process tree, so it only works while alive — we do it once per session (guarded), lazily.
@@ -337,9 +360,11 @@ async function main(): Promise<void> {
     if (reassigned) {
       notes = store.getNotes();
       landed = new Set(store.getLanded());
+      autoLanded = store.getAutoLanded();
       syncKeepIds();
     }
     autoUnlandOnWork(list);
+    autoLandMerged(list);
     recordLiveCost(list);
     const prevCost = costSummary;
     refreshCost();
@@ -502,6 +527,16 @@ async function main(): Promise<void> {
     landed = new Set(store.getLanded());
     pushUpdate();
     return { ok: true, id: req.params.id, landed: false };
+  });
+
+  app.get("/api/settings", async () => ({ autoLand }));
+  app.put<{ Body: { autoLand?: boolean } }>("/api/settings", async (req) => {
+    if (typeof req.body?.autoLand === "boolean") {
+      autoLand = req.body.autoLand;
+      store.setSetting("autoLand", autoLand ? "1" : "0");
+      if (autoLandMerged(engine.aircraft())) pushUpdate();
+    }
+    return { autoLand };
   });
 
   // repos the tower has strips for, with their per-repo config — drives the Settings modal

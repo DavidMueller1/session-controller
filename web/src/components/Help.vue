@@ -41,9 +41,9 @@ const actions = [
   { icon: "ti-pointer", title: "Click a strip", desc: "Opens its detail — full path, model, surfaces, last event, timestamps, and Open window." },
   { icon: "ti-server-2", title: "dev ▾", desc: "Install dependencies, start / stop the dev server, and view live logs." },
   { icon: "ti-pin", title: "note", desc: "Pin a note — turns a flashing “Needs you” into a calm Parked strip." },
-  { icon: "ti-plane-arrival", title: "land", desc: "Mark done → Landed. Auto-un-lands if the session starts working again." },
+  { icon: "ti-plane-arrival", title: "land", desc: "Mark done → Landed. Auto-un-lands if the session starts working again. Turn on Auto-land in Settings to land strips whose PR is merged." },
   { icon: "ti-sparkles", title: "What's new", desc: "The changelog. A dot on the icon marks new entries after an update." },
-  { icon: "ti-settings", title: "Settings (gear)", desc: "Board view & notifications, show / hide PLAN and API, the overlay rail, check-for-updates / restart / quit, and per-repo dev config." },
+  { icon: "ti-settings", title: "Settings (gear)", desc: "Board view & notifications, auto-land on merged PRs, show / hide PLAN and API, the overlay rail, check-for-updates / restart / quit, and per-repo dev config." },
 ];
 </script>
 

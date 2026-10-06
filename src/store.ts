@@ -91,6 +91,17 @@ export class Store {
         id        TEXT PRIMARY KEY,
         landed_at INTEGER NOT NULL
       );
+      /* the trigger each strip was last auto-landed for (e.g. "pr#123"), so a trigger lands it
+         once — unlanding by hand or by working again doesn't get undone on the next tick */
+      CREATE TABLE IF NOT EXISTS auto_landed (
+        id      TEXT PRIMARY KEY,
+        trigger TEXT NOT NULL,
+        at      INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS project_config (
         repo_key         TEXT PRIMARY KEY,
         repo_name        TEXT,
@@ -244,6 +255,27 @@ export class Store {
     this.db.prepare(`DELETE FROM landed WHERE id = ?`).run(id);
   }
 
+  /** id → the trigger each strip was last auto-landed for */
+  getAutoLanded(): Map<string, string> {
+    const rows = this.db.prepare(`SELECT id, trigger FROM auto_landed`).all() as { id: string; trigger: string }[];
+    return new Map(rows.map((r) => [r.id, r.trigger]));
+  }
+
+  setAutoLanded(id: string, trigger: string): void {
+    this.db
+      .prepare(`INSERT INTO auto_landed (id, trigger, at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET trigger = excluded.trigger, at = excluded.at`)
+      .run(id, trigger, Date.now());
+  }
+
+  getSetting(key: string): string | null {
+    const row = this.db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db.prepare(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(key, value);
+  }
+
   /** the host we last saw a session running in, or null if we never resolved one */
   getHost(id: string): { kind: string; bin: string | null } | null {
     const row = this.db.prepare(`SELECT host_kind, host_bin FROM sessions WHERE id = ?`).get(id) as
@@ -340,9 +372,9 @@ export class Store {
 
   /**
    * Fold a superseded predecessor onto its continuation (a `/compact` chain). Moves the
-   * note + landed flag to the successor if it doesn't already have them, then retires the
-   * predecessor's note, landed, and persisted session row (so it can't resurface as an
-   * offline strip). Idempotent — a no-op once the predecessor is gone. Returns true iff
+   * note, landed flag and auto-land record to the successor if it doesn't already have them,
+   * then retires the predecessor's rows and its persisted session (so it can't resurface as
+   * an offline strip). Idempotent — a no-op once the predecessor is gone. Returns true iff
    * anything changed, so the caller can refresh its cached maps.
    */
   reassign(fromId: string, toId: string): boolean {
@@ -362,6 +394,13 @@ export class Store {
       if (fromLanded) {
         this.db.prepare(`INSERT INTO landed (id, landed_at) VALUES (?, ?) ON CONFLICT(id) DO NOTHING`).run(toId, fromLanded.landed_at);
         this.db.prepare(`DELETE FROM landed WHERE id = ?`).run(fromId);
+        changed = true;
+      }
+
+      const fromAuto = this.db.prepare(`SELECT trigger, at FROM auto_landed WHERE id = ?`).get(fromId) as { trigger: string; at: number } | undefined;
+      if (fromAuto) {
+        this.db.prepare(`INSERT INTO auto_landed (id, trigger, at) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING`).run(toId, fromAuto.trigger, fromAuto.at);
+        this.db.prepare(`DELETE FROM auto_landed WHERE id = ?`).run(fromId);
         changed = true;
       }
 

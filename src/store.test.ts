@@ -131,3 +131,11 @@ test("re-recording one transcript leaves its sibling transcripts untouched", () 
   assert.equal(s.costSummary("2026-09-15").month, 15);
   assert.equal(s.costSummary("2026-09-15").today, 15);
 });
+
+test("carries a strip's auto-land record over to its compacted continuation", () => {
+  const s = tmpStore();
+  s.setAutoLanded("old", "pr#7");
+  s.reassign("old", "new");
+  assert.equal(s.getAutoLanded().get("new"), "pr#7");
+  assert.equal(s.getAutoLanded().has("old"), false);
+});

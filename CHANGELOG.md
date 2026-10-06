@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 165 — 2026-10-06
+- **Auto-land** (Settings): strips land on their own once their PR is merged. Unlanding still works as before: by hand, or automatically when the session starts working again.
+
 ## Build 164 — 2026-10-05
 - Clicking a desktop-app session now opens exactly that session in the Claude app, instead of just bringing the app to the front.
 

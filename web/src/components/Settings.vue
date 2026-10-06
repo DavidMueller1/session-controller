@@ -40,6 +40,24 @@ function toggleOverlay() {
   appCmd("overlay-toggle");
   setTimeout(loadAppState, 1600);
 }
+// Server-side so it also lands strips while no board is open.
+const autoLand = ref(false);
+async function loadSettings() {
+  try {
+    autoLand.value = !!(await (await fetch("/api/settings")).json()).autoLand;
+  } catch {
+    /* leave as-is */
+  }
+}
+async function toggleAutoLand() {
+  autoLand.value = !autoLand.value;
+  try {
+    const r = await fetch("/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ autoLand: autoLand.value }) });
+    autoLand.value = !!(await r.json()).autoLand;
+  } catch {
+    autoLand.value = !autoLand.value;
+  }
+}
 // "Check now" with real feedback: ask the server to fetch the branch → if there's an update,
 // trigger it (the app applies + restarts, and the board auto-reloads); otherwise say so.
 type UpdState = "idle" | "checking" | "uptodate" | "updating" | "failed";
@@ -84,6 +102,7 @@ function quitApp() {
   if (confirm("Quit Session Controller? The menu-bar app and its server will exit.")) appCmd("quit");
 }
 onMounted(loadAppState);
+onMounted(loadSettings);
 
 const repos = ref<RepoRow[]>([]);
 const globals = ref<Cfg>({ urlTemplate: "", command: "", install: "", env: "" });
@@ -151,6 +170,12 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
           <span class="s-plabel">Notify when a session needs you</span>
           <button class="s-toggle" :class="{ on: notifyEnabled }" @click="emit('toggleNotify')">
             <i class="ti" :class="notifyEnabled ? 'ti-bell' : 'ti-bell-off'"></i> {{ notifyEnabled ? "On" : "Off" }}
+          </button>
+        </div>
+        <div class="s-pref">
+          <span class="s-plabel">Auto-land when the PR is merged</span>
+          <button class="s-toggle" :class="{ on: autoLand }" @click="toggleAutoLand">
+            <i class="ti" :class="autoLand ? 'ti-plane-arrival' : 'ti-plane-off'"></i> {{ autoLand ? "On" : "Off" }}
           </button>
         </div>
         <div class="s-pref">
