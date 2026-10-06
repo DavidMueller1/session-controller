@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 166 — 2026-10-06
+- Renaming a session while Claude is working no longer leaves its strip stuck In-flight after the turn ends.
+
 ## Build 165 — 2026-10-06
 - **Auto-land** (Settings): strips land on their own once their PR is merged. Unlanding still works as before: by hand, or automatically when the session starts working again.
 

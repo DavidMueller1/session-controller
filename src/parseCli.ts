@@ -63,6 +63,9 @@ function classify(o: any): NormEvent {
   }
 
   if (type === "user") {
+    // Context Claude Code injects under the user role (e.g. the reminder `/rename` appends
+    // after a finished turn) — not you typing, so it must not read as a new prompt.
+    if (o.isMeta === true) return { kind: "meta", ts, summary: "", isError: false };
     // An ESC interrupt fires no Stop hook, so this transcript turn is the authoritative
     // "you took back control" signal — flag it distinctly so state derivation reads it as
     // needs-input, not as work-in-motion (which a plain human/tool-result tail implies).

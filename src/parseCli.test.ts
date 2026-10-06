@@ -119,3 +119,18 @@ test("attributes each turn's cost to the local day that turn happened on", async
   assert.equal(res!.facts.costUsd, 15);
   assert.deepEqual(res!.facts.costByDay, { "2026-09-14": 5, "2026-09-15": 10 });
 });
+
+test("a reminder Claude Code injects after a finished turn doesn't read as a new prompt", async () => {
+  const file = await fixture([
+    assistantLine({ requestId: "req_a", text: "Done." }),
+    JSON.stringify({
+      type: "user",
+      isMeta: true,
+      sessionId: "s1",
+      timestamp: "2026-09-14T10:00:01.000Z",
+      message: { role: "user", content: '<system-reminder>\nThe user named this session "SETUP STUFF".\n</system-reminder>' },
+    }),
+  ]);
+  const res = await parseCliIncremental(file, null);
+  assert.equal(res!.facts.tailKind, "assistant-text");
+});
