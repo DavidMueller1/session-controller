@@ -14,8 +14,8 @@ import Clouds from "./components/Clouds.vue";
 import Helicopter from "./components/Helicopter.vue";
 import { useBoard } from "./useBoard";
 import { isDemo } from "./demo";
-import { laneOf, isFlashing, formatUsd, projectName } from "./format";
-import type { Aircraft, LanePartition } from "./types";
+import { accountTag, laneOf, isFlashing, formatUsd, projectName } from "./format";
+import type { Aircraft, CostSummary, LanePartition, PlanUsage } from "./types";
 
 // Compact mode for the menu-bar popover (loaded as /?panel). Renders just the mini-board
 // and tells useBoard to stay silent (the full dashboard owns notifications).
@@ -24,7 +24,7 @@ const panel = new URLSearchParams(location.search).has("panel");
 // panel. Also silent — the full dashboard owns notifications.
 const overlay = new URLSearchParams(location.search).has("overlay");
 
-const { aircraft, status, health, cost, plan, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
+const { aircraft, status, health, costs, plans, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
 onMounted(start);
 
 // Cost readout: today's spend leads (it's the number that changes), the running month
@@ -39,48 +39,71 @@ function segCost(v: number): string {
   const [intp, decp] = Math.min(v, 9999.99).toFixed(2).split(".");
   return " ".repeat(Math.max(0, 4 - intp.length)) + intp + "." + decp;
 }
-const segToday = computed(() => (cost.value ? segCost(cost.value.today) : ""));
-const segMonth = computed(() => (cost.value ? segCost(cost.value.month) : ""));
 // PLAN section: the weekly limit gauge + the extra-usage credits window
 const CURRENCY_SIGN: Record<string, string> = { EUR: "€", USD: "$", GBP: "£" };
-const creditSign = computed(() => {
-  const c = plan.value?.credits?.currency ?? "USD";
-  return CURRENCY_SIGN[c] ?? c;
-});
-const segCredits = computed(() => (plan.value?.hasPlan && plan.value.credits ? segCost(plan.value.credits.used) : "    .  "));
-const planTip = computed(() => {
-  const p = plan.value;
+const creditSignOf = (p: PlanUsage | null) => CURRENCY_SIGN[p?.credits?.currency ?? "USD"] ?? p?.credits?.currency ?? "$";
+function planTipFor(p: PlanUsage | null): string {
   if (!p) return "";
-  if (!p.hasPlan) return "No Claude plan on this machine —\nusage is billed per token (see API).";
+  if (!p.hasPlan) return "No Claude plan on this login —\nusage is billed per token (see API).";
   const resets = p.weekResetsAt ? new Date(p.weekResetsAt).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "unknown";
-  const fmt = (v: number) => `${creditSign.value}${v.toFixed(2)}`;
+  const fmt = (v: number) => `${creditSignOf(p)}${v.toFixed(2)}`;
   const c = p.credits;
   const credits = !c ? "" : !c.enabled ? "Extra credits off." : `Extra credits ${fmt(c.used)}${c.limit != null ? ` of ${fmt(c.limit)}` : ""} used this month.`;
   return [`Weekly limit ${Math.round(p.weekPct ?? 0)}% used — resets ${resets}.`, credits].filter(Boolean).join("\n");
-});
-
-const costTip = computed(() => {
-  const c = cost.value;
+}
+function costTipFor(c: CostSummary | null, p: PlanUsage | null): string {
   if (!c) return "";
   const parts = [
-    plan.value && !plan.value.hasPlan
-      ? "Estimated API cost of the tokens —\nno plan on this machine, so this is billed."
+    p && !p.hasPlan
+      ? "Estimated API cost of the tokens —\nno plan on this login, so this is billed."
       : "API-equivalent cost of the tokens —\non a subscription this is not an amount billed.",
     !c.scanned ? "Still scanning the transcript history; earlier days this month may be missing." : "",
     c.unpricedSessions ? `${c.unpricedSessions} session(s) ran on a model with no price on file — both figures are lower bounds.` : "",
   ];
   return parts.filter(Boolean).join(" ");
-});
+}
+
+// One PLAN + API pair per Claude account, each hideable in Settings. The default login shows
+// both until turned off; another login (~/.claude-<name>) starts hidden.
+type Section = "plan" | "api";
+const showKey = (kind: Section, id: string) => (id === "default" ? `fc-show-${kind}` : `fc-show-${kind}:${id}`);
+const showPrefs = ref<Record<string, boolean>>({});
+function isShown(kind: Section, id: string): boolean {
+  const k = showKey(kind, id);
+  if (k in showPrefs.value) return showPrefs.value[k];
+  const v = localStorage.getItem(k);
+  return v == null ? id === "default" : v !== "0";
+}
+function setShown(kind: Section, id: string, v: boolean) {
+  const k = showKey(kind, id);
+  showPrefs.value = { ...showPrefs.value, [k]: v };
+  localStorage.setItem(k, v ? "1" : "0");
+}
+const accountIds = computed(() => ["default", ...Object.keys({ ...costs.value, ...plans.value }).filter((id) => id !== "default")]);
+const headerAccounts = computed(() =>
+  accountIds.value.map((id) => {
+    const p = plans.value[id] ?? null;
+    const c = costs.value[id] ?? null;
+    return {
+      id,
+      tag: accountTag(id),
+      plan: isShown("plan", id) ? p : null,
+      cost: isShown("api", id) ? c : null,
+      planTip: planTipFor(p),
+      costTip: costTipFor(c, p),
+      sign: creditSignOf(p),
+      credits: p?.hasPlan && p.credits ? segCost(p.credits.used) : "    .  ",
+      today: c ? segCost(c.today) : "",
+      month: c ? segCost(c.month) : "",
+    };
+  }),
+);
+const sectionPrefs = computed(() => accountIds.value.map((id) => ({ id, tag: accountTag(id), plan: isShown("plan", id), api: isShown("api", id) })));
 
 // Board layout: the flight-layer (one animated coordinate space) is the default; the
 // toggle drops to the simple per-lane list. Only an explicit "0" opts out of flight,
 // so a fresh visitor (no stored preference) gets the flight board.
 const flight = ref(localStorage.getItem("fc-flight") !== "0");
-// header sections, each hideable from Settings (default on)
-const showApi = ref(localStorage.getItem("fc-show-api") !== "0");
-const showPlan = ref(localStorage.getItem("fc-show-plan") !== "0");
-watch(showApi, (v) => localStorage.setItem("fc-show-api", v ? "1" : "0"));
-watch(showPlan, (v) => localStorage.setItem("fc-show-plan", v ? "1" : "0"));
 function toggleFlight() {
   flight.value = !flight.value;
   localStorage.setItem("fc-flight", flight.value ? "1" : "0");
@@ -183,7 +206,7 @@ const searchTerm = computed(() => search.value.trim().toLowerCase());
 const searchedAircraft = computed<Aircraft[]>(() => {
   const q = searchTerm.value;
   if (!q) return boardAircraft.value;
-  return boardAircraft.value.filter((a) => [a.title, a.branch, projectName(a.project)].some((f) => f?.toLowerCase().includes(q)));
+  return boardAircraft.value.filter((a) => [a.title, a.branch, projectName(a.project), accountTag(a.account)].some((f) => f?.toLowerCase().includes(q)));
 });
 function clearSearch() {
   search.value = "";
@@ -486,39 +509,45 @@ function onOpen(id: string) { open(id); }
           <span v-else class="sp-key" aria-hidden="true">/</span>
         </label>
         </span>
-        <span v-if="plan && showPlan" class="hdr-div" aria-hidden="true"></span>
-        <span v-if="plan && showPlan" class="stat plan" :class="{ 'no-plan': !plan.hasPlan }" :data-tip="planTip">
+        <template v-for="h in headerAccounts" :key="h.id">
+        <template v-if="h.tag && (h.plan || h.cost)">
+          <span class="hdr-div" aria-hidden="true"></span>
+          <span class="acct-tag" :title="`${h.id} Claude account`">{{ h.tag }}</span>
+        </template>
+        <span v-if="h.plan && !h.tag" class="hdr-div" aria-hidden="true"></span>
+        <span v-if="h.plan" class="stat plan" :class="{ 'no-plan': !h.plan.hasPlan }" :data-tip="h.planTip">
           <span class="rmp">
             <span class="rmp-field">
               <span class="rmp-cap">WEEK</span>
-              <ArcGauge :pct="plan.hasPlan ? plan.weekPct : null" :severity="plan.weekSeverity" />
+              <ArcGauge :pct="h.plan.hasPlan ? h.plan.weekPct : null" :severity="h.plan.weekSeverity" />
             </span>
             <span class="rmp-sect">PLAN</span>
             <span class="rmp-field">
               <span class="rmp-cap">CREDITS</span>
-              <span class="rmp-window"><SegNumber :value="segCredits" /><span class="rmp-cur">{{ creditSign }}</span></span>
+              <span class="rmp-window"><SegNumber :value="h.credits" /><span class="rmp-cur">{{ h.sign }}</span></span>
             </span>
           </span>
           <!-- an inoperative-instrument placard over the whole section when there is no plan -->
-          <button v-if="!plan.hasPlan" class="inop" aria-label="No plan — hide this section" @click="showPlan = false">
+          <button v-if="!h.plan.hasPlan" class="inop" aria-label="No plan — hide this section" @click="setShown('plan', h.id, false)">
             <span class="inop-face">NO PLAN</span><span class="inop-face inop-hover">HIDE?</span>
           </button>
         </span>
-        <span v-if="cost && showApi" class="hdr-div" aria-hidden="true"></span>
-        <span v-if="cost && showApi" class="stat cost" :class="{ 'cost-partial': !cost.scanned || cost.unpricedSessions > 0 }" :data-tip="costTip">
+        <span v-if="h.cost && (!h.tag || h.plan)" class="hdr-div" aria-hidden="true"></span>
+        <span v-if="h.cost" class="stat cost" :class="{ 'cost-partial': !h.cost.scanned || h.cost.unpricedSessions > 0 }" :data-tip="h.costTip">
           <span class="rmp">
             <span class="rmp-field">
               <span class="rmp-cap">TODAY</span>
-              <span class="rmp-window"><SegNumber :value="segToday" /><span class="rmp-cur">$</span></span>
+              <span class="rmp-window"><SegNumber :value="h.today" /><span class="rmp-cur">$</span></span>
             </span>
             <span class="rmp-sect">API</span>
             <span class="rmp-field">
               <span class="rmp-cap">MONTH</span>
-              <span class="rmp-window"><SegNumber :value="segMonth" /><span class="rmp-cur">$</span></span>
+              <span class="rmp-window"><SegNumber :value="h.month" /><span class="rmp-cur">$</span></span>
             </span>
-            <span v-if="!cost.scanned || cost.unpricedSessions > 0" class="cost-approx">*</span>
+            <span v-if="!h.cost.scanned || h.cost.unpricedSessions > 0" class="cost-approx">*</span>
           </span>
         </span>
+        </template>
         <span class="hdr-div" aria-hidden="true"></span>
         <button class="bell wn-btn" data-tip="WHAT'S NEW" aria-label="What's new" @click="whatsnewOpen = true">
           <i class="ti ti-sparkles"></i>
@@ -614,13 +643,11 @@ function onOpen(id: string) { open(id); }
       :flight="flight"
       :notify-supported="notifySupported"
       :notify-enabled="notifyEnabled"
-      :show-api="showApi"
-      :show-plan="showPlan"
+      :sections="sectionPrefs"
       :version="version"
       @toggle-flight="toggleFlight"
       @toggle-notify="toggleNotify"
-      @toggle-api="showApi = !showApi"
-      @toggle-plan="showPlan = !showPlan"
+      @toggle-section="(kind, id) => setShown(kind, id, !isShown(kind, id))"
       @close="settingsOpen = false"
     />
     <Help v-if="helpOpen" @close="closeHelp" />
@@ -678,6 +705,8 @@ function onOpen(id: string) { open(id); }
    keeps the box itself on the displays' row */
 .rmp-cap-sect { font-size: 8.5px; line-height: 6.5px; transform: translateY(-1.5px); }
 .stat.plan { display: inline-flex; align-items: center; cursor: help; }
+/* which login the PLAN/API sections after it belong to — same tag as on its strips */
+.acct-tag { align-self: center; color: var(--acct); box-shadow: inset 0 0 0 0.5px var(--acct); border-radius: 4px; padding: 3px 5px 1.3px; font: 600 9px/9.7px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.08em; }
 .stat.plan.no-plan .rmp { opacity: 0.35; filter: grayscale(1); }
 /* INOP placard: the tape sticker maintenance slaps on an inoperative instrument. Hovering offers
    to hide the section (both faces share one grid cell, so the sticker keeps its size). */

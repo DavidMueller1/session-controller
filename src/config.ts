@@ -9,12 +9,7 @@ const home = os.homedir();
  * them ever mark a feature landed.
  */
 export const CONFIG = {
-  /** CLI transcripts: ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl */
-  cliProjectsDir: path.join(home, ".claude", "projects"),
-
-  /** live session registry: ~/.claude/sessions/<pid>.json — holds the user's rename
-   *  (`name`) and a live `status` per running session, keyed by sessionId */
-  sessionsDir: path.join(home, ".claude", "sessions"),
+  // transcripts, the session registry and settings live per account — see accounts.ts
 
   /** per-session state written by our Claude Code hooks (Stop/UserPromptSubmit/…):
    *  ~/.claude/tc-state/<session_id>.json = {state, ts}. Authoritative live signal that
@@ -27,14 +22,6 @@ export const CONFIG = {
    *  session has long since settled into MIA/offline and can't pop back to In-flight. */
   hookStateGcMs: 12 * 60 * 60_000,
   hookGcMs: 60 * 60_000, // how often to run that prune
-
-  /** user-level Claude Code settings files where our hooks are wired — read (not watched)
-   *  to verify the hooks are still installed (a Claude update can rewrite settings.json,
-   *  silently dropping the board back to transcript inference) */
-  claudeSettingsFiles: [
-    path.join(home, ".claude", "settings.json"),
-    path.join(home, ".claude", "settings.local.json"),
-  ],
 
   /** Claude Desktop (Cowork / local agent mode) session metadata */
   desktopSessionDirs: [

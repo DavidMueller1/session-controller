@@ -3,6 +3,7 @@ import path from "node:path";
 import staticPlugin from "@fastify/static";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
+import { ACCOUNTS, DEFAULT_ACCOUNT, accountById } from "./accounts.js";
 import { CONFIG } from "./config.js";
 import { DevRunner } from "./devRunner.js";
 import { DevServerScanner } from "./devServers.js";
@@ -65,6 +66,9 @@ async function main(): Promise<void> {
   // backfill fills in everything older than the engine's staleness window (once at start,
   // then on a slow repeat). The board shows today and the running month from the ledger,
   // so both are right even for sessions that have long since dropped off the board.
+  // one summary per account (its own projects dir); `costSummary` is the default account's
+  let costScanned = false;
+  let costByAccount: Record<string, CostSummary> = {};
   let costSummary: CostSummary = { today: 0, month: 0, unpricedSessions: 0, scanned: false };
   let costById = store.costById();
 
@@ -76,12 +80,13 @@ async function main(): Promise<void> {
   };
 
   const refreshCost = () => {
-    const scanned = costSummary.scanned;
-    costSummary = { ...store.costSummary(localToday()), scanned };
+    const day = localToday();
+    costByAccount = Object.fromEntries(ACCOUNTS.map((a) => [a.id, { ...store.costSummary(day, a.projectsDir + path.sep), scanned: costScanned }]));
+    costSummary = costByAccount[DEFAULT_ACCOUNT];
     costById = store.costById();
   };
 
-  const costMsg = () => ({ type: "cost", ts: Date.now(), cost: costSummary });
+  const costMsg = () => ({ type: "cost", ts: Date.now(), cost: costSummary, accounts: costByAccount });
 
   /** write the live sessions' running totals into the ledger */
   const recordLiveCost = (list: DiscoveredSession[]) => {
@@ -194,8 +199,8 @@ async function main(): Promise<void> {
   const runCostScan = () => {
     scanCosts(store)
       .then((r) => {
-        costSummary = { ...store.costSummary(localToday()), scanned: true };
-        costById = store.costById();
+        costScanned = true;
+        refreshCost();
         broadcast(costMsg());
         if (r.priced) process.stdout.write(`[cost] priced ${r.priced} transcript(s), skipped ${r.skipped}\n`);
       })
@@ -366,10 +371,10 @@ async function main(): Promise<void> {
     autoUnlandOnWork(list);
     autoLandMerged(list);
     recordLiveCost(list);
-    const prevCost = costSummary;
+    const prevCost = JSON.stringify(costByAccount);
     refreshCost();
     broadcast({ type: "update", ts: Date.now(), aircraft: fullList() });
-    if (costSummary.month !== prevCost.month || costSummary.today !== prevCost.today) broadcast(costMsg());
+    if (JSON.stringify(costByAccount) !== prevCost) broadcast(costMsg());
     refreshHealth();
     const summary = Object.entries(counts(list))
       .map(([k, v]) => `${k} ${v}`)
@@ -409,17 +414,22 @@ async function main(): Promise<void> {
 
   // Plan usage (the subscription's weekly limit), asked from Claude Code every 5 min. A failed
   // ask keeps the last good value rather than blanking the header.
-  let planUsage: PlanUsage | null = null;
+  // One ask per account, each with its own config dir.
+  const planByAccount: Record<string, PlanUsage | null> = Object.fromEntries(ACCOUNTS.map((a) => [a.id, null]));
   let planInFlight = false;
-  const planMsg = () => ({ type: "plan", ts: Date.now(), plan: planUsage });
+  const planMsg = () => ({ type: "plan", ts: Date.now(), plan: planByAccount[DEFAULT_ACCOUNT], accounts: planByAccount });
   const refreshPlan = async () => {
     if (planInFlight) return;
     planInFlight = true;
     try {
-      const next = await fetchPlanUsage();
-      if (!next) return;
-      planUsage = next;
-      broadcast(planMsg());
+      let changed = false;
+      for (const a of ACCOUNTS) {
+        const next = await fetchPlanUsage(a.id === DEFAULT_ACCOUNT ? undefined : a.dir);
+        if (!next) continue;
+        planByAccount[a.id] = next;
+        changed = true;
+      }
+      if (changed) broadcast(planMsg());
     } finally {
       planInFlight = false;
     }
@@ -697,6 +707,7 @@ async function main(): Promise<void> {
         knownHost: store.getHost(a.id),
         // reopen closed terminal tabs by resuming the transcript (cli sessions only)
         resumeId: surfaces.includes("cli") ? a.id : null,
+        configDir: a.account && a.account !== DEFAULT_ACCOUNT ? (accountById(a.account)?.dir ?? null) : null,
         desktopSessionId: a.desktopSessionId ?? reg?.hostSessionId ?? null,
       });
       // remember a freshly detected host, so a click on this strip still lands in the

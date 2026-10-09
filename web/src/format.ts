@@ -30,6 +30,11 @@ export function isMia(a: Aircraft): boolean {
 export const LANDED_COLOR = "#2f6f4f";
 export const PARKED_COLOR = "#e0823c"; // keep in sync with --parked in style.css
 
+/** the tag for a session under a second Claude login (~/.claude-<name>); null for the default one */
+export function accountTag(account: string | null | undefined): string | null {
+  return account && account !== "default" ? account.toUpperCase() : null;
+}
+
 export function laneOf(a: Aircraft): Lane {
   if (a.state === "working") return "inflight"; // a thinking session is ALWAYS in-flight
   if (a.landed) return "landed"; // human decision (App splits Landed→Cold by what fits on screen)

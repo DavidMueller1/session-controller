@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { accountOfPath } from "./accounts.js";
 import type { ActivityState, CostSummary, CostTokens, DiscoveredSession, SessionSource } from "./types.js";
 
 interface SessionRow {
@@ -35,6 +36,7 @@ function rowToSession(r: SessionRow): DiscoveredSession {
     lastEventSummary: r.last_event_summary ?? "",
     linkedCliSessionId: r.linked_cli_session_id,
     surfaces: JSON.parse(r.surfaces) as SessionSource[],
+    account: accountOfPath(r.path),
   };
 }
 
@@ -493,17 +495,19 @@ export class Store {
    * transcripts Claude Code has not yet cleaned up, which makes it a number without a
    * meaning anyone can state.
    */
-  costSummary(day: string): Omit<CostSummary, "scanned"> {
+  /** `under` limits it to transcripts below one dir (an account's projects dir) */
+  costSummary(day: string, under = ""): Omit<CostSummary, "scanned"> {
+    const scope = { prefix: under, n: under.length };
     const unpriced = this.db
-      .prepare(`SELECT COUNT(DISTINCT id) AS n FROM session_cost WHERE unpriced = 1`)
-      .get() as { n: number };
+      .prepare(`SELECT COUNT(DISTINCT id) AS n FROM session_cost WHERE unpriced = 1 AND substr(path, 1, @n) = @prefix`)
+      .get(scope) as { n: number };
     const sums = this.db
       .prepare(
         `SELECT COALESCE(SUM(CASE WHEN day = @day THEN cost_usd END), 0) AS today,
                 COALESCE(SUM(CASE WHEN day LIKE @month THEN cost_usd END), 0) AS month
-         FROM session_cost_day`,
+         FROM session_cost_day WHERE substr(path, 1, @n) = @prefix`,
       )
-      .get({ day, month: day.slice(0, 7) + "%" }) as { today: number; month: number };
+      .get({ day, month: day.slice(0, 7) + "%", ...scope }) as { today: number; month: number };
     return { today: sums.today, month: sums.month, unpricedSessions: unpriced.n };
   }
 

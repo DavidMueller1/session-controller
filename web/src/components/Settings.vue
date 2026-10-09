@@ -14,8 +14,15 @@ interface RepoRow extends Cfg {
 }
 
 const GLOBAL_KEY = "__global__";
-defineProps<{ flight: boolean; notifySupported: boolean; notifyEnabled: boolean; showApi: boolean; showPlan: boolean; version?: string }>();
-const emit = defineEmits<{ close: []; toggleFlight: []; toggleNotify: []; toggleApi: []; togglePlan: [] }>();
+/** per Claude account: whether its PLAN / API header sections show (tag = null for the default login) */
+interface SectionPref {
+  id: string;
+  tag: string | null;
+  plan: boolean;
+  api: boolean;
+}
+defineProps<{ flight: boolean; notifySupported: boolean; notifyEnabled: boolean; sections: SectionPref[]; version?: string }>();
+const emit = defineEmits<{ close: []; toggleFlight: []; toggleNotify: []; toggleSection: [kind: "plan" | "api", id: string] }>();
 
 // App controls (moved out of the native menu). These queue a command the menu-bar app runs
 // on its ~1s poll; overlay state is read back so the toggle reflects reality.
@@ -178,18 +185,20 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
             <i class="ti" :class="autoLand ? 'ti-plane-arrival' : 'ti-plane-off'"></i> {{ autoLand ? "On" : "Off" }}
           </button>
         </div>
-        <div class="s-pref">
-          <span class="s-plabel">Show plan usage</span>
-          <button class="s-toggle" :class="{ on: showPlan }" @click="emit('togglePlan')">
-            <i class="ti" :class="showPlan ? 'ti-eye' : 'ti-eye-off'"></i> {{ showPlan ? "On" : "Off" }}
-          </button>
-        </div>
-        <div class="s-pref">
-          <span class="s-plabel">Show API costs</span>
-          <button class="s-toggle" :class="{ on: showApi }" @click="emit('toggleApi')">
-            <i class="ti" :class="showApi ? 'ti-eye' : 'ti-eye-off'"></i> {{ showApi ? "On" : "Off" }}
-          </button>
-        </div>
+        <template v-for="sec in sections" :key="sec.id">
+          <div class="s-pref">
+            <span class="s-plabel">Show plan usage<span v-if="sec.tag" class="s-acct">{{ sec.tag }}</span></span>
+            <button class="s-toggle" :class="{ on: sec.plan }" @click="emit('toggleSection', 'plan', sec.id)">
+              <i class="ti" :class="sec.plan ? 'ti-eye' : 'ti-eye-off'"></i> {{ sec.plan ? "On" : "Off" }}
+            </button>
+          </div>
+          <div class="s-pref">
+            <span class="s-plabel">Show API costs<span v-if="sec.tag" class="s-acct">{{ sec.tag }}</span></span>
+            <button class="s-toggle" :class="{ on: sec.api }" @click="emit('toggleSection', 'api', sec.id)">
+              <i class="ti" :class="sec.api ? 'ti-eye' : 'ti-eye-off'"></i> {{ sec.api ? "On" : "Off" }}
+            </button>
+          </div>
+        </template>
       </div>
 
       <div class="s-sep">app</div>
@@ -294,6 +303,7 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
 </template>
 
 <style scoped>
+.s-acct { margin-left: 7px; color: var(--acct); box-shadow: inset 0 0 0 0.5px var(--acct); border-radius: 4px; padding: 0 5px; font: 600 9.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.06em; }
 .s-overlay { position: fixed; inset: 0; z-index: 60; background: rgba(6, 9, 13, 0.66); display: flex; align-items: center; justify-content: center; padding: 32px; }
 .s-panel { width: min(720px, 94vw); max-height: 82vh; display: flex; flex-direction: column; background: var(--panel); border: 0.5px solid var(--border); border-radius: 12px; box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5); overflow: hidden; }
 .s-h { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; border-bottom: 0.5px solid var(--border-soft); font-size: 13px; font-weight: 500; color: var(--text); }

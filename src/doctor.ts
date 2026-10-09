@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { CONFIG } from "./config.js";
-import { readHookSettings } from "./hooksHealth.js";
+import { ACCOUNTS, type Account, DEFAULT_ACCOUNT } from "./accounts.js";
+import { readAccountHooks } from "./hooksHealth.js";
 
 /**
  * `tc doctor` — idempotently (re)install the Session Controller hook block into the
@@ -16,7 +16,6 @@ import { readHookSettings } from "./hooksHealth.js";
 
 /** absolute path to our hook script, resolved from THIS file so cwd doesn't matter */
 const SCRIPT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "hooks", "tc-state.sh");
-const SETTINGS = CONFIG.claudeSettingsFiles[0]; // ~/.claude/settings.json (the primary one)
 
 const hookCmd = (arg: string): string => `bash "${SCRIPT}" ${arg}`;
 
@@ -66,28 +65,54 @@ function mergeHooks(settings: Settings): { settings: Settings; touched: string[]
   return { settings: { ...settings, hooks }, touched };
 }
 
-function readSettingsRaw(): { settings: Settings; existed: boolean } | { error: string } {
-  if (!fs.existsSync(SETTINGS)) return { settings: {}, existed: false };
+function readSettingsRaw(file: string): { settings: Settings; existed: boolean } | { error: string } {
+  if (!fs.existsSync(file)) return { settings: {}, existed: false };
   let raw: string;
   try {
-    raw = fs.readFileSync(SETTINGS, "utf8");
+    raw = fs.readFileSync(file, "utf8");
   } catch (e) {
-    return { error: `cannot read ${SETTINGS}: ${String(e)}` };
+    return { error: `cannot read ${file}: ${String(e)}` };
   }
   try {
     return { settings: JSON.parse(raw) as Settings, existed: true };
   } catch {
-    return { error: `malformed JSON in ${SETTINGS} — fix or move it aside, then re-run` };
+    return { error: `malformed JSON in ${file} — fix or move it aside, then re-run` };
   }
 }
 
-function verify(): void {
-  const s = readHookSettings();
+const settingsOf = (a: Account): string => a.settingsFiles[0]; // <dir>/settings.json (the primary one)
+const nameOf = (a: Account): string => (a.id === DEFAULT_ACCOUNT ? "" : ` (${a.id})`);
+
+function verify(a: Account): string[] {
+  const s = readAccountHooks(a);
   console.log("");
-  console.log(`  settings:  ${s.settingsFound ? SETTINGS : "not found"}`);
+  console.log(`  settings:  ${s.settingsFound ? settingsOf(a) : `not found (${settingsOf(a)})`}${nameOf(a)}`);
   console.log(`  wired:     ${s.installedEvents.length ? s.installedEvents.join(", ") : "none"}`);
   if (s.missingRequired.length) console.log(`  MISSING:   ${s.missingRequired.join(", ")}`);
-  console.log(`  script:    ${SCRIPT}${fs.existsSync(SCRIPT) ? "" : "  (!! not found)"}`);
+  return s.missingRequired;
+}
+
+/** wire our hooks into one account's settings.json; false if it couldn't be read */
+function install(a: Account): boolean {
+  const file = settingsOf(a);
+  const read = readSettingsRaw(file);
+  if ("error" in read) {
+    console.error(`  ✗ ${read.error}`);
+    return false;
+  }
+  // back up an existing file before touching it
+  if (read.existed) {
+    const bak = `${file}.bak-tc-doctor-${Date.now()}`;
+    fs.copyFileSync(file, bak);
+    console.log(`  • backed up existing settings → ${bak}`);
+  } else {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    console.log(`  • no settings file yet — creating ${file}`);
+  }
+  const { settings, touched } = mergeHooks(read.settings);
+  fs.writeFileSync(file, JSON.stringify(settings, null, 2) + "\n");
+  console.log(`  • wired hooks${nameOf(a)}: ${touched.join(", ")}`);
+  return true;
 }
 
 function main(): void {
@@ -101,31 +126,14 @@ function main(): void {
   }
 
   if (check) {
-    verify();
-    const { missingRequired } = readHookSettings();
-    console.log(missingRequired.length ? "\n  → run `pnpm doctor` to install the missing hooks.\n" : "\n  ✓ all required hooks are wired.\n");
-    process.exit(missingRequired.length ? 1 : 0);
+    const missing = ACCOUNTS.flatMap(verify);
+    console.log(`  script:    ${SCRIPT}`);
+    console.log(missing.length ? "\n  → run `pnpm doctor` to install the missing hooks.\n" : "\n  ✓ all required hooks are wired.\n");
+    process.exit(missing.length ? 1 : 0);
   }
 
-  const read = readSettingsRaw();
-  if ("error" in read) {
-    console.error(`  ✗ ${read.error}\n`);
-    process.exit(1);
-  }
-
-  // back up an existing file before touching it
-  if (read.existed) {
-    const bak = `${SETTINGS}.bak-tc-doctor-${Date.now()}`;
-    fs.copyFileSync(SETTINGS, bak);
-    console.log(`  • backed up existing settings → ${bak}`);
-  } else {
-    fs.mkdirSync(path.dirname(SETTINGS), { recursive: true });
-    console.log(`  • no settings file yet — creating ${SETTINGS}`);
-  }
-
-  const { settings, touched } = mergeHooks(read.settings);
-  fs.writeFileSync(SETTINGS, JSON.stringify(settings, null, 2) + "\n");
-  console.log(`  • wired hooks: ${touched.join(", ")}`);
+  // every account (~/.claude and any ~/.claude-<name>), so a second login is tracked too
+  const ok = ACCOUNTS.map(install).every(Boolean);
 
   // make sure the script is executable (the hook runs it via bash, but be tidy)
   try {
@@ -135,10 +143,10 @@ function main(): void {
     /* non-fatal — the hook invokes it via `bash` anyway */
   }
 
-  verify();
-  const { missingRequired } = readHookSettings();
-  if (missingRequired.length) {
-    console.error(`\n  ✗ still missing after install: ${missingRequired.join(", ")}\n`);
+  const missing = ACCOUNTS.flatMap(verify);
+  console.log(`  script:    ${SCRIPT}`);
+  if (!ok || missing.length) {
+    console.error(`\n  ✗ still missing after install: ${[...new Set(missing)].join(", ") || "see errors above"}\n`);
     process.exit(1);
   }
   console.log("\n  ✓ hooks installed. New sessions pick them up immediately; restart any running session to switch it off the inferred fallback.\n");

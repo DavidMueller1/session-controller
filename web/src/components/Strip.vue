@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, nextTick, onBeforeUnmount } from "vue";
 import type { Aircraft } from "../types";
-import { STATE, LANDED_COLOR, PARKED_COLOR, isParked, isFlashing, isMia, formatAge, projectName, devUrl } from "../format";
+import { STATE, LANDED_COLOR, PARKED_COLOR, accountTag, isParked, isFlashing, isMia, formatAge, projectName, devUrl } from "../format";
 import DevLogs from "./DevLogs.vue";
 import StripDetail from "./StripDetail.vue";
 
@@ -52,6 +52,7 @@ const ctxTitle = computed(() => {
 
 // PR pill
 const pr = computed(() => props.aircraft.pr ?? null);
+const acct = computed(() => accountTag(props.aircraft.account));
 const prColor = computed(() => {
   const p = pr.value;
   if (!p) return "";
@@ -240,6 +241,7 @@ function commitNote() {
            so the title (above) and the action buttons (below) are always visible -->
       <div class="mid">
         <div class="chips">
+          <span v-if="acct" class="chip acct mono" :title="`${acct.toLowerCase()} Claude account`">{{ acct }}</span>
           <span class="chip mono">{{ projectName(aircraft.project) }}</span>
           <span v-if="aircraft.branch" class="chip mono"><i class="ti ti-git-branch"></i> {{ aircraft.branch }}</span>
         </div>
@@ -377,6 +379,7 @@ function commitNote() {
 .badge-x { all: unset; cursor: pointer; display: inline-flex; margin-left: 3px; opacity: 0.7; }
 .badge-x:hover { opacity: 1; }
 .chips { display: flex; gap: 5px; flex-wrap: wrap; }
+.chip.acct { flex: none; line-height: 10.5px; padding-top: 3.5px; padding-bottom: 0.5px; color: var(--acct); background: none; box-shadow: inset 0 0 0 0.5px var(--acct); font-size: 10px; letter-spacing: 0.06em; }
 .chip { font-size: 11px; color: var(--text-dim); background: var(--chip); border-radius: 6px; padding: 1px 6px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .foot { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-faint); }
 .foot .age { margin-left: auto; font-weight: 500; }

@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { CONFIG } from "./config.js";
+import { ACCOUNTS, type Account } from "./accounts.js";
 import type { DiscoveredSession, HooksHealth } from "./types.js";
 
 /** the hook events our state tracking depends on; missing any of these degrades accuracy */
@@ -10,6 +10,8 @@ export interface HookSettings {
   settingsFound: boolean;
   installedEvents: string[];
   missingRequired: string[];
+  /** other accounts (e.g. "privat") whose settings lack a required hook */
+  accountsMissing: string[];
 }
 
 /** events in one settings JSON whose hook command references our tc-state script */
@@ -39,12 +41,17 @@ function eventsInSettings(file: string): string[] {
 
 /** Inspect the user-level settings files for our wired hooks. Cheap but does sync I/O,
  *  so callers cache this and refresh it on a slow timer rather than per board update. */
-export function readHookSettings(): HookSettings {
-  const files = CONFIG.claudeSettingsFiles;
-  const settingsFound = files.some((f) => fs.existsSync(f));
-  const installedEvents = [...new Set(files.flatMap(eventsInSettings))];
+export function readAccountHooks(a: Account): Omit<HookSettings, "accountsMissing"> {
+  const settingsFound = a.settingsFiles.some((f) => fs.existsSync(f));
+  const installedEvents = [...new Set(a.settingsFiles.flatMap(eventsInSettings))];
   const missingRequired = REQUIRED_EVENTS.filter((e) => !installedEvents.includes(e));
   return { settingsFound, installedEvents, missingRequired };
+}
+
+export function readHookSettings(): HookSettings {
+  const [main, ...others] = ACCOUNTS;
+  const accountsMissing = others.filter((a) => readAccountHooks(a).missingRequired.length > 0).map((a) => a.id);
+  return { ...readAccountHooks(main), accountsMissing };
 }
 
 const isCli = (a: DiscoveredSession): boolean => a.source === "cli" || (a.surfaces?.includes("cli") ?? false);
@@ -74,6 +81,9 @@ export function assembleHealth(
   } else if (s.missingRequired.length > 0) {
     status = "degraded";
     detail = `Session-tracking hooks partially installed — missing ${s.missingRequired.join(", ")}. Run \`pnpm run doctor\` to repair.`;
+  } else if (s.accountsMissing.length > 0) {
+    status = "degraded";
+    detail = `Session-tracking hooks aren't installed for the ${s.accountsMissing.join(", ")} account — its states fall back to transcript inference. Run \`pnpm run doctor\` to install.`;
   } else if (activeCli > 0 && writes.fresh === 0) {
     status = "degraded";
     detail = "Session-tracking hooks are installed but not firing — no recent state writes from any active session.";

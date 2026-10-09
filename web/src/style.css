@@ -20,6 +20,8 @@
   --parked: #e0823c;
   --parked-bg: rgba(224, 130, 60, 0.13);
   --chip: #1e2530;
+  /* a second Claude login (~/.claude-<name>) — a hue no lane or badge uses */
+  --acct: #c297ff;
 }
 
 * { box-sizing: border-box; }

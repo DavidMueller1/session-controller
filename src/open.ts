@@ -19,6 +19,8 @@ export interface OpenTarget {
   knownHost?: { kind: string; bin?: string | null } | null;
   /** CLI session id to `claude --resume` if the terminal tab was closed (cli sessions only) */
   resumeId?: string | null;
+  /** the session's CLAUDE_CONFIG_DIR when it isn't ~/.claude — `--resume` only finds it there */
+  configDir?: string | null;
   /** the Claude desktop app's id for this session (`local_…`), to open exactly it there */
   desktopSessionId?: string | null;
 }
@@ -223,8 +225,9 @@ async function focusTerminal(host: Host): Promise<OpenResult> {
  * in the remembered host, cd to the session's folder, and resume. Only iTerm2 and Terminal.app
  * expose scripted new-tab-with-command, so this is limited to them.
  */
-function reopenScript(kind: HostKind, cwd: string, id: string): string | null {
-  const cmd = asLiteral(`cd ${JSON.stringify(cwd)} && claude --resume ${id}`);
+function reopenScript(kind: HostKind, cwd: string, id: string, configDir?: string | null): string | null {
+  const env = configDir ? `CLAUDE_CONFIG_DIR=${JSON.stringify(configDir)} ` : "";
+  const cmd = asLiteral(`cd ${JSON.stringify(cwd)} && ${env}claude --resume ${id}`);
   if (kind === "iterm") {
     return `tell application "iTerm2"
       activate
@@ -251,8 +254,8 @@ function reopenScript(kind: HostKind, cwd: string, id: string): string | null {
 }
 
 /** true if we opened a new tab and kicked off `claude --resume` for the closed session */
-async function reopenTerminalSession(kind: HostKind, cwd: string, id: string): Promise<boolean> {
-  const script = reopenScript(kind, cwd, id);
+async function reopenTerminalSession(kind: HostKind, cwd: string, id: string, configDir?: string | null): Promise<boolean> {
+  const script = reopenScript(kind, cwd, id, configDir);
   if (!script) return false;
   try {
     const { stdout } = await exec("osascript", ["-e", script]);
@@ -324,7 +327,7 @@ export async function openAircraft(t: OpenTarget): Promise<OpenResult & { host?:
   // Terminal session whose tab was closed: the transcript survives, so reopen a tab and
   // `claude --resume` it (continues in place, no fork). Only where we can script a new tab.
   if ((known === "iterm" || known === "terminal") && t.resumeId && t.cwd) {
-    if (await reopenTerminalSession(known, t.cwd, t.resumeId)) {
+    if (await reopenTerminalSession(known, t.cwd, t.resumeId, t.configDir)) {
       return { ok: true, action: `reopen-${known}`, detail: t.resumeId };
     }
     // scripting failed → fall through to app-level focus

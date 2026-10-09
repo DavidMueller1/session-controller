@@ -29,11 +29,12 @@ const miaStates = [
 
 // the header instruments, left to right
 const header = [
-  { icon: "ti-search", title: "SEARCH", desc: "Type, or press /, to show only strips whose title, branch or folder matches. Esc clears it." },
+  { icon: "ti-search", title: "SEARCH", desc: "Type, or press /, to show only strips whose title, branch, folder or account tag matches. Esc clears it." },
   { icon: "ti-gauge", title: "PLAN · WEEK", desc: "How much of your Claude plan's weekly limit is used: green, amber from 80%, red from 90%. Hover for when it resets." },
   { icon: "ti-coins", title: "PLAN · CREDITS", desc: "Extra usage credits spent this month, which cover you once you're past the plan limits." },
-  { icon: "ti-ban", title: "NO PLAN", desc: "This machine has no Claude plan, so usage is billed per token. Hover the sticker and click HIDE? to remove the section." },
+  { icon: "ti-ban", title: "NO PLAN", desc: "This login has no Claude plan, so usage is billed per token. Hover the sticker and click HIDE? to remove the section." },
   { icon: "ti-receipt", title: "API · TODAY / MONTH", desc: "What your tokens cost at API list prices. On a plan that's not billed; without one, it is." },
+  { icon: "ti-users", title: "PRIVAT · PLAN / API", desc: "The same instruments for a second Claude login, behind its tag. Off until you turn them on in Settings." },
   { icon: "ti-list-numbers", title: "Lane names", desc: "The number after a name counts that lane's strips. Click the name to see them all as a grid." },
 ];
 
@@ -43,7 +44,7 @@ const actions = [
   { icon: "ti-pin", title: "note", desc: "Pin a note — turns a flashing “Needs you” into a calm Parked strip." },
   { icon: "ti-plane-arrival", title: "land", desc: "Mark done → Landed. Auto-un-lands if the session starts working again. Turn on Auto-land in Settings to land strips whose PR is merged." },
   { icon: "ti-sparkles", title: "What's new", desc: "The changelog. A dot on the icon marks new entries after an update." },
-  { icon: "ti-settings", title: "Settings (gear)", desc: "Board view & notifications, auto-land on merged PRs, show / hide PLAN and API, the overlay rail, check-for-updates / restart / quit, and per-repo dev config." },
+  { icon: "ti-settings", title: "Settings (gear)", desc: "Board view & notifications, auto-land on merged PRs, show / hide PLAN and API per login, the overlay rail, check-for-updates / restart / quit, and per-repo dev config." },
 ];
 </script>
 
@@ -103,6 +104,10 @@ const actions = [
               <span class="h-vis"><span class="hdev"><span class="hdot"></span>:5173</span></span>
               <div class="h-text"><b>Dev-server pill</b><span>A dev server detected in the folder. Click to open it (or pick from several). Green dot = live.</span></div>
             </div>
+            <div class="h-item">
+              <span class="h-vis"><span class="hacct">PRIVAT</span></span>
+              <div class="h-text"><b>Account tag</b><span>The session runs under a second Claude login — see below.</span></div>
+            </div>
           </div>
 
           <div class="h-sec">Header</div>
@@ -120,6 +125,14 @@ const actions = [
               <div class="h-text"><b>{{ x.title }}</b><span>{{ x.desc }}</span></div>
             </div>
           </div>
+
+          <div class="h-sec">A second Claude login</div>
+          <p class="h-note">
+            Run a second account in its own config dir, e.g. <code>CLAUDE_CONFIG_DIR=~/.claude-privat claude</code>
+            in a separate terminal profile. Any <code>~/.claude-&lt;name&gt;</code> that has been logged in to is
+            picked up when the app starts: its strips get a <b>tag</b> with the name, clicking one reopens it under
+            the right login, and <b>Settings</b> can show its own PLAN and API in the header.
+          </p>
 
           <div class="h-sec">Removal &amp; keeping</div>
           <p class="h-note">
@@ -166,4 +179,6 @@ const actions = [
 .hdev { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-family: ui-monospace, Menlo, monospace; color: var(--green); border: 0.5px solid color-mix(in srgb, var(--green) 40%, transparent); border-radius: 6px; padding: 0 5px; }
 .hdot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 5px color-mix(in srgb, var(--green) 70%, transparent); }
 .h-ico { font-size: 15px; color: var(--text-dim); }
+.hacct { font: 10px/10.5px ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.06em; color: var(--acct); box-shadow: inset 0 0 0 0.5px var(--acct); border-radius: 6px; padding: 3.5px 6px 0.5px; }
+.h-note code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--text-hi); }
 </style>

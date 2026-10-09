@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { CONFIG } from "./config.js";
+import { ACCOUNTS } from "./accounts.js";
 
 /**
  * An entry from the live CLI session registry (~/.claude/sessions/<pid>.json). Only
@@ -28,7 +28,7 @@ export interface RegistryEntry {
 }
 
 export function isRegistryFile(p: string): boolean {
-  return p.startsWith(CONFIG.sessionsDir + path.sep) && p.endsWith(".json");
+  return p.endsWith(".json") && ACCOUNTS.some((a) => p.startsWith(a.sessionsDir + path.sep));
 }
 
 export async function parseRegistryFile(filePath: string): Promise<RegistryEntry | null> {

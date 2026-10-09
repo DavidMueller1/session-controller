@@ -70,6 +70,8 @@ export interface Aircraft {
   costTokens?: CostTokens | null;
   /** ran on a model with no price entry — `costUsd` is a lower bound */
   costUnpriced?: boolean;
+  /** Claude account it runs under — "default" for ~/.claude, else the ~/.claude-<name> suffix */
+  account?: string;
   pr?: PrInfo | null;
   approach?: boolean;
   devServer?: DevServerInfo | null;
@@ -152,10 +154,10 @@ export interface PlanUsage {
 
 export type WsMessage =
   | { type: "snapshot" | "update"; ts: number; aircraft: Aircraft[] }
-  | { type: "plan"; ts: number; plan: PlanUsage | null }
+  | { type: "plan"; ts: number; plan: PlanUsage | null; accounts?: Record<string, PlanUsage | null> }
   | { type: "status"; ts: number; status: AnthropicStatus | null }
   | { type: "health"; ts: number; health: HooksHealth | null }
-  | { type: "cost"; ts: number; cost: CostSummary }
+  | { type: "cost"; ts: number; cost: CostSummary; accounts?: Record<string, CostSummary> }
   | {
       type: "version";
       ts: number;

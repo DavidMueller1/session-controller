@@ -74,16 +74,16 @@ function findClaude(): string | null {
  * the Agent SDK / IDE integrations use). Claude Code does the login and the network call itself,
  * so we never touch a token. The child makes no model call and, with hooks off and no session
  * persistence, never shows up on the board. null only when the ask failed (no claude, timeout) —
- * "no plan" is a real answer (`hasPlan: false`).
+ * "no plan" is a real answer (`hasPlan: false`). `configDir` asks for another login's plan.
  */
-export function fetchPlanUsage(timeoutMs = 20_000): Promise<PlanUsage | null> {
+export function fetchPlanUsage(configDir?: string, timeoutMs = 20_000): Promise<PlanUsage | null> {
   const bin = findClaude();
   if (!bin) return Promise.resolve(null);
   return new Promise((resolve) => {
     const child = spawn(
       bin,
       ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--settings", '{"disableAllHooks":true}', "--strict-mcp-config", "--no-session-persistence"],
-      { cwd: os.tmpdir(), stdio: ["pipe", "pipe", "ignore"] },
+      { cwd: os.tmpdir(), stdio: ["pipe", "pipe", "ignore"], env: configDir ? { ...process.env, CLAUDE_CONFIG_DIR: configDir } : process.env },
     );
     let done = false;
     let buf = "";

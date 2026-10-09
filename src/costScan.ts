@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { CONFIG } from "./config.js";
+import { ACCOUNTS } from "./accounts.js";
 import { parseCliIncremental } from "./parseCli.js";
 import { isPriced } from "./pricing.js";
 import type { Store } from "./store.js";
@@ -43,8 +43,8 @@ export interface ScanResult {
  *  to thrash the AV scanner on a first run over a large history */
 const CONCURRENCY = 4;
 
-export async function scanCosts(store: Store, root: string = CONFIG.cliProjectsDir): Promise<ScanResult> {
-  const files = await transcripts(root);
+export async function scanCosts(store: Store, roots: string | string[] = ACCOUNTS.map((a) => a.projectsDir)): Promise<ScanResult> {
+  const files = (await Promise.all([roots].flat().map(transcripts))).flat();
   const known = store.scannedSizes();
   const unpriced = store.unpricedModels();
   const result: ScanResult = { priced: 0, skipped: 0 };

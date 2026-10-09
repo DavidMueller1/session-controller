@@ -229,6 +229,8 @@ export interface DiscoveredSession {
   costByDay?: Record<string, number>;
   /** this session ran on a model with no price entry — `costUsd` is a lower bound */
   costUnpriced?: boolean;
+  /** the Claude account (config dir) it runs under — "default" for ~/.claude (see accounts.ts) */
+  account?: string;
   /** PR for the branch (via gh), attached by branch. null = none/unknown */
   pr?: PrInfo | null;
   /** merged-PR overlay (added by the server's decorate). Drives the Approach lane. */

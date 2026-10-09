@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { ACCOUNTS, accountOfPath } from "./accounts.js";
 import { CONFIG } from "./config.js";
 import { correlate } from "./correlate.js";
 import { resolve } from "./deriveState.js";
@@ -311,7 +312,7 @@ export class Engine extends EventEmitter {
       const prev = this.stateSince.get(a.id);
       const since = prev && prev.state === a.state ? prev.since : prev ? now : a.lastActivityAt ?? now;
       this.stateSince.set(a.id, { state: a.state, since });
-      return { ...a, stateSource, stateSince: since, pr: this.prById.get(a.id) ?? null };
+      return { ...a, account: accountOfPath(a.path), stateSource, stateSince: since, pr: this.prById.get(a.id) ?? null };
     });
     for (const id of [...this.stateSince.keys()]) if (!seen.has(id)) this.stateSince.delete(id);
     for (const id of [...this.lastCallsign.keys()]) if (!seen.has(id)) this.lastCallsign.delete(id);
@@ -418,8 +419,8 @@ export class Engine extends EventEmitter {
   }
 
   /** live source dirs, split by how fast they need polling */
-  private static readonly LIVE_ROOTS = [CONFIG.hookStateDir, CONFIG.sessionsDir]; // tiny + latency-sensitive
-  private static readonly FILE_ROOTS = [CONFIG.cliProjectsDir, ...CONFIG.desktopSessionDirs]; // big transcript trees
+  private static readonly LIVE_ROOTS = [CONFIG.hookStateDir, ...ACCOUNTS.map((a) => a.sessionsDir)]; // tiny + latency-sensitive
+  private static readonly FILE_ROOTS = [...ACCOUNTS.map((a) => a.projectsDir), ...CONFIG.desktopSessionDirs]; // big transcript trees
 
   /** one-shot: full scan + derive, no timers (used by `once`) */
   async scan(): Promise<void> {
