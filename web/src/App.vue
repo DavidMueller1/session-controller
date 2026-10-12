@@ -659,7 +659,7 @@ function onOpen(id: string) { open(id); }
 </template>
 
 <style scoped>
-.wrap { height: 100dvh; max-width: 1600px; margin: 0 auto; padding: 14px 16px 16px; display: flex; flex-direction: column; overflow: hidden; }
+.wrap { height: 100dvh; padding: 14px 16px 16px; display: flex; flex-direction: column; overflow: hidden; }
 
 /* Claude service-status banner (only shown when something is not operational) */
 .status-bar { flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; text-decoration: none; margin-bottom: 8px; padding: 6px 12px; border-radius: 8px; font-size: 12px; border: 0.5px solid; }
