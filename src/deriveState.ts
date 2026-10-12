@@ -70,5 +70,6 @@ export function resolve(f: SessionFacts, now: number): DiscoveredSession {
     costByDay: f.costByDay,
     costUnpriced: f.costUnpriced,
     continuedFrom: f.continuedFrom ?? null,
+    scheduled: f.scheduled,
   };
 }

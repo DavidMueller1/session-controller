@@ -170,6 +170,8 @@ export interface SessionFacts {
   costUnpriced: boolean;
   /** desktop: session archived by the app (a "suspected done" signal) */
   archived?: boolean;
+  /** desktop: a run of a scheduled task (nobody sits at it, so once it ends it is done) */
+  scheduled?: boolean;
   /** CLI: the predecessor session id this transcript continued from after a `/compact`
    *  (parsed from the "continued from a previous conversation" preamble). Lets the board
    *  fold a compacted session and its live continuation into one flight. null = fresh. */
@@ -208,6 +210,8 @@ export interface DiscoveredSession {
    * `["cli", "desktop"]`. Absent = just its own `source`.
    */
   surfaces?: SessionSource[];
+  /** desktop: a run of a scheduled task */
+  scheduled?: boolean;
   /**
    * User-supplied note. NOT derived from files — populated by the server from the
    * notes store. A note on a `needs-input` aircraft turns it from flashing "Needs you"
