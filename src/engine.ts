@@ -287,7 +287,12 @@ export class Engine extends EventEmitter {
         a = { ...a, state: "suspected-done" };
         stateSource = "hook";
       } else if (hs && hs.state !== "ended" && now - hs.ts < CONFIG.hookStaleMs) {
-        if (hs.state === "working" && !movedToWaitingPast(hs.ts) && !registryIdleAfter(hs.ts)) {
+        if (hs.state === "working" && hs.agents > 0) {
+          // Subagents still run. The main transcript ends in text ("waiting for the agents"),
+          // which reads as a finished turn, but nobody waits on you: trust the hook.
+          a = { ...a, state: "working", lastEventSummary: hs.agents === 1 ? "1 subagent running" : `${hs.agents} subagents running` };
+          stateSource = "hook";
+        } else if (hs.state === "working" && !movedToWaitingPast(hs.ts) && !registryIdleAfter(hs.ts)) {
           a = { ...a, state: "working", lastEventSummary: a.lastEventSummary || "active" };
           stateSource = "hook";
         } else if (hs.state === "needs-input" && !movedOnPast(hs.ts)) {

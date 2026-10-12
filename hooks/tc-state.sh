@@ -1,11 +1,13 @@
 #!/bin/bash
 # Claude Code hook → records this session's live state for the Session Controller board.
-# Usage: tc-state.sh <working|needs-input|started|clear>
+# Usage: tc-state.sh <working|needs-input|started|clear|subagent-start|subagent-stop>
 # The hook JSON payload arrives on stdin; we read session_id from it and write
 # ~/.claude/tc-state/<session_id>.json = {"state","ts","event"[,"reason","askTool","askId"]}
 # (atomically). `reason` records why a session waits on you — "asking" (a question or
 # permission prompt, with the tool that asked) or "done" (its turn ended) — so a later tool
 # event only clears the question when the tool that asked is the one finishing.
+# Running subagents get one marker file each in ~/.claude/tc-state/agents/<session_id>/, so a
+# turn that ends while background subagents still work reads as working, not "Needs you".
 STATE="${1:-working}"
 DIR="$HOME/.claude/tc-state"
 mkdir -p "$DIR"
@@ -29,6 +31,40 @@ subagent = bool(p.get("agent_id"))
 # success, quota and auto-resume notices, a subagent finishing, …) must not raise "Needs you"
 ASKING_NOTIFICATIONS = ("permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input")
 TOOL_DONE_EVENTS = ("PostToolUse", "PostToolUseFailure", "PermissionDenied")
+# one marker per running subagent; a marker nobody touched for this long is a leftover
+# (a SubagentStop that never fired) and no longer counts
+agents_dir = os.path.join(dirp, "agents", str(sid))
+AGENT_STALE_S = 30 * 60
+
+def running_agents():
+    try:
+        names = os.listdir(agents_dir)
+    except Exception:
+        return 0
+    n, now = 0, time.time()
+    for name in names:
+        f = os.path.join(agents_dir, name)
+        try:
+            if now - os.path.getmtime(f) < AGENT_STALE_S:
+                n += 1
+            else:
+                os.remove(f)
+        except Exception:
+            pass
+    return n
+
+if subagent:
+    marker = os.path.join(agents_dir, re.sub(r"[^A-Za-z0-9_-]", "_", str(p.get("agent_id"))))
+    try:
+        if state == "subagent-start":
+            os.makedirs(agents_dir, exist_ok=True)
+            open(marker, "a").close()
+        elif state == "subagent-stop":
+            os.remove(marker)
+        elif os.path.exists(marker):
+            os.utime(marker)  # the subagent is still busy: keep its marker fresh
+    except Exception:
+        pass
 
 def previous():
     try:
@@ -38,7 +74,19 @@ def previous():
         return {}
 
 reason = ask_tool = ask_id = None
-if state == "started":
+if state in ("subagent-start", "subagent-stop"):
+    # A subagent began or finished. Never hide a question; otherwise the session works on
+    # (after the last subagent, Claude picks up its result in a new turn and Stop follows).
+    prev = previous()
+    if prev.get("state") == "needs-input" and prev.get("reason") == "asking":
+        sys.exit(0)
+    state = "working"
+elif state == "needs-input" and event in ("Stop", "SubagentStop") and subagent:
+    sys.exit(0)  # a subagent ending is not the session ending its turn
+elif state == "needs-input" and event == "Stop" and running_agents():
+    # The turn ended, but background subagents still work: Claude is not waiting on you.
+    state = "working"
+elif state == "started":
     # A compaction restarts the session mid-turn: whatever it was doing, it still is.
     if p.get("source") == "compact":
         sys.exit(0)
@@ -79,6 +127,8 @@ elif state == "working":
             sys.exit(0)
 
 if state == "clear":
+    import shutil
+    shutil.rmtree(agents_dir, ignore_errors=True)
     # Session ended: persist a terminal "ended" marker rather than deleting. Deleting
     # would drop the board back to transcript inference, which reads a just-exited
     # session (last turn = the user saying bye) as still "working" → stuck in-flight.
@@ -90,6 +140,9 @@ if ask_tool:
     out["askTool"] = ask_tool
 if ask_id:
     out["askId"] = ask_id
+agents = running_agents() if state == "working" else 0
+if agents:
+    out["agents"] = agents
 # per-process temp file: parallel tool calls fire their hooks concurrently
 tmp = "%s.%d.tmp" % (path, os.getpid())
 with open(tmp, "w") as f:

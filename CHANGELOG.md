@@ -3,6 +3,10 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 168 — 2026-10-12
+- **Subagents no longer read as "Needs you":** while background subagents still work, the strip stays In-flight, even after the main turn ends with "waiting for the agents". A question or permission prompt from a subagent still flashes. New hooks (SubagentStart/SubagentStop) are wired on update.
+- **Full width:** the board now uses the whole browser window instead of a 1600px column.
+
 ## Build 167 — 2026-10-09
 - **A second Claude login** (a `~/.claude-<name>` config dir, e.g. run via `CLAUDE_CONFIG_DIR` in its own terminal profile) is tracked too: its strips carry a tag with its name, and Settings can show its own PLAN and API in the header.
 
