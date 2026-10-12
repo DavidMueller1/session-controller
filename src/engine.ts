@@ -279,7 +279,8 @@ export class Engine extends EventEmitter {
       // persists and can be reopened — so an "ended" hook must NOT wrap it up. For those,
       // "wrapped up" comes only from the desktop `isArchived` signal (handled in correlate);
       // deletion just removes it. A terminal (CLI-only) session that exits IS genuinely done.
-      const isDesktopSession = (a.surfaces ?? []).includes("desktop");
+      // A scheduled-task run is the exception: nobody reopens it to carry on, so it ends for good.
+      const isDesktopSession = (a.surfaces ?? []).includes("desktop") && !a.scheduled;
       if (hs?.state === "ended" && !isDesktopSession) {
         // A terminal session exited (SessionEnd). Terminal and authoritative regardless of
         // age: drop it out of the active lanes ("wrapped up") rather than letting transcript

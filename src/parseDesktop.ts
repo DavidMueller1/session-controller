@@ -51,5 +51,6 @@ export async function parseDesktopSession(filePath: string): Promise<SessionFact
     costByDay: {},
     costUnpriced: false,
     archived: o.isArchived === true,
+    scheduled: typeof o.scheduledTaskId === "string" && o.scheduledTaskId !== "",
   };
 }

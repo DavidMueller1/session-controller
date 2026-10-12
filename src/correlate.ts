@@ -55,6 +55,7 @@ function merge(cli: DiscoveredSession, desktop: DiscoveredSession): DiscoveredSe
     state,
     lastEventSummary,
     linkedCliSessionId: desktop.linkedCliSessionId,
+    scheduled: desktop.scheduled,
   };
 }
 
