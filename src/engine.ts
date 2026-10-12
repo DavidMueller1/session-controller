@@ -301,6 +301,13 @@ export class Engine extends EventEmitter {
         }
       }
 
+      // Registry `status: "shell"`: a shell command runs (e.g. a `!` command) and you wait on
+      // it. Claude sets it after the turn's Stop hook, so it outranks an older needs-input.
+      if (!pidDead && entry?.status === "shell" && regTs != null && (!hs || hs.state === "ended" || regTs >= hs.ts)) {
+        a = { ...a, state: "working", lastEventSummary: "shell running" };
+        stateSource = "registry";
+      }
+
       // Hard-kill safety net: the process is gone but it still looks active (a stale
       // `working` hook, or a transcript that ends mid-tool, would otherwise pin it
       // In-flight for up to hookStaleMs). Retire it straight to MIA — "lost contact".
