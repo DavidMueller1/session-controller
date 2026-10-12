@@ -9,6 +9,8 @@ export interface HookState {
   state: string;
   /** epoch ms the hook fired — used to ignore stale files (dead sessions) */
   ts: number;
+  /** subagents still running for this session (0 when none) */
+  agents: number;
 }
 
 export function isHookStateFile(p: string): boolean {
@@ -29,5 +31,5 @@ export async function parseHookStateFile(filePath: string): Promise<HookState | 
     return null;
   }
   if (!o || typeof o.state !== "string" || typeof o.ts !== "number") return null;
-  return { sessionId: path.basename(filePath, ".json"), state: o.state, ts: o.ts };
+  return { sessionId: path.basename(filePath, ".json"), state: o.state, ts: o.ts, agents: typeof o.agents === "number" ? o.agents : 0 };
 }

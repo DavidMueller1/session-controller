@@ -34,6 +34,9 @@ const DESIRED: { event: string; arg: string; matcher?: string }[] = [
   { event: "StopFailure", arg: "needs-input" },
   { event: "Notification", arg: "needs-input" },
   { event: "PermissionRequest", arg: "needs-input" },
+  // running subagents: a turn that ends while background subagents work is not "Needs you"
+  { event: "SubagentStart", arg: "subagent-start" },
+  { event: "SubagentStop", arg: "subagent-stop" },
   // a (re)started session replaces a leftover "ended" marker, e.g. after `claude --resume`
   { event: "SessionStart", arg: "started" },
   { event: "SessionEnd", arg: "clear" },
