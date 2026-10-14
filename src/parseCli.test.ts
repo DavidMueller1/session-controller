@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { resolve } from "./deriveState.js";
 import { parseCliIncremental } from "./parseCli.js";
 
 /** a transcript assistant line, as Claude Code writes it */
@@ -133,4 +134,29 @@ test("a reminder Claude Code injects after a finished turn doesn't read as a new
   ]);
   const res = await parseCliIncremental(file, null);
   assert.equal(res!.facts.tailKind, "assistant-text");
+});
+
+test("a turn that ends while a background task runs is still working, until the task reports back", async () => {
+  const ts = new Date().toISOString();
+  const toolResult = (text: string) =>
+    JSON.stringify({ type: "user", sessionId: "s1", timestamp: ts, message: { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: [{ type: "text", text }] }] } });
+  const said = (text: string) =>
+    JSON.stringify({ type: "assistant", sessionId: "s1", timestamp: ts, message: { id: "m_" + text, content: [{ type: "text", text }] } });
+  const file = await fixture([
+    toolResult('MCP tool "Atlassian/search" is still running after 120s. It was moved to the background as task k5slmxt4c and keeps running.'),
+    said("I wait for the search."),
+  ]);
+  const res = await parseCliIncremental(file, null);
+  assert.equal(res!.facts.pendingTaskStarts!.length, 1);
+
+  const later = Date.now() + 60_000; // past the needs-input grace
+  assert.equal(resolve(res!.facts, later).state, "working");
+
+  await fs.appendFile(
+    file,
+    JSON.stringify({ type: "queue-operation", operation: "enqueue", timestamp: ts, content: "<task-notification>\n<task-id>k5slmxt4c</task-id>\n<status>failed</status>\n</task-notification>" }) + "\n",
+  );
+  const done = await parseCliIncremental(file, res!.cursor);
+  assert.equal(done!.facts.pendingTaskStarts!.length, 0);
+  assert.equal(resolve(done!.facts, later).state, "needs-input");
 });

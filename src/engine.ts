@@ -302,6 +302,14 @@ export class Engine extends EventEmitter {
         }
       }
 
+      // The turn ended, but background tasks still run (the transcript knows: launched, not
+      // yet reported back). Claude resumes when they finish, so it is not your move — unless
+      // a question or permission prompt is open (hook "asking", registry "waiting").
+      if (!pidDead && (a0.waitingOnTasks ?? 0) > 0 && a.state === "needs-input" && hs?.reason !== "asking" && entry?.status !== "waiting") {
+        a = { ...a, state: "working", lastEventSummary: a0.lastEventSummary };
+        stateSource = "inferred";
+      }
+
       // Registry `status: "shell"`: a shell command runs (e.g. a `!` command) and you wait on
       // it. Claude sets it after the turn's Stop hook, so it outranks an older needs-input.
       if (!pidDead && entry?.status === "shell" && regTs != null && (!hs || hs.state === "ended" || regTs >= hs.ts)) {

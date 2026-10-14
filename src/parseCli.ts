@@ -156,6 +156,9 @@ export interface CliCursor {
    *  of a response, each repeating the SAME `requestId` and the SAME `usage` — without
    *  this set a multi-block turn is billed once per block. */
   billed: Set<string>;
+  /** background tasks (Bash, MCP, async agents) started but not yet reported back via a
+   *  `<task-notification>`: task id → launch time (ms) */
+  pendingTasks: Map<string, number>;
 }
 
 function emptyCursor(): CliCursor {
@@ -178,7 +181,50 @@ function emptyCursor(): CliCursor {
     costByDay: {},
     costUnpriced: false,
     billed: new Set(),
+    pendingTasks: new Map(),
   };
+}
+
+// How Claude Code announces a background task in a tool result, and how it reports one back.
+// Anchored at the start: the real notice IS the whole tool result, while a tool that merely
+// prints such text (a grep over transcripts) must not count.
+const TASK_LAUNCH_RES = [
+  /^Command running in background with ID: ([A-Za-z0-9_-]+)/, // Bash run_in_background
+  /^Command did not complete[^\n]*moved to the background \(ID: ([A-Za-z0-9_-]+)\)/, // Bash past its timeout
+  /^MCP tool [^\n]*moved to the background as task ([A-Za-z0-9_-]+)/, // a slow MCP call
+  /^Async agent launched successfully[\s\S]*?agentId: ([A-Za-z0-9_-]+)/, // background subagent
+];
+const TASK_DONE_RE = /<task-id>([^<]+)<\/task-id>[\s\S]*?<status>(completed|failed|killed|stopped)<\/status>/g;
+
+function blockText(b: any): string {
+  if (typeof b?.content === "string") return b.content;
+  if (Array.isArray(b?.content)) return b.content.map((x: any) => (typeof x?.text === "string" ? x.text : "")).join("\n");
+  return "";
+}
+
+/** track background tasks: a tool result starts one, a task notification ends it */
+function trackTasks(c: CliCursor, o: any, ts: number | null): void {
+  const content = o.message?.content;
+  if (o.type === "user" && Array.isArray(content)) {
+    for (const b of content) {
+      if (b?.type !== "tool_result") continue;
+      const text = blockText(b);
+      if (!text.includes("background")) continue;
+      for (const re of TASK_LAUNCH_RES) {
+        const m = text.trimStart().match(re);
+        if (m) c.pendingTasks.set(m[1], ts ?? Date.now());
+      }
+    }
+  }
+  const note =
+    o.type === "queue-operation" && typeof o.content === "string"
+      ? o.content
+      : o.type === "user" && typeof content === "string"
+        ? content
+        : o.type === "user" && Array.isArray(content) && content[0]?.type === "text"
+          ? String(content[0].text ?? "")
+          : "";
+  if (note.startsWith("<task-notification>")) for (const m of note.matchAll(TASK_DONE_RE)) c.pendingTasks.delete(m[1]);
 }
 
 /** fold one transcript line into the running cursor (first-wins ids, last-wins tail) */
@@ -204,6 +250,7 @@ function ingestLine(c: CliCursor, s: string): void {
   }
 
   const ev = classify(o);
+  trackTasks(c, o, ev.ts);
   if (ev.ts != null) {
     if (c.firstTs == null) c.firstTs = ev.ts;
     c.lastActivityAt = ev.ts; // last timed event wins
@@ -292,6 +339,7 @@ function cursorToFacts(filePath: string, c: CliCursor): SessionFacts {
     costByDay: { ...c.costByDay },
     costUnpriced: c.costUnpriced,
     continuedFrom: c.continuedFrom,
+    pendingTaskStarts: [...c.pendingTasks.values()],
   };
 }
 

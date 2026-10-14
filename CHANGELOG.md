@@ -5,6 +5,7 @@ Each entry is tagged with the build it shipped in (the number in the version sta
 
 ## Build 168 — 2026-10-12
 - **Subagents no longer read as "Needs you":** while background subagents still work, the strip stays In-flight, even after the main turn ends with "waiting for the agents". A question or permission prompt from a subagent still flashes. New hooks (SubagentStart/SubagentStop) are wired on update.
+- **Background tasks keep a strip In-flight:** a turn that ends while a background subagent, a background shell or a slow MCP call still runs no longer reads as "Needs you". The board reads it from the transcript, so it also works without hooks. A task that never reports back counts as lost after 6 hours.
 - **A running shell is not "Needs you" either:** while a shell command runs (Claude reports it as `shell`), the strip stays In-flight.
 - **Finished scheduled-task runs wrap up:** a desktop run of a scheduled task (e.g. a daily summary) that has ended moves to MIA as wrapped up instead of sitting in Holding.
 - **Full width:** the board now uses the whole browser window instead of a 1600px column.

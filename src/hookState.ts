@@ -11,6 +11,8 @@ export interface HookState {
   ts: number;
   /** subagents still running for this session (0 when none) */
   agents: number;
+  /** why a needs-input waits: "asking" (a question / permission prompt) or "done" */
+  reason: string | null;
 }
 
 export function isHookStateFile(p: string): boolean {
@@ -31,5 +33,5 @@ export async function parseHookStateFile(filePath: string): Promise<HookState | 
     return null;
   }
   if (!o || typeof o.state !== "string" || typeof o.ts !== "number") return null;
-  return { sessionId: path.basename(filePath, ".json"), state: o.state, ts: o.ts, agents: typeof o.agents === "number" ? o.agents : 0 };
+  return { sessionId: path.basename(filePath, ".json"), state: o.state, ts: o.ts, agents: typeof o.agents === "number" ? o.agents : 0, reason: typeof o.reason === "string" ? o.reason : null };
 }
