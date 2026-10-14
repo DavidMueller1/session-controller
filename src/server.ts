@@ -333,6 +333,26 @@ async function main(): Promise<void> {
     return changed;
   }
 
+  // Closed session → Landed: a session you closed (the SessionEnd hook fired, so the engine
+  // wrapped it up) lands on its own. Once per close: the trigger carries the last activity, so
+  // a resumed session that works again (auto-unland) lands again on its next close.
+  function autoLandClosed(list: DiscoveredSession[]): boolean {
+    let changed = false;
+    for (const a of list) {
+      if (a.state !== "suspected-done" || a.stateSource !== "hook") continue;
+      const trigger = `closed@${a.lastActivityAt ?? 0}`;
+      if (autoLanded.get(a.id) === trigger) continue;
+      store.setAutoLanded(a.id, trigger);
+      autoLanded.set(a.id, trigger);
+      if (!landed.has(a.id)) {
+        store.setLanded(a.id);
+        changed = true;
+      }
+    }
+    if (changed) landed = new Set(store.getLanded());
+    return changed;
+  }
+
   // Remember each live terminal session's host (iTerm/Terminal/…) while it's running, so a
   // click after its tab is closed can reopen + `claude --resume` it. Detection walks the pid's
   // process tree, so it only works while alive — we do it once per session (guarded), lazily.
@@ -370,6 +390,7 @@ async function main(): Promise<void> {
     }
     autoUnlandOnWork(list);
     autoLandMerged(list);
+    autoLandClosed(list);
     recordLiveCost(list);
     const prevCost = JSON.stringify(costByAccount);
     refreshCost();
