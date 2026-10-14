@@ -11,6 +11,11 @@ import type { ActivityState, DiscoveredSession, SessionFacts } from "./types.js"
  * overnight-safe). Within the recent window a finished assistant turn = awaiting you
  * (HOLDING) after a short grace; work-in-motion ages working → idle.
  */
+/** background tasks still running; one older than the cap counts as lost (it never reported) */
+function pendingTasks(f: SessionFacts, now: number): number {
+  return (f.pendingTaskStarts ?? []).filter((t) => now - t < CONFIG.backgroundTaskMaxMs).length;
+}
+
 function deriveCli(f: SessionFacts, now: number): [ActivityState, string] {
   const age = f.lastActivityAt != null ? now - f.lastActivityAt : Infinity;
   if (age > CONFIG.dormantMs) return ["dormant", f.tailSummary];
@@ -20,6 +25,12 @@ function deriveCli(f: SessionFacts, now: number): [ActivityState, string] {
   if (f.tailKind === "assistant-ask") return ["needs-input", f.tailSummary];
   // an ESC interrupt is unambiguously "waiting on you" — no grace, priority over the window
   if (f.tailKind === "interrupt") return ["needs-input", f.tailSummary];
+  // The turn ended, but background tasks (a shell, a slow MCP call, an async subagent) still
+  // run: Claude resumes once they report back, so nobody waits on you yet.
+  if (f.tailKind === "assistant-text" && pendingTasks(f, now) > 0) {
+    const n = pendingTasks(f, now);
+    return ["working", n === 1 ? "waiting on 1 background task" : `waiting on ${n} background tasks`];
+  }
   if (f.tailKind === "assistant-text") {
     return [age > CONFIG.needsInputGraceMs ? "needs-input" : "working", f.tailSummary];
   }
@@ -71,5 +82,6 @@ export function resolve(f: SessionFacts, now: number): DiscoveredSession {
     costUnpriced: f.costUnpriced,
     continuedFrom: f.continuedFrom ?? null,
     scheduled: f.scheduled,
+    waitingOnTasks: f.source === "cli" && f.tailKind === "assistant-text" ? pendingTasks(f, now) : 0,
   };
 }

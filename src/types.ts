@@ -170,6 +170,8 @@ export interface SessionFacts {
   costUnpriced: boolean;
   /** desktop: session archived by the app (a "suspected done" signal) */
   archived?: boolean;
+  /** CLI: launch times (ms) of background tasks not yet reported back */
+  pendingTaskStarts?: number[];
   /** desktop: a run of a scheduled task (nobody sits at it, so once it ends it is done) */
   scheduled?: boolean;
   /** CLI: the predecessor session id this transcript continued from after a `/compact`
@@ -210,6 +212,8 @@ export interface DiscoveredSession {
    * `["cli", "desktop"]`. Absent = just its own `source`.
    */
   surfaces?: SessionSource[];
+  /** CLI: the turn ended, but this many background tasks still run (so it is working) */
+  waitingOnTasks?: number;
   /** desktop: a run of a scheduled task */
   scheduled?: boolean;
   /**

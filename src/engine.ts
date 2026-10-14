@@ -301,6 +301,14 @@ export class Engine extends EventEmitter {
         }
       }
 
+      // The turn ended, but background tasks still run (the transcript knows: launched, not
+      // yet reported back). Claude resumes when they finish, so it is not your move — unless
+      // a question or permission prompt is open (hook "asking", registry "waiting").
+      if (!pidDead && (a0.waitingOnTasks ?? 0) > 0 && a.state === "needs-input" && hs?.reason !== "asking" && entry?.status !== "waiting") {
+        a = { ...a, state: "working", lastEventSummary: a0.lastEventSummary };
+        stateSource = "inferred";
+      }
+
       // Hard-kill safety net: the process is gone but it still looks active (a stale
       // `working` hook, or a transcript that ends mid-tool, would otherwise pin it
       // In-flight for up to hookStaleMs). Retire it straight to MIA — "lost contact".
