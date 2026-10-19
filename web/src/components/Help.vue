@@ -1,13 +1,32 @@
 <script setup lang="ts">
-defineEmits<{ close: [] }>();
+import { computed, onMounted, ref } from "vue";
+import type { SettingKey } from "../types";
 
-const lanes = [
+const emit = defineEmits<{ close: []; openSettings: [key: SettingKey] }>();
+
+// the current values, so the text quotes your own settings rather than the defaults
+const cfg = ref<{ dormantHours: number; landedKeep: number; autoLand: boolean }>({ dormantHours: 72, landedKeep: 20, autoLand: false });
+onMounted(async () => {
+  try {
+    cfg.value = { ...cfg.value, ...(await (await fetch("/api/settings")).json()) };
+  } catch {
+    /* keep the defaults */
+  }
+});
+function duration(h: number): string {
+  if (h % 168 === 0) return h === 168 ? "1 week" : `${h / 168} weeks`;
+  if (h % 24 === 0) return h === 24 ? "1 day" : `${h / 24} days`;
+  return `${h} hours`;
+}
+
+type Entry = { desc: string; setting?: SettingKey };
+const lanes = computed<(Entry & { name: string; color: string })[]>(() => [
   { name: "In-flight", color: "#3fb950", desc: "Actively working or thinking." },
   { name: "Holding", color: "#e0a92e", desc: "Finished a turn and waiting on you — the strip flashes for attention." },
   { name: "Parked", color: "#e0823c", desc: "A “needs you” strip you triaged by adding a note — set aside, calm." },
   { name: "MIA", color: "#7d8590", desc: "Lost contact: quiet 5+ min, wrapped up, or dormant. Still tracked — nothing vanishes." },
-  { name: "Landed", color: "#4cc38a", desc: "You marked it done. Older landings fold into a Cold overflow as the row fills up." },
-];
+  { name: "Landed", color: "#4cc38a", desc: `You marked it done. Only the newest ${cfg.value.landedKeep} landings stay on the board.`, setting: "landedKeep" },
+]);
 
 // authentic replicas of the strip's state badges (a working/In-flight strip has no badge —
 // it's shown by the green lane + spine)
@@ -20,33 +39,33 @@ const badges = [
 
 // the MIA rail gathers every "not actively in a lane" state — all shown in the same muted
 // grey, distinguished only by the label. What each one actually means:
-const miaStates = [
+const miaStates = computed<(Entry & { label: string })[]>(() => [
   { label: "MIA", desc: "Was working, then radio silence for 5+ minutes — or its process was killed. Still flying; it may pick back up." },
-  { label: "Dormant", desc: "No activity for 24+ hours. Cold and set aside — not gone." },
+  { label: "Dormant", desc: `No activity for ${duration(cfg.value.dormantHours)} or more. Cold and set aside — not gone.`, setting: "dormant" },
   { label: "Wrapped up", desc: "Looks finished: a terminal session that exited, or a desktop session you archived." },
   { label: "Unknown", desc: "No readable activity to judge from — its state couldn't be determined." },
-];
+]);
 
 // the header instruments, left to right
-const header = [
+const header: (Entry & { icon: string; title: string })[] = [
   { icon: "ti-search", title: "SEARCH", desc: "Type, or press /, to show only strips whose title, branch, folder or account tag matches. Esc clears it." },
   { icon: "ti-gauge", title: "PLAN · WEEK", desc: "How much of your Claude plan's weekly limit is used: green, amber from 80%, red from 90%. Hover for when it resets." },
   { icon: "ti-coins", title: "PLAN · CREDITS", desc: "Extra usage credits spent this month, which cover you once you're past the plan limits." },
   { icon: "ti-ban", title: "NO PLAN", desc: "This login has no Claude plan, so usage is billed per token. Hover the sticker and click HIDE? to remove the section." },
   { icon: "ti-receipt", title: "API · TODAY / MONTH", desc: "What your tokens cost at API list prices. On a plan that's not billed; without one, it is." },
-  { icon: "ti-users", title: "PRIVAT · PLAN / API", desc: "The same instruments for a second Claude login, behind its tag. Off until you turn them on in Settings." },
+  { icon: "ti-users", title: "PRIVAT · PLAN / API", desc: "The same instruments for a second Claude login, behind its tag. Off until you turn them on.", setting: "sections" },
   { icon: "ti-list-numbers", title: "Lane names", desc: "The number after a name counts that lane's strips. Click the name to see them all as a grid." },
 ];
 
-const actions = [
+const actions = computed<(Entry & { icon: string; title: string })[]>(() => [
   { icon: "ti-pointer", title: "Click a strip", desc: "Jumps to the session — its terminal tab, PhpStorm window or Claude app session (reopened if the tab was closed)." },
   { icon: "ti-id", title: "Click the title", desc: "Opens its detail — full path, model, surfaces, last event, timestamps, and Open window." },
   { icon: "ti-server-2", title: "dev ▾", desc: "Install dependencies, start / stop the dev server, and view live logs." },
   { icon: "ti-pin", title: "note", desc: "Pin a note — turns a flashing “Needs you” into a calm Parked strip." },
-  { icon: "ti-plane-arrival", title: "land", desc: "Mark done → Landed. Auto-un-lands if the session starts working again. Turn on Auto-land in Settings to land strips whose PR is merged." },
+  { icon: "ti-plane-arrival", title: "land", desc: `Mark done → Landed. Auto-un-lands if the session starts working again. Auto-land (${cfg.value.autoLand ? "on" : "off"}) lands strips whose PR is merged.`, setting: "autoLand" },
   { icon: "ti-sparkles", title: "What's new", desc: "The changelog. A dot on the icon marks new entries after an update." },
-  { icon: "ti-settings", title: "Settings (gear)", desc: "Board view & notifications, auto-land on merged PRs, show / hide PLAN and API per login, the overlay rail, check-for-updates / restart / quit, and per-repo dev config." },
-];
+  { icon: "ti-settings", title: "Settings (gear)", desc: "Board view & notifications, when strips go dormant, how many landed strips stay, auto-land on merged PRs, show / hide PLAN and API per login, the overlay rail, check-for-updates / restart / quit, and per-repo dev config." },
+]);
 </script>
 
 <template>
@@ -68,7 +87,7 @@ const actions = [
           <div class="h-legend">
             <div v-for="l in lanes" :key="l.name" class="h-item">
               <span class="h-spine" :style="{ background: l.color }"></span>
-              <div class="h-text"><b :style="{ color: l.color }">{{ l.name }}</b><span>{{ l.desc }}</span></div>
+              <div class="h-text"><b :style="{ color: l.color }">{{ l.name }}</b><span>{{ l.desc }} <button v-if="l.setting" class="h-set" @click="emit('openSettings', l.setting)">Settings <i class="ti ti-arrow-right"></i></button></span></div>
             </div>
           </div>
 
@@ -85,7 +104,7 @@ const actions = [
           <div class="h-legend">
             <div v-for="m in miaStates" :key="m.label" class="h-item">
               <span class="h-vis"><span class="hbadge" style="background: #1c222c; color: #8b98a8">{{ m.label }}</span></span>
-              <div class="h-text"><span>{{ m.desc }}</span></div>
+              <div class="h-text"><span>{{ m.desc }} <button v-if="m.setting" class="h-set" @click="emit('openSettings', m.setting)">Settings <i class="ti ti-arrow-right"></i></button></span></div>
             </div>
           </div>
 
@@ -115,7 +134,7 @@ const actions = [
           <div class="h-legend">
             <div v-for="x in header" :key="x.title" class="h-item">
               <span class="h-vis"><i class="ti h-ico" :class="x.icon"></i></span>
-              <div class="h-text"><b>{{ x.title }}</b><span>{{ x.desc }}</span></div>
+              <div class="h-text"><b>{{ x.title }}</b><span>{{ x.desc }} <button v-if="x.setting" class="h-set" @click="emit('openSettings', x.setting)">Settings <i class="ti ti-arrow-right"></i></button></span></div>
             </div>
           </div>
 
@@ -123,7 +142,7 @@ const actions = [
           <div class="h-legend">
             <div v-for="x in actions" :key="x.title" class="h-item">
               <span class="h-vis"><i class="ti h-ico" :class="x.icon"></i></span>
-              <div class="h-text"><b>{{ x.title }}</b><span>{{ x.desc }}</span></div>
+              <div class="h-text"><b>{{ x.title }}</b><span>{{ x.desc }} <button v-if="x.setting" class="h-set" @click="emit('openSettings', x.setting)">Settings <i class="ti ti-arrow-right"></i></button></span></div>
             </div>
           </div>
 
@@ -133,13 +152,17 @@ const actions = [
             in a separate terminal profile. Any <code>~/.claude-&lt;name&gt;</code> that has been logged in to is
             picked up when the app starts: its strips get a <b>tag</b> with the name, clicking one reopens it under
             the right login, and <b>Settings</b> can show its own PLAN and API in the header.
+            <button class="h-set" @click="emit('openSettings', 'sections')">Settings <i class="ti ti-arrow-right"></i></button>
           </p>
 
           <div class="h-sec">Removal &amp; keeping</div>
           <p class="h-note">
-            A session with no activity for <b>5 days</b> drops off the board automatically — landed
-            or not — so the board stays current. To keep one for good, <b>add a note</b>: a noted
-            strip is pinned and never removed, at any age. It's the way to make a session persist.
+            Strips never drop off on their own — a quiet one ends up in the MIA rail, however old, and
+            turns <b>Dormant</b> after {{ duration(cfg.dormantHours) }} without activity.
+            <button class="h-set" @click="emit('openSettings', 'dormant')">Settings <i class="ti ti-arrow-right"></i></button>
+            Only <b>landed</b> strips leave the board: the newest <b>{{ cfg.landedKeep }}</b> stay, older landings
+            are hidden. <button class="h-set" @click="emit('openSettings', 'landedKeep')">Settings <i class="ti ti-arrow-right"></i></button>
+            A strip with a <b>note</b> always stays, landed or not.
           </p>
 
           <div class="h-sec">Top banners</div>
@@ -180,6 +203,9 @@ const actions = [
 .hdev { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-family: ui-monospace, Menlo, monospace; color: var(--green); border: 0.5px solid color-mix(in srgb, var(--green) 40%, transparent); border-radius: 6px; padding: 0 5px; }
 .hdot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 5px color-mix(in srgb, var(--green) 70%, transparent); }
 .h-ico { font-size: 15px; color: var(--text-dim); }
+.h-set { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; color: var(--blue); font-size: 11px; white-space: nowrap; }
+.h-set:hover { text-decoration: underline; text-underline-offset: 2px; }
+.h-set .ti { font-size: 11px; }
 .hacct { font: 10px/10.5px ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.06em; color: var(--acct); box-shadow: inset 0 0 0 0.5px var(--acct); border-radius: 6px; padding: 3.5px 6px 0.5px; }
 .h-note code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--text-hi); }
 </style>

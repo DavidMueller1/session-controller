@@ -244,9 +244,24 @@ export class Store {
     this.db.prepare(`DELETE FROM dev_servers WHERE root = ?`).run(root);
   }
 
-  /** ids the user has marked landed (kept, not pruned with sessions) */
-  getLanded(): string[] {
-    return (this.db.prepare(`SELECT id FROM landed`).all() as { id: string }[]).map((r) => r.id);
+  /** id → when it was landed, for every strip the user (or auto-land) marked landed */
+  getLanded(): Map<string, number> {
+    const rows = this.db.prepare(`SELECT id, landed_at FROM landed`).all() as { id: string; landed_at: number }[];
+    return new Map(rows.map((r) => [r.id, r.landed_at]));
+  }
+
+  /** Land every un-noted session quiet since `before`, dated at its last activity (so they sort
+   *  as the oldest landings). The one-off switch from "old strips vanish" to "only landed
+   *  strips leave the board", so the history that had vanished doesn't flood back. */
+  landQuietSince(before: number): number {
+    return this.db
+      .prepare(
+        `INSERT INTO landed (id, landed_at)
+         SELECT id, COALESCE(last_activity_at, 0) FROM sessions
+         WHERE COALESCE(last_activity_at, 0) < ? AND id NOT IN (SELECT id FROM notes)
+         ON CONFLICT(id) DO NOTHING`,
+      )
+      .run(before).changes;
   }
 
   setLanded(id: string): void {

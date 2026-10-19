@@ -15,7 +15,7 @@ import Helicopter from "./components/Helicopter.vue";
 import { useBoard } from "./useBoard";
 import { isDemo } from "./demo";
 import { accountTag, laneOf, isFlashing, formatUsd, projectName } from "./format";
-import type { Aircraft, CostSummary, LanePartition, PlanUsage } from "./types";
+import type { Aircraft, CostSummary, LanePartition, PlanUsage, SettingKey } from "./types";
 
 // Compact mode for the menu-bar popover (loaded as /?panel). Renders just the mini-board
 // and tells useBoard to stay silent (the full dashboard owns notifications).
@@ -195,8 +195,8 @@ const healthTitle = computed(() => {
   return `installed: ${h.installedEvents.join(", ") || "none"} · fresh hook writes: ${h.freshWrites} · last: ${last}`;
 });
 
-// Staleness (drop sessions idle > 5 days, landed or not — unless noted) is enforced by the
-// server now, so the board renders whatever it sends.
+// Which strips leave the board (only landings beyond the kept count) is the server's call,
+// so the board renders whatever it sends.
 const boardAircraft = computed<Aircraft[]>(() => effectiveAircraft.value);
 
 // header scratchpad search: the board keeps only strips whose title, branch or folder matches
@@ -285,6 +285,13 @@ function onLogoClick() {
 }
 
 const settingsOpen = ref(false);
+// a Settings row to scroll to + highlight when Settings opens from a Help link
+const settingsFocus = ref<SettingKey | null>(null);
+function openSettingsAt(key: SettingKey) {
+  closeHelp();
+  settingsFocus.value = key;
+  settingsOpen.value = true;
+}
 const helpOpen = ref(false);
 // Open Help automatically on each visit until the user has closed it once (full board only).
 function closeHelp() {
@@ -626,7 +633,7 @@ function onOpen(id: string) { open(id); }
           </section>
         </div>
 
-        <!-- LANDED: one row of recent landings (older than 7 days are hidden) -->
+        <!-- LANDED: one row of the most recent landings (the server keeps the newest N) -->
         <div v-if="landed.length" class="landed-region">
           <div class="band-h landed-h">
             <i class="ti ti-plane-arrival"></i>Landed <span class="n">{{ landed.length }}</span>
@@ -640,6 +647,7 @@ function onOpen(id: string) { open(id); }
 
     <Settings
       v-if="settingsOpen"
+      :focus="settingsFocus"
       :flight="flight"
       :notify-supported="notifySupported"
       :notify-enabled="notifyEnabled"
@@ -648,9 +656,9 @@ function onOpen(id: string) { open(id); }
       @toggle-flight="toggleFlight"
       @toggle-notify="toggleNotify"
       @toggle-section="(kind, id) => setShown(kind, id, !isShown(kind, id))"
-      @close="settingsOpen = false"
+      @close="(settingsOpen = false), (settingsFocus = null)"
     />
-    <Help v-if="helpOpen" @close="closeHelp" />
+    <Help v-if="helpOpen" @close="closeHelp" @open-settings="openSettingsAt" />
     <Whatsnew v-if="whatsnewOpen" :since-build="seenBuild" @close="closeWhatsnew" />
     <div v-if="version" class="version-tag">{{ version }}</div>
     <Clouds v-if="cloudsMounted" :active="cloudsOn" @faded="cloudsMounted = false" />
@@ -826,7 +834,7 @@ header { flex: none; display: flex; align-items: center; justify-content: space-
 .stack { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .empty { font-size: 11px; color: var(--text-faint); padding: 6px 2px; }
 
-/* landed pinned at the bottom as ONE row of recent landings (older than 7 days hidden) */
+/* landed pinned at the bottom as ONE row of the most recent landings */
 .landed-region { flex: none; display: flex; flex-direction: column; margin-top: 14px; }
 .landed-region .landed-h { margin-bottom: 8px; flex: none; }
 /* single row, scrolls sideways; align-items:stretch makes every card as tall as the tallest */

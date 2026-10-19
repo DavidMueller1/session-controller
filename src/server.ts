@@ -29,14 +29,30 @@ function counts(list: DiscoveredSession[]): Record<string, number> {
   }, {});
 }
 
+/** setting choices: hours until Dormant, and how many landed strips stay on the board */
+const DORMANT_HOURS = [8, 24, 48, 72, 120, 168];
+const LANDED_KEEP = [10, 20, 50, 100];
+
 async function main(): Promise<void> {
   const engine = new Engine();
   const store = new Store(CONFIG.dbPath);
+  // the quiet time before a strip goes Dormant — a setting, applied before the first scan
+  const savedDormant = Number(store.getSetting("dormantHours"));
+  if (DORMANT_HOURS.includes(savedDormant)) CONFIG.dormantMs = savedDormant * 3_600_000;
+  // how many landed strips stay on the board (the only ones that ever leave it)
+  const savedKeep = Number(store.getSetting("landedKeep"));
+  let landedKeep = LANDED_KEEP.includes(savedKeep) ? savedKeep : 20;
+  // Old boards dropped every strip quiet for 5 days; land those once so they stay gone.
+  if (!store.getSetting("landedQuietMigrated")) {
+    const n = store.landQuietSince(Date.now() - CONFIG.readWindowMs);
+    store.setSetting("landedQuietMigrated", "1");
+    if (n) process.stdout.write(`[board] landed ${n} session(s) quiet for 5+ days\n`);
+  }
   const app = Fastify({ logger: false });
   await app.register(websocket);
 
   let notes = store.getNotes();
-  let landed = new Set(store.getLanded());
+  let landed = store.getLanded();
   // Noted sessions stay on the board at any age — tell the engine not to skip them.
   const syncKeepIds = () => engine.setKeepIds(new Set(Object.keys(notes)));
   syncKeepIds();
@@ -161,28 +177,36 @@ async function main(): Promise<void> {
   // vanished files.
   const floorOffline = (s: ActivityState): ActivityState =>
     s === "working" || s === "needs-input" || s === "unknown" ? "idle" : s;
+  // a persisted row isn't re-derived by the engine, so age it into Dormant here
+  const offlineState = (s: DiscoveredSession): ActivityState =>
+    Date.now() - (s.lastActivityAt ?? 0) > CONFIG.dormantMs ? "dormant" : floorOffline(s.state);
   function offlineSessions(): DiscoveredSession[] {
     const liveList = engine.aircraft();
     const live = new Set(liveList.map((a) => a.id));
     // a superseded predecessor is folded into its live continuation — never a strip of its
     // own, even for the brief window before its persisted row is retired.
     const superseded = new Set(liveList.flatMap((a) => a.supersedes ?? []));
-    // Drop persisted sessions with no activity for staleCutoffMs (incl. old landings) so a
-    // fresh install / restart doesn't resurrect the whole history — unless the user noted it.
-    const cutoff = Date.now() - CONFIG.staleCutoffMs;
     return store
       .getSessions()
       .filter((s) => !live.has(s.id) && !superseded.has(s.id))
-      .filter((s) => !!notes[s.id] || (s.lastActivityAt ?? 0) >= cutoff)
-      .map((s) => ({ ...s, state: floorOffline(s.state), offline: true }));
+      .map((s) => ({ ...s, state: offlineState(s), offline: true }));
   }
   const baseList = (): DiscoveredSession[] => [...engine.aircraft(), ...offlineSessions()];
-  // Final staleness cut on the board, keyed on real last-activity (not file mtime, which
-  // the engine gate uses only as a cheap perf pre-filter — some files are touched without
-  // new events). A session idle > staleCutoffMs drops off unless the user noted it.
-  const onBoard = (a: DiscoveredSession): boolean =>
-    !!a.note || (a.lastActivityAt ?? 0) >= Date.now() - CONFIG.staleCutoffMs;
-  const fullList = (): DiscoveredSession[] => decorate(baseList()).filter(onBoard);
+  // Only landed strips leave the board: the newest `landedKeep` landings stay (a noted one
+  // always does). Everything else stays until you land it.
+  const landedAtOf = (a: DiscoveredSession): number =>
+    landed.get(a.id) ?? Math.max(0, ...(a.supersedes ?? []).map((id) => landed.get(id) ?? 0));
+  const fullList = (): DiscoveredSession[] => {
+    const list = decorate(baseList());
+    const kept = new Set(
+      list
+        .filter((a) => a.landed && !a.note)
+        .sort((x, y) => landedAtOf(y) - landedAtOf(x))
+        .slice(0, landedKeep)
+        .map((a) => a.id),
+    );
+    return list.filter((a) => !a.landed || !!a.note || kept.has(a.id));
+  };
 
   const clients = new Set<WebSocket>();
   const broadcast = (msg: unknown) => {
@@ -307,7 +331,7 @@ async function main(): Promise<void> {
         changed = true;
       }
     }
-    if (changed) landed = new Set(store.getLanded());
+    if (changed) landed = store.getLanded();
   }
 
   // Auto-land (opt-in): a strip lands once its PR is merged and it isn't working. Each trigger
@@ -329,7 +353,7 @@ async function main(): Promise<void> {
         changed = true;
       }
     }
-    if (changed) landed = new Set(store.getLanded());
+    if (changed) landed = store.getLanded();
     return changed;
   }
 
@@ -364,7 +388,7 @@ async function main(): Promise<void> {
     for (const a of list) for (const from of a.supersedes ?? []) if (store.reassign(from, a.id)) reassigned = true;
     if (reassigned) {
       notes = store.getNotes();
-      landed = new Set(store.getLanded());
+      landed = store.getLanded();
       autoLanded = store.getAutoLanded();
       syncKeepIds();
     }
@@ -527,26 +551,39 @@ async function main(): Promise<void> {
   // landing (a human decision) — mark done / send back into the pattern (go-around)
   app.post<{ Params: { id: string } }>("/api/aircraft/:id/landed", async (req) => {
     store.setLanded(req.params.id);
-    landed = new Set(store.getLanded());
+    landed = store.getLanded();
     pushUpdate();
     return { ok: true, id: req.params.id, landed: true };
   });
 
   app.delete<{ Params: { id: string } }>("/api/aircraft/:id/landed", async (req) => {
     store.unsetLanded(req.params.id);
-    landed = new Set(store.getLanded());
+    landed = store.getLanded();
     pushUpdate();
     return { ok: true, id: req.params.id, landed: false };
   });
 
-  app.get("/api/settings", async () => ({ autoLand }));
-  app.put<{ Body: { autoLand?: boolean } }>("/api/settings", async (req) => {
+  const settingsMsg = () => ({ autoLand, dormantHours: CONFIG.dormantMs / 3_600_000, landedKeep });
+  app.get("/api/settings", async () => settingsMsg());
+  app.put<{ Body: { autoLand?: boolean; dormantHours?: number; landedKeep?: number } }>("/api/settings", async (req) => {
     if (typeof req.body?.autoLand === "boolean") {
       autoLand = req.body.autoLand;
       store.setSetting("autoLand", autoLand ? "1" : "0");
       if (autoLandMerged(engine.aircraft())) pushUpdate();
     }
-    return { autoLand };
+    const h = req.body?.dormantHours;
+    if (typeof h === "number" && DORMANT_HOURS.includes(h)) {
+      store.setSetting("dormantHours", String(h));
+      CONFIG.dormantMs = h * 3_600_000;
+      engine.rederive();
+    }
+    const k = req.body?.landedKeep;
+    if (typeof k === "number" && LANDED_KEEP.includes(k)) {
+      landedKeep = k;
+      store.setSetting("landedKeep", String(k));
+      pushUpdate();
+    }
+    return settingsMsg();
   });
 
   // repos the tower has strips for, with their per-repo config — drives the Settings modal

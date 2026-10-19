@@ -140,10 +140,9 @@ export class Engine extends EventEmitter {
     } catch {
       return; // vanished/unreadable — syncRoots handles pruning
     }
-    // Staleness gate: a session with no activity for staleCutoffMs drops off the board —
-    // we don't even read it (a big startup + AV-scan saving, and it keeps a fresh install
-    // from flooding MIA with the whole history). A note pins it on at any age.
-    if (Date.now() - st.mtimeMs > CONFIG.staleCutoffMs && !this.keepIds.has(idForPath(p))) {
+    // Read window: a transcript quiet for readWindowMs isn't read (a big startup + AV-scan
+    // saving) — the server shows it from its persisted row. A note keeps it read at any age.
+    if (Date.now() - st.mtimeMs > CONFIG.readWindowMs && !this.keepIds.has(idForPath(p))) {
       this.forget(p);
       return;
     }
@@ -407,7 +406,7 @@ export class Engine extends EventEmitter {
           const p = path.join(CONFIG.hookStateDir, e);
           try {
             const o = JSON.parse(await fs.readFile(p, "utf8"));
-            if (typeof o?.ts === "number" && now - o.ts > CONFIG.hookStateGcMs) {
+            if (typeof o?.ts === "number" && now - o.ts > CONFIG.dormantMs + CONFIG.hookStateGcMs) {
               await fs.unlink(p);
               this.hookState.delete(path.basename(e, ".json"));
             }
@@ -421,6 +420,11 @@ export class Engine extends EventEmitter {
   /** live source dirs, split by how fast they need polling */
   private static readonly LIVE_ROOTS = [CONFIG.hookStateDir, ...ACCOUNTS.map((a) => a.sessionsDir)]; // tiny + latency-sensitive
   private static readonly FILE_ROOTS = [...ACCOUNTS.map((a) => a.projectsDir), ...CONFIG.desktopSessionDirs]; // big transcript trees
+
+  /** re-derive every state now, e.g. after a threshold setting changed */
+  rederive(): void {
+    this.recompute(true);
+  }
 
   /** one-shot: full scan + derive, no timers (used by `once`) */
   async scan(): Promise<void> {

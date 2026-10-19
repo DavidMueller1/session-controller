@@ -3,6 +3,11 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 170 — 2026-10-19
+- **Strips no longer drop off after 5 days.** Only landed strips leave the board: the newest 20 landings stay (10–100 in Settings). Sessions that had already dropped off are marked landed once, so the board looks the same after the update.
+- Strips now go **Dormant** after 3 days without activity (was 1 day); pick 8 hours to 1 week in Settings.
+- **Help** quotes your own settings and links straight to them.
+
 ## Build 169 — 2026-10-19
 - Clicking a strip now jumps straight to its session; click the strip's title for the details.
 

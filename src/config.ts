@@ -18,8 +18,8 @@ export const CONFIG = {
   hookStateDir: path.join(home, ".claude", "tc-state"),
   hookStaleMs: 15 * 60_000,
   /** our own tc-state files accumulate (one terminal `ended` marker per exited session);
-   *  prune any older than this so the dir stays tidy. Well beyond dormantMs so a pruned
-   *  session has long since settled into MIA/offline and can't pop back to In-flight. */
+   *  prune any older than dormantMs + this, so a pruned session has long since gone cold
+   *  and can't pop back into Holding off its transcript. */
   hookStateGcMs: 12 * 60 * 60_000,
   hookGcMs: 60 * 60_000, // how often to run that prune
 
@@ -35,12 +35,11 @@ export const CONFIG = {
   /** assistant turn ended; wait this short grace before calling it needs-input (HOLDING) */
   needsInputGraceMs: 8_000,
   /** no activity for this long => "cold" (dormant). NOT landed. Overnight-safe. */
-  dormantMs: 24 * 60 * 60_000,
-  /** a session with no activity for this long drops off the board entirely: its transcript
-   *  isn't even parsed (a big startup + AV-scan saving), and a persisted/landed row for it
-   *  is hidden. EXCEPTION: a session with a note is always kept, at any age. Keeps a fresh
-   *  install from flooding the MIA lane with the whole session history. */
-  staleCutoffMs: 5 * 24 * 60 * 60_000,
+  dormantMs: 72 * 60 * 60_000,
+  /** transcripts quiet for longer than this aren't read at all (a big startup + AV-scan saving)
+   *  — the board shows those sessions from their persisted row instead. A noted session is
+   *  always read. Nothing leaves the board by age: only landed strips beyond the kept count. */
+  readWindowMs: 5 * 24 * 60 * 60_000,
 
   /** re-derive time-based state (no disk I/O) this often — the key to snappy transitions */
   fastTickMs: 1_000,

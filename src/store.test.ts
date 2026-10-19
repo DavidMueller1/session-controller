@@ -146,3 +146,13 @@ test("sums an account's spend from its own projects dir only", () => {
   assert.equal(s.costSummary("2026-09-15", "/h/.claude/projects/").today, 1);
   assert.equal(s.costSummary("2026-09-15", "/h/.claude-privat/projects/").today, 3);
 });
+
+test("lands the sessions that have gone quiet, but never a noted one", () => {
+  const s = tmpStore();
+  const at = (id: string, lastActivityAt: number) =>
+    ({ id, source: "cli", path: `/t/${id}.jsonl`, project: null, branch: null, title: id, model: null, firstSeenAt: lastActivityAt, lastActivityAt, state: "idle", lastEventSummary: "", linkedCliSessionId: null, surfaces: ["cli"] }) as Parameters<Store["syncSessions"]>[0][number];
+  s.syncSessions([at("old", 1_000), at("noted", 1_000), at("fresh", 9_000)]);
+  s.setNote("noted", "keep me");
+  assert.equal(s.landQuietSince(5_000), 1);
+  assert.deepEqual([...s.getLanded()], [["old", 1_000]]);
+});

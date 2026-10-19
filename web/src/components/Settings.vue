@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { devUrl } from "../format";
+import type { SettingKey } from "../types";
 
 interface Cfg {
   urlTemplate: string;
@@ -21,7 +22,7 @@ interface SectionPref {
   plan: boolean;
   api: boolean;
 }
-defineProps<{ flight: boolean; notifySupported: boolean; notifyEnabled: boolean; sections: SectionPref[]; version?: string }>();
+const props = defineProps<{ flight: boolean; notifySupported: boolean; notifyEnabled: boolean; sections: SectionPref[]; version?: string; focus?: SettingKey | null }>();
 const emit = defineEmits<{ close: []; toggleFlight: []; toggleNotify: []; toggleSection: [kind: "plan" | "api", id: string] }>();
 
 // App controls (moved out of the native menu). These queue a command the menu-bar app runs
@@ -49,21 +50,42 @@ function toggleOverlay() {
 }
 // Server-side so it also lands strips while no board is open.
 const autoLand = ref(false);
+const DORMANT: [number, string][] = [[8, "8h"], [24, "1d"], [48, "2d"], [72, "3d"], [120, "5d"], [168, "1w"]];
+const LANDED_KEEP = [10, 20, 50, 100];
+const dormantHours = ref<number | null>(null);
+const landedKeep = ref<number | null>(null);
+type ServerSettings = { autoLand?: boolean; dormantHours?: number; landedKeep?: number };
+function applySettings(d: ServerSettings) {
+  autoLand.value = !!d.autoLand;
+  dormantHours.value = d.dormantHours ?? null;
+  landedKeep.value = d.landedKeep ?? null;
+}
 async function loadSettings() {
   try {
-    autoLand.value = !!(await (await fetch("/api/settings")).json()).autoLand;
+    applySettings(await (await fetch("/api/settings")).json());
   } catch {
     /* leave as-is */
   }
 }
-async function toggleAutoLand() {
-  autoLand.value = !autoLand.value;
+async function putSettings(body: ServerSettings) {
   try {
-    const r = await fetch("/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ autoLand: autoLand.value }) });
-    autoLand.value = !!(await r.json()).autoLand;
+    const r = await fetch("/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    applySettings(await r.json());
   } catch {
-    autoLand.value = !autoLand.value;
+    void loadSettings();
   }
+}
+function toggleAutoLand() {
+  autoLand.value = !autoLand.value;
+  void putSettings({ autoLand: autoLand.value });
+}
+function setDormant(h: number) {
+  dormantHours.value = h;
+  void putSettings({ dormantHours: h });
+}
+function setLandedKeep(n: number) {
+  landedKeep.value = n;
+  void putSettings({ landedKeep: n });
 }
 // "Check now" with real feedback: ask the server to fetch the branch → if there's an update,
 // trigger it (the app applies + restarts, and the board auto-reloads); otherwise say so.
@@ -110,6 +132,18 @@ function quitApp() {
 }
 onMounted(loadAppState);
 onMounted(loadSettings);
+// opened from a Help link: bring that row into view and pulse it once
+const panelEl = ref<HTMLElement | null>(null);
+onMounted(() => {
+  if (!props.focus) return;
+  const rows = [...(panelEl.value?.querySelectorAll<HTMLElement>(`[data-setting="${props.focus}"]`) ?? [])];
+  if (!rows.length) return;
+  // after the panel has laid out, so the scroll lands on the row
+  requestAnimationFrame(() => {
+    rows[0].scrollIntoView({ block: "center", behavior: "smooth" });
+    for (const r of rows) r.classList.add("s-focus");
+  });
+});
 
 const repos = ref<RepoRow[]>([]);
 const globals = ref<Cfg>({ urlTemplate: "", command: "", install: "", env: "" });
@@ -158,7 +192,7 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
 
 <template>
   <div class="s-overlay" @click.self="emit('close')">
-    <div class="s-panel">
+    <div ref="panelEl" class="s-panel">
       <div class="s-h">
         <span><i class="ti ti-settings"></i> Settings</span>
         <button class="icon" aria-label="close" @click="emit('close')"><i class="ti ti-x"></i></button>
@@ -179,20 +213,32 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
             <i class="ti" :class="notifyEnabled ? 'ti-bell' : 'ti-bell-off'"></i> {{ notifyEnabled ? "On" : "Off" }}
           </button>
         </div>
-        <div class="s-pref">
+        <div class="s-pref" data-setting="dormant">
+          <span class="s-plabel">Dormant after no activity for</span>
+          <div class="s-seg">
+            <button v-for="[h, label] in DORMANT" :key="h" :class="{ on: dormantHours === h }" @click="setDormant(h)">{{ label }}</button>
+          </div>
+        </div>
+        <div class="s-pref" data-setting="landedKeep">
+          <span class="s-plabel">Landed strips kept on the board</span>
+          <div class="s-seg">
+            <button v-for="n in LANDED_KEEP" :key="n" :class="{ on: landedKeep === n }" @click="setLandedKeep(n)">{{ n }}</button>
+          </div>
+        </div>
+        <div class="s-pref" data-setting="autoLand">
           <span class="s-plabel">Auto-land when the PR is merged</span>
           <button class="s-toggle" :class="{ on: autoLand }" @click="toggleAutoLand">
             <i class="ti" :class="autoLand ? 'ti-plane-arrival' : 'ti-plane-off'"></i> {{ autoLand ? "On" : "Off" }}
           </button>
         </div>
         <template v-for="sec in sections" :key="sec.id">
-          <div class="s-pref">
+          <div class="s-pref" data-setting="sections">
             <span class="s-plabel">Show plan usage<span v-if="sec.tag" class="s-acct">{{ sec.tag }}</span></span>
             <button class="s-toggle" :class="{ on: sec.plan }" @click="emit('toggleSection', 'plan', sec.id)">
               <i class="ti" :class="sec.plan ? 'ti-eye' : 'ti-eye-off'"></i> {{ sec.plan ? "On" : "Off" }}
             </button>
           </div>
-          <div class="s-pref">
+          <div class="s-pref" data-setting="sections">
             <span class="s-plabel">Show API costs<span v-if="sec.tag" class="s-acct">{{ sec.tag }}</span></span>
             <button class="s-toggle" :class="{ on: sec.api }" @click="emit('toggleSection', 'api', sec.id)">
               <i class="ti" :class="sec.api ? 'ti-eye' : 'ti-eye-off'"></i> {{ sec.api ? "On" : "Off" }}
@@ -303,6 +349,12 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
 </template>
 
 <style scoped>
+/* a row opened from a Help link blinks three times, like a strip asking for you */
+.s-focus { animation: s-focus 0.6s ease-in-out 3; border-radius: 6px; margin: -4px -8px; padding: 4px 8px; }
+@keyframes s-focus {
+  0%, 100% { background: transparent; box-shadow: none; }
+  50% { background: rgba(88, 166, 255, 0.18); box-shadow: inset 0 0 0 1px rgba(88, 166, 255, 0.7); }
+}
 .s-acct { margin-left: 7px; color: var(--acct); box-shadow: inset 0 0 0 0.5px var(--acct); border-radius: 4px; padding: 0 5px; font: 600 9.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.06em; }
 .s-overlay { position: fixed; inset: 0; z-index: 60; background: rgba(6, 9, 13, 0.66); display: flex; align-items: center; justify-content: center; padding: 32px; }
 .s-panel { width: min(720px, 94vw); max-height: 82vh; display: flex; flex-direction: column; background: var(--panel); border: 0.5px solid var(--border); border-radius: 12px; box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5); overflow: hidden; }

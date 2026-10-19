@@ -104,6 +104,9 @@ export interface CostSummary {
   scanned: boolean;
 }
 
+/** a Settings row other views can link to (Help) — Settings scrolls to and highlights it */
+export type SettingKey = "dormant" | "landedKeep" | "autoLand" | "sections";
+
 export type Lane = "inflight" | "mia" | "holding" | "parked" | "cold" | "landed";
 
 /** the board's five rendered lanes, partitioned + sorted once and shared (App + FlightBoard) */
