@@ -59,7 +59,7 @@ the [GitHub CLI](https://cli.github.com) is optional, for PR pills.
     <td><img src="docs/screenshots/grid.png" alt="Grid view listing every Claude Code session in the In-flight lane" /></td>
   </tr>
   <tr>
-    <td align="center"><sub>Click a strip for its details</sub></td>
+    <td align="center"><sub>Click a strip's title for its details</sub></td>
     <td align="center"><sub>Click a lane's name for the grid</sub></td>
   </tr>
 </table>

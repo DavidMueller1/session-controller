@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 169 — 2026-10-19
+- Clicking a strip now jumps straight to its session; click the strip's title for the details.
+
 ## Build 168 — 2026-10-19
 - Renamed sessions keep their `/rename` title after they go quiet, instead of falling back to the auto-generated one.
 

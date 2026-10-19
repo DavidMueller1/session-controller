@@ -29,11 +29,12 @@ const age = computed(() => {
 });
 const spineColor = computed(() => (landed.value ? LANDED_COLOR : parked.value ? PARKED_COLOR : meta.value.color));
 
-// clicking the strip body (anywhere that isn't a control) opens the detail view
+// clicking the strip body (anywhere that isn't a control) jumps to the session — the common
+// case; the title opens the detail view
 const detailOpen = ref(false);
 function onStripClick(e: MouseEvent) {
   if ((e.target as HTMLElement).closest("button, a, input")) return; // let controls act
-  detailOpen.value = true;
+  emit("open", props.aircraft.id);
 }
 
 // context-usage ring
@@ -210,11 +211,11 @@ function commitNote() {
 </script>
 
 <template>
-  <div class="strip" :class="{ flash: flashing, parked, landed, mia }" :data-fid="aircraft.id" title="Click for details" @click="onStripClick">
+  <div class="strip" :class="{ flash: flashing, parked, landed, mia }" :data-fid="aircraft.id" title="Open the session's window (terminal / PhpStorm / Claude)" @click="onStripClick">
     <div class="spine" :style="{ background: spineColor }"></div>
     <div class="body">
       <div class="cs">
-        <span class="title" title="Open the session's window (terminal / PhpStorm / Claude)" @click.stop="emit('open', aircraft.id)">{{ aircraft.title || aircraft.id }}</span>
+        <span class="title" title="Details" @click.stop="detailOpen = true">{{ aircraft.title || aircraft.id }}</span>
         <span v-if="landed" class="badge" style="background: #16301f; color: #4cc38a"><i class="ti ti-check"></i> Landed<button class="badge-x" aria-label="undo landing" title="undo landing" @click="emit('unland', aircraft.id)"><i class="ti ti-x"></i></button></span>
         <span v-else-if="mia" class="badge" style="background: #1c222c; color: #8b98a8" title="no activity for 5+ min — still flying, but lost contact"><i class="ti ti-clock"></i> MIA</span>
         <span v-else-if="parked" class="badge" style="background: var(--parked-bg); color: var(--parked)"><i class="ti ti-parking"></i> Parked</span>
@@ -355,10 +356,10 @@ function commitNote() {
 <style scoped>
 .strip { display: flex; background: var(--strip); border: 0.5px solid var(--border); border-radius: 8px; overflow: hidden; animation: strip-in 0.3s ease; cursor: pointer; transition: background-color 0.12s ease; }
 .strip.parked { background: var(--strip-parked); }
-/* the strip body opens its detail on click — a faint lift on hover hints at that. a
+/* the strip body opens the session on click — a faint lift on hover hints at that. a
    translucent layer over the base colour, so it brightens every variant without replacing
    it. Suppressed while hovering an interactive child (title, note, buttons, links), since
-   those have their own action and don't open the modal. */
+   those have their own action. */
 .strip:hover:not(:has(button:hover, a:hover, input:hover, .title:hover)) {
   background-image: linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.05));
 }

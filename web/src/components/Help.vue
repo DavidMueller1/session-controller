@@ -39,7 +39,8 @@ const header = [
 ];
 
 const actions = [
-  { icon: "ti-pointer", title: "Click a strip", desc: "Opens its detail — full path, model, surfaces, last event, timestamps, and Open window." },
+  { icon: "ti-pointer", title: "Click a strip", desc: "Jumps to the session — its terminal tab, PhpStorm window or Claude app session (reopened if the tab was closed)." },
+  { icon: "ti-id", title: "Click the title", desc: "Opens its detail — full path, model, surfaces, last event, timestamps, and Open window." },
   { icon: "ti-server-2", title: "dev ▾", desc: "Install dependencies, start / stop the dev server, and view live logs." },
   { icon: "ti-pin", title: "note", desc: "Pin a note — turns a flashing “Needs you” into a calm Parked strip." },
   { icon: "ti-plane-arrival", title: "land", desc: "Mark done → Landed. Auto-un-lands if the session starts working again. Turn on Auto-land in Settings to land strips whose PR is merged." },
