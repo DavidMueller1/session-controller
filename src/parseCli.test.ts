@@ -144,3 +144,19 @@ test("keeps a /rename title once the session has exited", async () => {
   const res = await parseCliIncremental(file, null);
   assert.equal(res!.facts.title, "SEARCH");
 });
+
+test("a /branch fork is its own session, not a continuation of the one it was branched from", async () => {
+  const forkedFrom = { sessionId: "parent-0000", messageUuid: "m1" };
+  const file = await fixture([
+    JSON.stringify({
+      type: "user",
+      sessionId: "s1",
+      forkedFrom,
+      timestamp: "2026-09-14T10:00:00.000Z",
+      message: { role: "user", content: "This session is being continued from a previous conversation. Read /p/0b1c2d3e-0000-4000-8000-000000000001.jsonl" },
+    }),
+    assistantLine({ requestId: "req_a" }),
+  ]);
+  const res = await parseCliIncremental(file, null);
+  assert.equal(res!.facts.continuedFrom, null);
+});

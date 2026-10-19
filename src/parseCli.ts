@@ -214,7 +214,12 @@ function ingestLine(c: CliCursor, s: string): void {
   }
   if (ev.kind === "human" && !c.firstUserText) {
     const raw = humanText(o);
-    if (CONTINUATION_RE.test(raw)) {
+    // `/branch` copies the parent's history (each copied line carries `forkedFrom`), including
+    // any compaction preamble naming the parent's transcript — a fork is its own flight, so a
+    // copied preamble must not make it the parent's continuation.
+    if (o.forkedFrom) {
+      if (!CONTINUATION_RE.test(raw)) c.firstUserText = ev.summary.replace(/^you:\s*/, "");
+    } else if (CONTINUATION_RE.test(raw)) {
       // A compaction continuation opens with the preamble naming its parent transcript;
       // capture that predecessor id so the board can fold both into one flight. Don't let
       // the boilerplate preamble become the title — wait for the first real prompt (the
