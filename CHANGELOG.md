@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 168 — 2026-10-19
+- Renamed sessions keep their `/rename` title after they go quiet, instead of falling back to the auto-generated one.
+
 ## Build 167 — 2026-10-09
 - **A second Claude login** (a `~/.claude-<name>` config dir, e.g. run via `CLAUDE_CONFIG_DIR` in its own terminal profile) is tracked too: its strips carry a tag with its name, and Settings can show its own PLAN and API in the header.
 

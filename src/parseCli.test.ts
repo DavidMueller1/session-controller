@@ -134,3 +134,13 @@ test("a reminder Claude Code injects after a finished turn doesn't read as a new
   const res = await parseCliIncremental(file, null);
   assert.equal(res!.facts.tailKind, "assistant-text");
 });
+
+test("keeps a /rename title once the session has exited", async () => {
+  const file = await fixture([
+    assistantLine({ requestId: "req_a" }),
+    JSON.stringify({ type: "custom-title", customTitle: "SEARCH", sessionId: "s1" }),
+    JSON.stringify({ type: "ai-title", aiTitle: "Analyze intelligent search implementation plan", sessionId: "s1" }),
+  ]);
+  const res = await parseCliIncremental(file, null);
+  assert.equal(res!.facts.title, "SEARCH");
+});

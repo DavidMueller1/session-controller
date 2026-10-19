@@ -131,6 +131,8 @@ export interface CliCursor {
   cwd: string | null;
   branch: string | null;
   aiTitle: string | null;
+  /** the `/rename` title — kept in the transcript, so it outlives the live registry entry */
+  customTitle: string | null;
   firstUserText: string | null;
   /** predecessor session id, if this transcript opens with the `/compact` continuation
    *  preamble ("This session is being continued…"), else null */
@@ -166,6 +168,7 @@ function emptyCursor(): CliCursor {
     cwd: null,
     branch: null,
     aiTitle: null,
+    customTitle: null,
     firstUserText: null,
     continuedFrom: null,
     firstTs: null,
@@ -193,6 +196,7 @@ function ingestLine(c: CliCursor, s: string): void {
   if (typeof o.cwd === "string" && o.cwd) c.cwd = o.cwd;
   if (typeof o.gitBranch === "string" && o.gitBranch) c.branch = o.gitBranch;
   if (o.type === "ai-title" && o.aiTitle) c.aiTitle = String(o.aiTitle);
+  if (o.type === "custom-title" && typeof o.customTitle === "string") c.customTitle = o.customTitle.trim() || null;
 
   // context = prompt tokens of the most recent assistant turn (last one wins)
   const u: Usage | null = o.type === "assistant" ? o.message?.usage ?? null : null;
@@ -270,7 +274,7 @@ function localDay(ts: unknown): string | null {
 
 function cursorToFacts(filePath: string, c: CliCursor): SessionFacts {
   const sessionId = c.sessionId ?? path.basename(filePath).replace(/\.jsonl$/, "");
-  const title = c.aiTitle ?? (c.firstUserText ? truncate(c.firstUserText, 60) : sessionId);
+  const title = c.customTitle ?? c.aiTitle ?? (c.firstUserText ? truncate(c.firstUserText, 60) : sessionId);
   const tailKind: TailKind = (c.tail?.kind as TailKind) ?? "none";
   return {
     id: sessionId,
