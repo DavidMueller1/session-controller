@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 173 — 2026-11-02
+- Easier on the battery: desktop-app sessions are found without walking their whole folder tree every few seconds (thanks, Tim). If Claude changes where it keeps them, the board falls back to a full scan and shows a banner.
+
 ## Build 172 — 2026-11-02
 - Much lighter on the Mac: the dev-server scan no longer starts a `git` process every few seconds for each folder that isn't a git repository (Cowork folders, your home folder), and it skips older landings that aren't shown.
 

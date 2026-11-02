@@ -358,6 +358,82 @@ export class Engine extends EventEmitter {
     return roots.some((r) => p === r || p.startsWith(r.endsWith(path.sep) ? r : r + path.sep));
   }
 
+  /** desktop session folder → its transcripts when last listed, so an idle one isn't re-read every poll */
+  private desktopListing = new Map<string, { at: number; files: string[] }>();
+  /** desktop roots where the layout walk missed files — walked recursively until it doesn't */
+  private desktopFallback = new Set<string>();
+
+  /** true while Claude's desktop session layout isn't the one we walk (shown as a banner) */
+  desktopLayoutChanged(): boolean {
+    return this.desktopFallback.size > 0;
+  }
+
+  /**
+   * List a desktop session root by its known layout instead of walking it recursively:
+   * `<org>/<user>/local_<id>.json` plus each session folder's `.claude/projects/**.jsonl`.
+   * Everything else in a session folder (outputs, uploads, plugins, skills, …) is skipped —
+   * that's where the tens of thousands of dirs live. An idle session folder (no transcript
+   * written for desktopRelistMs) reuses its last listing; `fresh` bypasses that.
+   */
+  private async listDesktopRoot(root: string, fresh = false): Promise<string[]> {
+    const now = Date.now();
+    const dirents = (d: string) => fs.readdir(d, { withFileTypes: true }).catch(() => []);
+    const subdirs = async (d: string) => (await dirents(d)).filter((e) => e.isDirectory()).map((e) => path.join(d, e.name));
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const org of await subdirs(root)) {
+      for (const user of await subdirs(org)) {
+        await Promise.all(
+          (await dirents(user)).map(async (e) => {
+            const p = path.join(user, e.name);
+            if (e.isFile()) return void out.push(p);
+            if (!e.isDirectory()) return;
+            seen.add(p);
+            const cached = this.desktopListing.get(p);
+            const active = cached?.files.some((f) => now - (this.fileMeta.get(f)?.mtimeMs ?? 0) < CONFIG.desktopRelistMs);
+            // an empty listing is re-read every poll: a new session writes its first transcript seconds after its folder appears
+            if (!fresh && cached?.files.length && !active && now - cached.at < CONFIG.desktopRelistMs) return void out.push(...cached.files);
+            const projects = path.join(p, ".claude", "projects");
+            const entries = ((await fs.readdir(projects, { recursive: true } as any).catch(() => [])) as string[]).map((f) => path.join(projects, f));
+            const files = entries.filter(isCliTranscript);
+            this.desktopListing.set(p, { at: now, files });
+            out.push(...files);
+          }),
+        );
+      }
+    }
+    for (const k of [...this.desktopListing.keys()]) if (k.startsWith(root + path.sep) && !seen.has(k)) this.desktopListing.delete(k);
+    return out;
+  }
+
+  private static isSourceFile(p: string): boolean {
+    return isCliTranscript(p) || isDesktopSessionFile(p) || isRegistryFile(p) || isHookStateFile(p);
+  }
+
+  /**
+   * Every desktopVerifyMs, walk each desktop root the slow way and check the layout walk
+   * found the same files. If Claude has moved them, fall back to the full walk for that root
+   * (nothing goes missing) and raise the banner; a later clean check clears both.
+   */
+  private async verifyDesktopLayout(): Promise<void> {
+    const before = this.desktopLayoutChanged();
+    for (const root of CONFIG.desktopSessionDirs) {
+      let all: string[];
+      try {
+        all = ((await fs.readdir(root, { recursive: true } as any)) as string[]).map((e) => path.join(root, e)).filter(Engine.isSourceFile);
+      } catch {
+        this.desktopFallback.delete(root); // no such dir (desktop app unused) — nothing to miss
+        continue;
+      }
+      const byLayout = new Set((await this.listDesktopRoot(root, true)).filter(Engine.isSourceFile));
+      // a file deleted between the two walks isn't a layout change — only count ones still there
+      const missed = (await Promise.all(all.filter((p) => !byLayout.has(p)).map(async (p) => ((await fs.stat(p).catch(() => null)) ? p : null)))).filter(Boolean);
+      if (missed.length) this.desktopFallback.add(root);
+      else this.desktopFallback.delete(root);
+    }
+    if (this.desktopLayoutChanged() !== before) this.emit("layout", this.desktopLayoutChanged());
+  }
+
   /**
    * Poll a set of source dirs: enumerate matching files, upsert each (the stat-guard makes
    * unchanged files free and reads are incremental), then forget anything we tracked under
@@ -369,15 +445,16 @@ export class Engine extends EventEmitter {
     const present = new Set<string>();
     await Promise.all(
       roots.map(async (dir) => {
-        let entries: string[];
+        let files: string[];
         try {
-          entries = await fs.readdir(dir, { recursive: true } as any);
+          files =
+            CONFIG.desktopSessionDirs.includes(dir) && !this.desktopFallback.has(dir)
+              ? await this.listDesktopRoot(dir)
+              : ((await fs.readdir(dir, { recursive: true } as any)) as string[]).map((e) => path.join(dir, e));
         } catch {
           return; // dir may not exist (e.g. desktop app never used)
         }
-        const targets = entries
-          .map((e) => path.join(dir, e))
-          .filter((p) => isCliTranscript(p) || isDesktopSessionFile(p) || isRegistryFile(p) || isHookStateFile(p));
+        const targets = files.filter(Engine.isSourceFile);
         for (const p of targets) present.add(p);
         await Promise.all(targets.map((p) => this.upsert(p)));
       }),
@@ -449,6 +526,10 @@ export class Engine extends EventEmitter {
     // PR status: initial poll + slow refresh
     this.pollPrs();
     this.intervals.push(setInterval(() => this.pollPrs(), CONFIG.prPollMs));
+
+    // check the desktop layout walk still sees everything: soon after start, then rarely
+    setTimeout(() => void this.verifyDesktopLayout(), 60_000).unref?.();
+    this.intervals.push(setInterval(() => void this.verifyDesktopLayout(), CONFIG.desktopVerifyMs));
 
     // prune stale tc-state files: once now, then on a slow timer
     void this.gcHookState();

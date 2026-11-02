@@ -24,7 +24,7 @@ const panel = new URLSearchParams(location.search).has("panel");
 // panel. Also silent — the full dashboard owns notifications.
 const overlay = new URLSearchParams(location.search).has("overlay");
 
-const { aircraft, status, health, costs, plans, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
+const { aircraft, status, health, costs, plans, desktopLayoutChanged, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
 onMounted(start);
 
 // Cost readout: today's spend leads (it's the number that changes), the running month
@@ -475,6 +475,15 @@ function onOpen(id: string) { open(id); }
         >missing: {{ e }}</span>
       </span>
       <span class="s-link">{{ health.installedEvents.length }} hook{{ health.installedEvents.length === 1 ? '' : 's' }} wired</span>
+    </div>
+
+    <!-- Claude changed where it keeps desktop sessions: still tracked (full scan), but slower -->
+    <div v-if="desktopLayoutChanged" class="status-bar health-bar sev-minor">
+      <i class="ti ti-folder-search"></i>
+      <span class="s-desc">
+        Claude has changed how it stores desktop-app sessions. They're still tracked, using a slower full
+        scan that drains more battery. An update of Session Controller should fix this.
+      </span>
     </div>
 
     <!-- a newer build is on `main`; the app applies it at startup, so prompt a restart -->

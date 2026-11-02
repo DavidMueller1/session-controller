@@ -23,6 +23,8 @@ export function useBoard(opts: { notify?: boolean } = {}) {
   // the same, per Claude account (cost/plan above are the default account's)
   const costs = ref<Record<string, CostSummary>>({});
   const plans = ref<Record<string, PlanUsage | null>>({});
+  // Claude moved its desktop session files — the server fell back to a full (slower) scan
+  const desktopLayoutChanged = ref(false);
   const connected = ref(false);
   const now = ref(Date.now());
   // build version (for the bottom stamp) + whether the tracked branch is ahead (banner)
@@ -162,6 +164,8 @@ export function useBoard(opts: { notify?: boolean } = {}) {
       } else if (msg.type === "plan") {
         plan.value = msg.plan;
         plans.value = msg.accounts ?? { default: msg.plan };
+      } else if (msg.type === "layout") {
+        desktopLayoutChanged.value = msg.desktopLayoutChanged;
       } else if (msg.type === "version") {
         version.value = msg.current?.pretty ?? "";
         currentBuild.value = msg.current?.build ?? null;
@@ -260,5 +264,5 @@ export function useBoard(opts: { notify?: boolean } = {}) {
     }
   }
 
-  return { aircraft, status, health, cost, plan, costs, plans, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify };
+  return { aircraft, status, health, cost, plan, costs, plans, desktopLayoutChanged, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify };
 }

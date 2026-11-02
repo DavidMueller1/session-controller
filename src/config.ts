@@ -53,6 +53,14 @@ export const CONFIG = {
   // invisible (exact live state comes from the fast hook/registry dirs above), so poll them
   // less often to cut the recursive-walk + stat cost.
   filePollMs: 5_000,
+  /** The desktop session dirs are walked by their known layout, not recursively: every
+   *  session folder carries its own outputs/uploads/plugins/skills tree (tens of thousands
+   *  of dirs after a few months), and a full walk every filePollMs costs seconds of CPU —
+   *  a real battery drain. An idle session's transcript list is reused for this long. */
+  desktopRelistMs: 60_000,
+  /** how often a full recursive walk checks the layout walk still finds everything — if
+   *  Claude changes its layout, the engine falls back to the full walk and says so */
+  desktopVerifyMs: 30 * 60_000,
 
   /** API server (Phase 2) */
   apiPort: Number(process.env.PORT ?? 4317),

@@ -161,6 +161,7 @@ export type WsMessage =
   | { type: "status"; ts: number; status: AnthropicStatus | null }
   | { type: "health"; ts: number; health: HooksHealth | null }
   | { type: "cost"; ts: number; cost: CostSummary; accounts?: Record<string, CostSummary> }
+  | { type: "layout"; ts: number; desktopLayoutChanged: boolean }
   | {
       type: "version";
       ts: number;

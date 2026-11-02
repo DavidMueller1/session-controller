@@ -757,6 +757,11 @@ async function main(): Promise<void> {
     }
   });
 
+  // Claude moved its desktop session files: the engine already fell back to the full walk,
+  // the board says so (a slower scan, and a sign this app needs an update)
+  const layoutMsg = () => ({ type: "layout", ts: Date.now(), desktopLayoutChanged: engine.desktopLayoutChanged() });
+  engine.on("layout", () => broadcast(layoutMsg()));
+
   // WebSocket: snapshot on connect, then live updates
   app.get("/ws", { websocket: true }, (socket: WebSocket) => {
     clients.add(socket);
@@ -765,6 +770,7 @@ async function main(): Promise<void> {
     socket.send(JSON.stringify({ type: "health", ts: Date.now(), health: hooksHealth }));
     socket.send(JSON.stringify(costMsg()));
     socket.send(JSON.stringify(planMsg()));
+    socket.send(JSON.stringify(layoutMsg()));
     socket.send(JSON.stringify(versionMsg()));
     socket.on("close", () => clients.delete(socket));
     socket.on("error", () => clients.delete(socket));
