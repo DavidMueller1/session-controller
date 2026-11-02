@@ -335,18 +335,26 @@ async function main(): Promise<void> {
     if (changed) landed = store.getLanded();
   }
 
-  // Auto-land (opt-in): a strip lands once its PR is merged and it isn't working. Each trigger
-  // lands it only once, so after an unland (by hand, or by working again) it stays put until a
-  // new trigger comes along.
-  let autoLand = store.getSetting("autoLand") === "1";
+  // Auto-land (opt-in): a strip lands once its PR is merged and it isn't working, or once its
+  // session is closed (a terminal exited, a desktop session archived). Each trigger lands it only
+  // once, so after an unland (by hand, or by working again) it stays put until a new trigger
+  // comes along — a resumed session that's closed again is a new one.
+  type AutoLand = "off" | "merged" | "closed";
+  const AUTO_LAND: AutoLand[] = ["off", "merged", "closed"];
+  const storedAutoLand = store.getSetting("autoLand");
+  let autoLand: AutoLand = storedAutoLand === "1" ? "merged" : AUTO_LAND.find((m) => m === storedAutoLand) ?? "off";
   let autoLanded = store.getAutoLanded();
-  function autoLandMerged(list: DiscoveredSession[]): boolean {
-    if (!autoLand) return false;
+  function autoLandTrigger(a: DiscoveredSession): string | null {
+    if (autoLand === "merged") return a.pr?.state === "MERGED" && a.state !== "working" ? `pr#${a.pr.number}` : null;
+    if (autoLand === "closed") return a.state === "suspected-done" ? `closed@${a.lastActivityAt ?? 0}` : null;
+    return null;
+  }
+  function autoLandSessions(list: DiscoveredSession[]): boolean {
+    if (autoLand === "off") return false;
     let changed = false;
     for (const a of list) {
-      if (a.pr?.state !== "MERGED" || a.state === "working") continue;
-      const trigger = `pr#${a.pr.number}`;
-      if (autoLanded.get(a.id) === trigger) continue;
+      const trigger = autoLandTrigger(a);
+      if (!trigger || autoLanded.get(a.id) === trigger) continue;
       store.setAutoLanded(a.id, trigger);
       autoLanded.set(a.id, trigger);
       if (!landed.has(a.id)) {
@@ -394,7 +402,7 @@ async function main(): Promise<void> {
       syncKeepIds();
     }
     autoUnlandOnWork(list);
-    autoLandMerged(list);
+    autoLandSessions(list);
     recordLiveCost(list);
     const prevCost = JSON.stringify(costByAccount);
     refreshCost();
@@ -566,11 +574,12 @@ async function main(): Promise<void> {
 
   const settingsMsg = () => ({ autoLand, dormantHours: CONFIG.dormantMs / 3_600_000, landedKeep });
   app.get("/api/settings", async () => settingsMsg());
-  app.put<{ Body: { autoLand?: boolean; dormantHours?: number; landedKeep?: number } }>("/api/settings", async (req) => {
-    if (typeof req.body?.autoLand === "boolean") {
-      autoLand = req.body.autoLand;
-      store.setSetting("autoLand", autoLand ? "1" : "0");
-      if (autoLandMerged(engine.aircraft())) pushUpdate();
+  app.put<{ Body: { autoLand?: AutoLand; dormantHours?: number; landedKeep?: number } }>("/api/settings", async (req) => {
+    const mode = AUTO_LAND.find((m) => m === req.body?.autoLand);
+    if (mode) {
+      autoLand = mode;
+      store.setSetting("autoLand", mode);
+      if (autoLandSessions(engine.aircraft())) pushUpdate();
     }
     const h = req.body?.dormantHours;
     if (typeof h === "number" && DORMANT_HOURS.includes(h)) {

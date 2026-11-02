@@ -49,14 +49,16 @@ function toggleOverlay() {
   setTimeout(loadAppState, 1600);
 }
 // Server-side so it also lands strips while no board is open.
-const autoLand = ref(false);
+const AUTO_LAND: [AutoLand, string][] = [["off", "Off"], ["merged", "PR merged"], ["closed", "Session closed"]];
+type AutoLand = "off" | "merged" | "closed";
+const autoLand = ref<AutoLand | null>(null);
 const DORMANT: [number, string][] = [[8, "8h"], [24, "1d"], [48, "2d"], [72, "3d"], [120, "5d"], [168, "1w"]];
 const LANDED_KEEP = [10, 20, 50, 100];
 const dormantHours = ref<number | null>(null);
 const landedKeep = ref<number | null>(null);
-type ServerSettings = { autoLand?: boolean; dormantHours?: number; landedKeep?: number };
+type ServerSettings = { autoLand?: AutoLand; dormantHours?: number; landedKeep?: number };
 function applySettings(d: ServerSettings) {
-  autoLand.value = !!d.autoLand;
+  autoLand.value = d.autoLand ?? null;
   dormantHours.value = d.dormantHours ?? null;
   landedKeep.value = d.landedKeep ?? null;
 }
@@ -75,9 +77,9 @@ async function putSettings(body: ServerSettings) {
     void loadSettings();
   }
 }
-function toggleAutoLand() {
-  autoLand.value = !autoLand.value;
-  void putSettings({ autoLand: autoLand.value });
+function setAutoLand(mode: AutoLand) {
+  autoLand.value = mode;
+  void putSettings({ autoLand: mode });
 }
 function setDormant(h: number) {
   dormantHours.value = h;
@@ -226,10 +228,10 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
           </div>
         </div>
         <div class="s-pref" data-setting="autoLand">
-          <span class="s-plabel">Auto-land when the PR is merged</span>
-          <button class="s-toggle" :class="{ on: autoLand }" @click="toggleAutoLand">
-            <i class="ti" :class="autoLand ? 'ti-plane-arrival' : 'ti-plane-off'"></i> {{ autoLand ? "On" : "Off" }}
-          </button>
+          <span class="s-plabel">Auto-land when</span>
+          <div class="s-seg">
+            <button v-for="[mode, label] in AUTO_LAND" :key="mode" :class="{ on: autoLand === mode }" @click="setAutoLand(mode)">{{ label }}</button>
+          </div>
         </div>
         <template v-for="sec in sections" :key="sec.id">
           <div class="s-pref" data-setting="sections">

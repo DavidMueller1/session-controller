@@ -5,7 +5,8 @@ import type { SettingKey } from "../types";
 const emit = defineEmits<{ close: []; openSettings: [key: SettingKey] }>();
 
 // the current values, so the text quotes your own settings rather than the defaults
-const cfg = ref<{ dormantHours: number; landedKeep: number; autoLand: boolean }>({ dormantHours: 72, landedKeep: 20, autoLand: false });
+const cfg = ref<{ dormantHours: number; landedKeep: number; autoLand: "off" | "merged" | "closed" }>({ dormantHours: 72, landedKeep: 20, autoLand: "off" });
+const AUTO_LAND_TEXT = { off: "Auto-land is off.", merged: "Auto-land is on: strips land once their PR is merged.", closed: "Auto-land is on: strips land once their session is closed (terminal exited, desktop session archived)." };
 onMounted(async () => {
   try {
     cfg.value = { ...cfg.value, ...(await (await fetch("/api/settings")).json()) };
@@ -62,9 +63,9 @@ const actions = computed<(Entry & { icon: string; title: string })[]>(() => [
   { icon: "ti-id", title: "Click the title", desc: "Opens its detail — full path, model, surfaces, last event, timestamps, and Open window." },
   { icon: "ti-server-2", title: "dev ▾", desc: "Install dependencies, start / stop the dev server, and view live logs." },
   { icon: "ti-pin", title: "note", desc: "Pin a note — turns a flashing “Needs you” into a calm Parked strip." },
-  { icon: "ti-plane-arrival", title: "land", desc: `Mark done → Landed. Auto-un-lands if the session starts working again. Auto-land (${cfg.value.autoLand ? "on" : "off"}) lands strips whose PR is merged.`, setting: "autoLand" },
+  { icon: "ti-plane-arrival", title: "land", desc: `Mark done → Landed. Auto-un-lands if the session starts working again. ${AUTO_LAND_TEXT[cfg.value.autoLand] ?? AUTO_LAND_TEXT.off}`, setting: "autoLand" },
   { icon: "ti-sparkles", title: "What's new", desc: "The changelog. A dot on the icon marks new entries after an update." },
-  { icon: "ti-settings", title: "Settings (gear)", desc: "Board view & notifications, when strips go dormant, how many landed strips stay, auto-land on merged PRs, show / hide PLAN and API per login, the overlay rail, check-for-updates / restart / quit, and per-repo dev config." },
+  { icon: "ti-settings", title: "Settings (gear)", desc: "Board view & notifications, when strips go dormant, how many landed strips stay, auto-land (on merged PR or closed session), show / hide PLAN and API per login, the overlay rail, check-for-updates / restart / quit, and per-repo dev config." },
 ]);
 </script>
 
