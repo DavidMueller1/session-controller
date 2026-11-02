@@ -49,7 +49,7 @@ function toggleOverlay() {
   setTimeout(loadAppState, 1600);
 }
 // Server-side so it also lands strips while no board is open.
-const AUTO_LAND: [AutoLand, string][] = [["off", "Off"], ["merged", "PR merged"], ["closed", "Session closed"]];
+const AUTO_LAND: [AutoLand, string][] = [["off", "Never"], ["merged", "PR merged"], ["closed", "Session closed"]];
 type AutoLand = "off" | "merged" | "closed";
 const autoLand = ref<AutoLand | null>(null);
 const DORMANT: [number, string][] = [[8, "8h"], [24, "1d"], [48, "2d"], [72, "3d"], [120, "5d"], [168, "1w"]];

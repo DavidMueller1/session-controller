@@ -6,7 +6,7 @@ const emit = defineEmits<{ close: []; openSettings: [key: SettingKey] }>();
 
 // the current values, so the text quotes your own settings rather than the defaults
 const cfg = ref<{ dormantHours: number; landedKeep: number; autoLand: "off" | "merged" | "closed" }>({ dormantHours: 72, landedKeep: 20, autoLand: "off" });
-const AUTO_LAND_TEXT = { off: "Auto-land is off.", merged: "Auto-land is on: strips land once their PR is merged.", closed: "Auto-land is on: strips land once their session is closed (terminal exited, desktop session archived)." };
+const AUTO_LAND_TEXT = { off: "Auto-land is set to never.", merged: "Auto-land is on: strips land once their PR is merged.", closed: "Auto-land is on: strips land once their session is closed (terminal exited, desktop session archived)." };
 onMounted(async () => {
   try {
     cfg.value = { ...cfg.value, ...(await (await fetch("/api/settings")).json()) };
