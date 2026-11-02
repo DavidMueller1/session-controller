@@ -159,8 +159,10 @@ export interface CliCursor {
    *  this set a multi-block turn is billed once per block. */
   billed: Set<string>;
   /** background tasks (Bash, MCP, async agents) started but not yet reported back via a
-   *  `<task-notification>`: task id → launch time (ms) */
-  pendingTasks: Map<string, number>;
+   *  `<task-notification>`: task id → launch time (ms) and whether it is a shell */
+  pendingTasks: Map<string, { at: number; shell: boolean }>;
+  /** Bash tool calls awaiting their result: tool_use id → command */
+  bashCalls: Map<string, string>;
 }
 
 function emptyCursor(): CliCursor {
@@ -185,19 +187,31 @@ function emptyCursor(): CliCursor {
     costUnpriced: false,
     billed: new Set(),
     pendingTasks: new Map(),
+    bashCalls: new Map(),
   };
 }
 
 // How Claude Code announces a background task in a tool result, and how it reports one back.
 // Anchored at the start: the real notice IS the whole tool result, while a tool that merely
 // prints such text (a grep over transcripts) must not count.
-const TASK_LAUNCH_RES = [
-  /^Command running in background with ID: ([A-Za-z0-9_-]+)/, // Bash run_in_background
-  /^Command did not complete[^\n]*moved to the background \(ID: ([A-Za-z0-9_-]+)\)/, // Bash past its timeout
-  /^MCP tool [^\n]*moved to the background as task ([A-Za-z0-9_-]+)/, // a slow MCP call
-  /^Async agent launched successfully[\s\S]*?agentId: ([A-Za-z0-9_-]+)/, // background subagent
+const TASK_LAUNCH_RES: [RegExp, boolean][] = [
+  [/^Command running in background with ID: ([A-Za-z0-9_-]+)/, true], // Bash run_in_background
+  [/^Command did not complete[^\n]*moved to the background \(ID: ([A-Za-z0-9_-]+)\)/, true], // Bash past its timeout
+  [/^MCP tool [^\n]*moved to the background as task ([A-Za-z0-9_-]+)/, false], // a slow MCP call
+  [/^Async agent launched successfully[\s\S]*?agentId: ([A-Za-z0-9_-]+)/, false], // background subagent
 ];
 const TASK_DONE_RE = /<task-id>([^<]+)<\/task-id>[\s\S]*?<status>(completed|failed|killed|stopped)<\/status>/g;
+
+// A background shell only counts when Claude waits on it to finish (a CI poll loop, a sleep, a
+// test run). A dev server or watcher reports back only when it is killed, so Claude waits on you,
+// and a server often runs under a repo's own script name — hence a whitelist, not a blacklist.
+const SHELL_WAIT_RE = /\bgh\s+(?:run\s+watch|pr\s+checks\b[^|;&]*--watch)/;
+const SHELL_SERVER_RE = /(?<![/\w.-])(?:dev|serve|server|start|preview|storybook|bff)\b|--watch\b|\btail\s+-[fF]\b/;
+const SHELL_FINITE_RE = /\b(?:sleep|until|while|wait)\b|\bfor\s+\w+\s+in\b|\b(?:test|tests|build|lint|typecheck|tsc|vitest|jest|playwright|pytest|phpunit)\b/;
+
+export function shellAwaited(command: string): boolean {
+  return SHELL_WAIT_RE.test(command) || (!SHELL_SERVER_RE.test(command) && SHELL_FINITE_RE.test(command));
+}
 
 function blockText(b: any): string {
   if (typeof b?.content === "string") return b.content;
@@ -208,14 +222,19 @@ function blockText(b: any): string {
 /** track background tasks: a tool result starts one, a task notification ends it */
 function trackTasks(c: CliCursor, o: any, ts: number | null): void {
   const content = o.message?.content;
+  if (o.type === "assistant" && Array.isArray(content)) {
+    for (const b of content) if (b?.type === "tool_use" && b.name === "Bash" && typeof b.id === "string") c.bashCalls.set(b.id, String(b.input?.command ?? ""));
+  }
   if (o.type === "user" && Array.isArray(content)) {
     for (const b of content) {
       if (b?.type !== "tool_result") continue;
+      const command = c.bashCalls.get(b.tool_use_id);
+      c.bashCalls.delete(b.tool_use_id);
       const text = blockText(b);
       if (!text.includes("background")) continue;
-      for (const re of TASK_LAUNCH_RES) {
+      for (const [re, shell] of TASK_LAUNCH_RES) {
         const m = text.trimStart().match(re);
-        if (m) c.pendingTasks.set(m[1], ts ?? Date.now());
+        if (m && (!shell || shellAwaited(command ?? ""))) c.pendingTasks.set(m[1], { at: ts ?? Date.now(), shell });
       }
     }
   }
@@ -348,7 +367,7 @@ function cursorToFacts(filePath: string, c: CliCursor): SessionFacts {
     costByDay: { ...c.costByDay },
     costUnpriced: c.costUnpriced,
     continuedFrom: c.continuedFrom,
-    pendingTaskStarts: [...c.pendingTasks.values()],
+    pendingTasks: [...c.pendingTasks.values()],
   };
 }
 

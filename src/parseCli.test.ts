@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { resolve } from "./deriveState.js";
-import { parseCliIncremental } from "./parseCli.js";
+import { parseCliIncremental, shellAwaited } from "./parseCli.js";
 
 /** a transcript assistant line, as Claude Code writes it */
 function assistantLine(o: { requestId: string; model?: string; usage?: Record<string, unknown>; text?: string }) {
@@ -173,7 +173,7 @@ test("a turn that ends while a background task runs is still working, until the 
     said("I wait for the search."),
   ]);
   const res = await parseCliIncremental(file, null);
-  assert.equal(res!.facts.pendingTaskStarts!.length, 1);
+  assert.equal(res!.facts.pendingTasks!.length, 1);
 
   const later = Date.now() + 60_000; // past the needs-input grace
   assert.equal(resolve(res!.facts, later).state, "working");
@@ -183,6 +183,47 @@ test("a turn that ends while a background task runs is still working, until the 
     JSON.stringify({ type: "queue-operation", operation: "enqueue", timestamp: ts, content: "<task-notification>\n<task-id>k5slmxt4c</task-id>\n<status>failed</status>\n</task-notification>" }) + "\n",
   );
   const done = await parseCliIncremental(file, res!.cursor);
-  assert.equal(done!.facts.pendingTaskStarts!.length, 0);
+  assert.equal(done!.facts.pendingTasks!.length, 0);
   assert.equal(resolve(done!.facts, later).state, "needs-input");
+});
+
+test("a background shell keeps the turn working only while Claude waits on it, not for a dev server", async () => {
+  const ts = new Date().toISOString();
+  const bash = (id: string, command: string) =>
+    JSON.stringify({ type: "assistant", sessionId: "s1", timestamp: ts, message: { id: "m_" + id, content: [{ type: "tool_use", id, name: "Bash", input: { command, run_in_background: true } }] } });
+  const launched = (id: string, task: string) =>
+    JSON.stringify({ type: "user", sessionId: "s1", timestamp: ts, message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: `Command running in background with ID: ${task}. Output is being written to: /tmp/${task}.output` }] } });
+  const said = JSON.stringify({ type: "assistant", sessionId: "s1", timestamp: ts, message: { id: "m_said", content: [{ type: "text", text: "Waiting for CI." }] } });
+  const file = await fixture([
+    bash("t1", "source ~/.nvm/nvm.sh >/dev/null 2>&1; nvm use >/dev/null; pnpm kl:bff 2>&1"),
+    launched("t1", "server1"),
+    bash("t2", "for i in $(seq 1 60); do s=$(gh pr checks 5849 --json name,bucket 2>/dev/null || echo '[]'); sleep 30; done"),
+    launched("t2", "poll1"),
+    said,
+  ]);
+  const res = await parseCliIncremental(file, null);
+  assert.equal(res!.facts.pendingTasks!.length, 1);
+  assert.equal(resolve(res!.facts, Date.now() + 60_000).state, "working");
+  // a shell Claude waits on that never reports back stops counting after an hour
+  assert.equal(resolve(res!.facts, Date.now() + 61 * 60_000).state, "needs-input");
+});
+
+test("tells a background shell Claude waits on from a server or watcher", () => {
+  for (const c of [
+    "gh pr checks 646 --watch --interval 30 2>&1 | tail -20",
+    "gh run watch 39224853872 --exit-status --interval 60 > /dev/null 2>&1",
+    "sleep 90; until ! gh pr checks 5685 2>/dev/null | grep -qE pending; do sleep 60; done",
+    "for i in $(seq 1 90); do code=$(curl -s -o /dev/null -w '%{http_code}' https://x.test); sleep 20; done",
+    "source ~/.nvm/nvm.sh && nvm use >/dev/null && pnpm vitest run src/a.test.ts",
+  ])
+    assert.equal(shellAwaited(c), true, c);
+  for (const c of [
+    "source ~/.nvm/nvm.sh >/dev/null 2>&1; pnpm dev:live",
+    "nvm use && pnpm kl:bff",
+    "cd packages/collage-designer && VITE_CHANNEL=kartenliebe pnpm run dev 2>&1",
+    "pnpm exec nuxt dev --port 3002",
+    "pnpm vitest --watch",
+    "tail -f /tmp/app.log",
+  ])
+    assert.equal(shellAwaited(c), false, c);
 });

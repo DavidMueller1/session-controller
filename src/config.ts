@@ -32,8 +32,10 @@ export const CONFIG = {
   /** a mid-work session stays "working" until this long of silence, then goes MIA
    *  (still flying, just a soft "lost contact" badge — not a separate lane) */
   miaAfterMs: 5 * 60_000,
-  /** a background task that never reported back after this long counts as lost */
+  /** a background task that never reported back after this long counts as lost; a shell
+   *  sooner, since one Claude waits on (a CI poll, a test run) rarely runs longer */
   backgroundTaskMaxMs: 6 * 60 * 60_000,
+  backgroundShellMaxMs: 60 * 60_000,
   /** assistant turn ended; wait this short grace before calling it needs-input (HOLDING) */
   needsInputGraceMs: 8_000,
   /** no activity for this long => "cold" (dormant). NOT landed. Overnight-safe. */

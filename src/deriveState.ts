@@ -13,7 +13,7 @@ import type { ActivityState, DiscoveredSession, SessionFacts } from "./types.js"
  */
 /** background tasks still running; one older than the cap counts as lost (it never reported) */
 function pendingTasks(f: SessionFacts, now: number): number {
-  return (f.pendingTaskStarts ?? []).filter((t) => now - t < CONFIG.backgroundTaskMaxMs).length;
+  return (f.pendingTasks ?? []).filter((t) => now - t.at < (t.shell ? CONFIG.backgroundShellMaxMs : CONFIG.backgroundTaskMaxMs)).length;
 }
 
 function deriveCli(f: SessionFacts, now: number): [ActivityState, string] {

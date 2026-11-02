@@ -170,8 +170,8 @@ export interface SessionFacts {
   costUnpriced: boolean;
   /** desktop: session archived by the app (a "suspected done" signal) */
   archived?: boolean;
-  /** CLI: launch times (ms) of background tasks not yet reported back */
-  pendingTaskStarts?: number[];
+  /** CLI: background tasks not yet reported back — launch time (ms), and whether it is a shell */
+  pendingTasks?: { at: number; shell: boolean }[];
   /** desktop: a run of a scheduled task (nobody sits at it, so once it ends it is done) */
   scheduled?: boolean;
   /** CLI: the predecessor session id this transcript continued from after a `/compact`
