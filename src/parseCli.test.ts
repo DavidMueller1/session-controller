@@ -240,3 +240,17 @@ test("a background task Claude stops itself no longer keeps the turn working", a
   assert.equal(res!.facts.pendingTasks!.length, 0);
   assert.equal(resolve(res!.facts, Date.now() + 60_000).state, "needs-input");
 });
+
+test("lines Claude Code writes while a session sits idle (a recap, an idle compaction) don't make it look busy", async () => {
+  const at = (min: number) => new Date(Date.UTC(2026, 10, 2, 15, min)).toISOString();
+  const file = await fixture([
+    JSON.stringify({ type: "assistant", sessionId: "s1", timestamp: at(0), message: { id: "m1", content: [{ type: "text", text: "Done." }] } }),
+    JSON.stringify({ type: "system", subtype: "away_summary", content: "You shipped the fix.", sessionId: "s1", timestamp: at(3) }),
+    JSON.stringify({ type: "system", subtype: "compact_boundary", content: "Conversation compacted", sessionId: "s1", timestamp: at(40) }),
+    JSON.stringify({ type: "user", isCompactSummary: true, isVisibleInTranscriptOnly: true, sessionId: "s1", timestamp: at(40), message: { role: "user", content: "This session is being continued from a previous conversation that ran out of context." } }),
+    JSON.stringify({ type: "attachment", sessionId: "s1", timestamp: at(40) }),
+  ]);
+  const res = await parseCliIncremental(file, null);
+  assert.equal(res!.facts.tailKind, "assistant-text");
+  assert.equal(resolve(res!.facts, Date.parse(at(40)) + 1_000).state, "needs-input");
+});

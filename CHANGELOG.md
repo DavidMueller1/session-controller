@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 181 — 2026-11-09
+- Strips no longer flash In-flight on their own while a session waits on you: the recap Claude writes after a while and its compaction while idle no longer count as activity.
+
 ## Build 180 — 2026-11-02
 - A session waiting on background work after its turn (a CI check it polls, a test run, a slow tool call, a subagent) stays **In-flight** until that work reports back, instead of flashing "Needs you". A dev server or watcher left running in the background doesn't count (thanks, Max).
 - **Auto-land** can now also land strips once their session is closed (terminal exited, or archived in the desktop app): Settings → Auto-land when → Never / PR merged / Session closed.

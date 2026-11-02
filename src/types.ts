@@ -157,6 +157,8 @@ export interface SessionFacts {
   tailKind: TailKind;
   tailIsError: boolean;
   tailSummary: string;
+  /** CLI: when that last conversational turn happened (later lines may be bookkeeping) */
+  tailAt?: number | null;
   /** context tokens in the most recent turn (input + cache_read + cache_creation) */
   contextTokens: number | null;
   /** API-equivalent cost of every priced request in this session (see src/pricing.ts).

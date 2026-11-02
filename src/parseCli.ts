@@ -65,7 +65,8 @@ function classify(o: any): NormEvent {
   if (type === "user") {
     // Context Claude Code injects under the user role (e.g. the reminder `/rename` appends
     // after a finished turn) — not you typing, so it must not read as a new prompt.
-    if (o.isMeta === true) return { kind: "meta", ts, summary: "", isError: false };
+    // Same for the summary a compaction writes — Claude Code also compacts on its own while idle.
+    if (o.isMeta === true || o.isCompactSummary === true) return { kind: "meta", ts, summary: "", isError: false };
     // An ESC interrupt fires no Stop hook, so this transcript turn is the authoritative
     // "you took back control" signal — flag it distinctly so state derivation reads it as
     // needs-input, not as work-in-motion (which a plain human/tool-result tail implies).
@@ -283,13 +284,13 @@ function ingestLine(c: CliCursor, s: string): void {
     if (c.firstTs == null) c.firstTs = ev.ts;
     c.lastActivityAt = ev.ts; // last timed event wins
   }
-  if (ev.kind === "human" && !c.firstUserText) {
+  if ((ev.kind === "human" || o.isCompactSummary === true) && !c.firstUserText) {
     const raw = humanText(o);
     // `/branch` copies the parent's history (each copied line carries `forkedFrom`), including
     // any compaction preamble naming the parent's transcript — a fork is its own flight, so a
     // copied preamble must not make it the parent's continuation.
     if (o.forkedFrom) {
-      if (!CONTINUATION_RE.test(raw)) c.firstUserText = ev.summary.replace(/^you:\s*/, "");
+      if (ev.kind === "human" && !CONTINUATION_RE.test(raw)) c.firstUserText = ev.summary.replace(/^you:\s*/, "");
     } else if (CONTINUATION_RE.test(raw)) {
       // A compaction continuation opens with the preamble naming its parent transcript;
       // capture that predecessor id so the board can fold both into one flight. Don't let
@@ -299,7 +300,7 @@ function ingestLine(c: CliCursor, s: string): void {
         const m = raw.match(PARENT_ID_RE);
         if (m && m[1] !== c.sessionId) c.continuedFrom = m[1];
       }
-    } else {
+    } else if (ev.kind === "human") {
       c.firstUserText = ev.summary.replace(/^you:\s*/, "");
     }
   }
@@ -366,6 +367,7 @@ function cursorToFacts(filePath: string, c: CliCursor): SessionFacts {
     tailKind,
     tailIsError: c.tail?.isError ?? false,
     tailSummary: c.tail?.summary || "no conversation yet",
+    tailAt: c.tail?.ts ?? null,
     contextTokens: c.contextTokens,
     costUsd: c.costUsd,
     costTokens: { ...c.costTokens },

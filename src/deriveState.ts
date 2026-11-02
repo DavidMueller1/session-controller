@@ -32,7 +32,10 @@ function deriveCli(f: SessionFacts, now: number): [ActivityState, string] {
     return ["working", n === 1 ? "waiting on 1 background task" : `waiting on ${n} background tasks`];
   }
   if (f.tailKind === "assistant-text") {
-    return [age > CONFIG.needsInputGraceMs ? "needs-input" : "working", f.tailSummary];
+    // the grace counts from Claude's reply: lines written after it while idle (a recap, an idle
+    // compaction, a /rename) must not make it look like it just answered
+    const replyAge = f.tailAt != null ? now - f.tailAt : age;
+    return [replyAge > CONFIG.needsInputGraceMs ? "needs-input" : "working", f.tailSummary];
   }
   // assistant-tool | tool-result | human => work in motion. A tool ERROR is NOT terminal:
   // Claude almost always retries or finds another way, so we keep it "working" and never
