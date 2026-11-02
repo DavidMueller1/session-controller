@@ -3,6 +3,11 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 180 — 2026-11-02
+- A session waiting on background work after its turn (a CI check it polls, a test run, a slow tool call, a subagent) stays **In-flight** until that work reports back, instead of flashing "Needs you". A dev server or watcher left running in the background doesn't count (thanks, Max).
+- **Auto-land** can now also land strips once their session is closed (terminal exited, or archived in the desktop app): Settings → Auto-land when → Never / PR merged / Session closed.
+- A scheduled-task run from the desktop app wraps up when it ends instead of waiting on you.
+
 ## Build 173 — 2026-11-02
 - Easier on the battery: desktop-app sessions are found without walking their whole folder tree every few seconds (thanks, Tim). If Claude changes where it keeps them, the board falls back to a full scan and shows a banner.
 

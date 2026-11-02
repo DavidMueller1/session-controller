@@ -227,3 +227,16 @@ test("tells a background shell Claude waits on from a server or watcher", () => 
   ])
     assert.equal(shellAwaited(c), false, c);
 });
+
+test("a background task Claude stops itself no longer keeps the turn working", async () => {
+  const ts = new Date().toISOString();
+  const file = await fixture([
+    JSON.stringify({ type: "assistant", sessionId: "s1", timestamp: ts, message: { id: "m1", content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "until gh pr checks 1 | grep -q pass; do sleep 30; done", run_in_background: true } }] } }),
+    JSON.stringify({ type: "user", sessionId: "s1", timestamp: ts, message: { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "Command running in background with ID: poll1. Output is being written to: /tmp/poll1.output" }] } }),
+    JSON.stringify({ type: "assistant", sessionId: "s1", timestamp: ts, message: { id: "m2", content: [{ type: "tool_use", id: "t2", name: "TaskStop", input: { task_id: "poll1" } }] } }),
+    JSON.stringify({ type: "assistant", sessionId: "s1", timestamp: ts, message: { id: "m3", content: [{ type: "text", text: "CI is green." }] } }),
+  ]);
+  const res = await parseCliIncremental(file, null);
+  assert.equal(res!.facts.pendingTasks!.length, 0);
+  assert.equal(resolve(res!.facts, Date.now() + 60_000).state, "needs-input");
+});

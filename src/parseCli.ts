@@ -223,7 +223,12 @@ function blockText(b: any): string {
 function trackTasks(c: CliCursor, o: any, ts: number | null): void {
   const content = o.message?.content;
   if (o.type === "assistant" && Array.isArray(content)) {
-    for (const b of content) if (b?.type === "tool_use" && b.name === "Bash" && typeof b.id === "string") c.bashCalls.set(b.id, String(b.input?.command ?? ""));
+    for (const b of content) {
+      if (b?.type !== "tool_use") continue;
+      if (b.name === "Bash" && typeof b.id === "string") c.bashCalls.set(b.id, String(b.input?.command ?? ""));
+      // a task Claude stops itself gets no task-notification
+      if (b.name === "TaskStop" || b.name === "KillShell") c.pendingTasks.delete(String(b.input?.task_id ?? b.input?.shell_id ?? ""));
+    }
   }
   if (o.type === "user" && Array.isArray(content)) {
     for (const b of content) {
