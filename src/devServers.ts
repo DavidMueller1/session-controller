@@ -26,6 +26,14 @@ async function gitExec(args: string[], timeout = 5_000): Promise<string> {
   }
 }
 
+/** git answered "not a git repository" (exit 128) — a real answer, unlike a timeout (killed) */
+function isNotARepo(err: unknown): boolean {
+  const e = err as { code?: unknown; killed?: boolean } | null;
+  return e?.code === 128 && !e.killed;
+}
+/** how long a "not a repo" answer stands before we ask again (the folder may get `git init`) */
+const NOT_REPO_TTL_MS = 10 * 60_000;
+
 /** a single listening TCP socket owned by one of the user's processes */
 interface Listener {
   pid: number;
@@ -90,6 +98,13 @@ export class DevServerScanner {
   private rootCache = new Map<string, string | null>();
   /** cwd → repo identity (shared git dir + friendly name), cached like rootCache */
   private repoCache = new Map<string, { key: string; name: string }>();
+  /** cwd → when git said it isn't a repo. Without this every scan re-spawned git for each such
+   *  folder (Cowork outputs, ~), ~10 processes a second — each one AV-scanned on Sophos. */
+  private notRepo = new Map<string, number>();
+  private knownNotRepo(cwd: string): boolean {
+    const at = this.notRepo.get(cwd);
+    return at != null && Date.now() - at < NOT_REPO_TTL_MS;
+  }
 
   /** Run one scan and attribute detected ports to the given aircraft, keyed by id. */
   async scan(aircraft: DiscoveredSession[]): Promise<Map<string, DevServerInfo>> {
@@ -197,13 +212,13 @@ export class DevServerScanner {
    * A folder's REPO identity, shared by every worktree of the same clone: keyed by the
    * common git dir (`--git-common-dir` resolves to `<main>/.git` from any worktree). So a
    * per-repo setting is configured once and applies to all its worktrees. Public because
-   * the settings endpoint resolves repos for strips too. Null failures aren't cached, so a
-   * transient git timeout self-heals on the next call.
+   * the settings endpoint resolves repos for strips too. A timeout isn't cached, so it
+   * self-heals on the next call; "not a repo" is, for NOT_REPO_TTL_MS.
    */
   async resolveRepo(cwd: string): Promise<{ key: string; name: string } | null> {
     const cached = this.repoCache.get(cwd);
     if (cached) return cached;
-    if (!existsSync(cwd)) return null; // deleted worktree (offline session) — skip, don't spawn git
+    if (!existsSync(cwd) || this.knownNotRepo(cwd)) return null; // deleted worktree / not a repo — don't spawn git
     try {
       let dir = (await gitExec(["-C", cwd, "rev-parse", "--git-common-dir"])).trim();
       if (!dir) return null;
@@ -217,7 +232,8 @@ export class DevServerScanner {
       const repo = { key: dir, name: path.basename(root) };
       this.repoCache.set(cwd, repo);
       return repo;
-    } catch {
+    } catch (err) {
+      if (isNotARepo(err)) this.notRepo.set(cwd, Date.now());
       return null;
     }
   }
@@ -231,15 +247,15 @@ export class DevServerScanner {
   private async rootOf(cwd: string): Promise<string | null> {
     const cached = this.rootCache.get(cwd);
     if (cached) return cached;
-    if (!existsSync(cwd)) return null; // deleted worktree — no point spawning git
+    if (!existsSync(cwd) || this.knownNotRepo(cwd)) return null; // deleted worktree / not a repo — no point spawning git
     try {
       const root = (await gitExec(["-C", cwd, "rev-parse", "--show-toplevel"])).trim() || null;
-      // Only cache a real answer. A failure here is usually a transient timeout under load,
-      // not proof the folder isn't a repo — caching null would strand it forever, so we let
-      // the next scan retry instead.
       if (root) this.rootCache.set(cwd, root);
       return root;
-    } catch {
+    } catch (err) {
+      // "not a repo" is remembered (for a while); a timeout under load is not — that one
+      // retries on the next scan instead of stranding the folder
+      if (isNotARepo(err)) this.notRepo.set(cwd, Date.now());
       return null;
     }
   }

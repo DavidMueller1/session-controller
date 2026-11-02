@@ -270,7 +270,8 @@ async function main(): Promise<void> {
     if (devScanning) return; // a scan can outlast the 3s tick — don't pile them up
     devScanning = true;
     try {
-      const list = baseList();
+      // only the strips on the board — not the hidden older landings, nor their folders' git
+      const list = fullList();
       // Nothing to detect if no strip has a folder — skip the system-wide `lsof` entirely.
       if (!list.some((a) => a.project)) {
         devRunner.reconcile();

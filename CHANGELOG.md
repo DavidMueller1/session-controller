@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 172 — 2026-11-02
+- Much lighter on the Mac: the dev-server scan no longer starts a `git` process every few seconds for each folder that isn't a git repository (Cowork folders, your home folder), and it skips older landings that aren't shown.
+
 ## Build 171 — 2026-10-19
 - A session you split with `/branch` keeps its own strip; the branch no longer replaces it.
 
