@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 183 — 2026-11-09
+- Since Claude Code 2.1.319, strips no longer stay In-flight for up to 15 minutes after a turn ends.
+
 ## Build 182 — 2026-11-09
 - **Reopen after /branch** (Settings, off by default): when you branch a session in iTerm or Terminal, the original reopens in a new tab next to the fork.
 - Clicking a strip whose session runs in iTerm jumps to its exact tab again, and a closed iTerm tab reopens.

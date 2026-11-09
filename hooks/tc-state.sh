@@ -75,10 +75,11 @@ def previous():
 
 reason = ask_tool = ask_id = None
 if state in ("subagent-start", "subagent-stop"):
-    # A subagent began or finished. Never hide a question; otherwise the session works on
-    # (after the last subagent, Claude picks up its result in a new turn and Stop follows).
+    # A subagent began or finished: refresh the running count while the session works. It never
+    # lifts a waiting session — Claude Code also stops internal helpers right after a turn ends,
+    # and a real subagent result arrives in a new turn that reports working on its own.
     prev = previous()
-    if prev.get("state") == "needs-input" and prev.get("reason") == "asking":
+    if prev.get("state") != "working":
         sys.exit(0)
     state = "working"
 elif state == "needs-input" and event in ("Stop", "SubagentStop") and subagent:
