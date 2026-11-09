@@ -161,7 +161,7 @@ function asLiteral(s: string): string {
 function tabScript(kind: HostKind, tty: string): string | null {
   const t = asLiteral(tty);
   if (kind === "iterm") {
-    return `tell application "iTerm2"
+    return `tell application id "com.googlecode.iterm2"
       repeat with w in windows
         repeat with tb in tabs of w
           repeat with s in sessions of tb
@@ -225,11 +225,28 @@ async function focusTerminal(host: Host): Promise<OpenResult> {
  * in the remembered host, cd to the session's folder, and resume. Only iTerm2 and Terminal.app
  * expose scripted new-tab-with-command, so this is limited to them.
  */
-function reopenScript(kind: HostKind, cwd: string, id: string, configDir?: string | null): string | null {
+function reopenScript(kind: HostKind, cwd: string, id: string, configDir?: string | null, background = false): string | null {
   const env = configDir ? `CLAUDE_CONFIG_DIR=${JSON.stringify(configDir)} ` : "";
   const cmd = asLiteral(`cd ${JSON.stringify(cwd)} && ${env}claude --resume ${id}`);
+  // background: open the tab but hand focus straight back to the tab you were in
+  if (kind === "iterm" && background) {
+    return `tell application id "com.googlecode.iterm2"
+      if (count of windows) = 0 then
+        set w to (create window with default profile)
+        tell current session of w to write text "${cmd}"
+      else
+        tell current window
+          set prev to current tab
+          set t to (create tab with default profile)
+          tell current session of t to write text "${cmd}"
+          tell prev to select
+        end tell
+      end if
+    end tell
+    return "ok"`;
+  }
   if (kind === "iterm") {
-    return `tell application "iTerm2"
+    return `tell application id "com.googlecode.iterm2"
       activate
       if (count of windows) = 0 then
         set w to (create window with default profile)
@@ -254,8 +271,8 @@ function reopenScript(kind: HostKind, cwd: string, id: string, configDir?: strin
 }
 
 /** true if we opened a new tab and kicked off `claude --resume` for the closed session */
-async function reopenTerminalSession(kind: HostKind, cwd: string, id: string, configDir?: string | null): Promise<boolean> {
-  const script = reopenScript(kind, cwd, id, configDir);
+export async function reopenTerminalSession(kind: HostKind, cwd: string, id: string, configDir?: string | null, background = false): Promise<boolean> {
+  const script = reopenScript(kind, cwd, id, configDir, background);
   if (!script) return false;
   try {
     const { stdout } = await exec("osascript", ["-e", script]);

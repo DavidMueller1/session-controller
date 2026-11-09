@@ -105,7 +105,7 @@ export interface CostSummary {
 }
 
 /** a Settings row other views can link to (Help) — Settings scrolls to and highlights it */
-export type SettingKey = "dormant" | "landedKeep" | "autoLand" | "sections";
+export type SettingKey = "dormant" | "landedKeep" | "autoLand" | "reopenBranch" | "sections";
 
 export type Lane = "inflight" | "mia" | "holding" | "parked" | "cold" | "landed";
 

@@ -3,6 +3,10 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 182 — 2026-11-09
+- **Reopen after /branch** (Settings, off by default): when you branch a session in iTerm or Terminal, the original reopens in a new tab next to the fork.
+- Clicking a strip whose session runs in iTerm jumps to its exact tab again, and a closed iTerm tab reopens.
+
 ## Build 181 — 2026-11-09
 - Strips no longer flash In-flight on their own while a session waits on you: the recap Claude writes after a while and its compaction while idle no longer count as activity.
 

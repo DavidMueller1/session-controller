@@ -138,6 +138,9 @@ export interface CliCursor {
   /** predecessor session id, if this transcript opens with the `/compact` continuation
    *  preamble ("This session is being continued…"), else null */
   continuedFrom: string | null;
+  /** `/branch`: the session the copied lines came from, and the first line after the copy */
+  forkParent: string | null;
+  branchedAt: number | null;
   firstTs: number | null;
   contextTokens: number | null;
   lastActivityAt: number | null;
@@ -177,6 +180,8 @@ function emptyCursor(): CliCursor {
     customTitle: null,
     firstUserText: null,
     continuedFrom: null,
+    forkParent: null,
+    branchedAt: null,
     firstTs: null,
     contextTokens: null,
     lastActivityAt: null,
@@ -280,6 +285,8 @@ function ingestLine(c: CliCursor, s: string): void {
 
   const ev = classify(o);
   trackTasks(c, o, ev.ts);
+  if (o.forkedFrom?.sessionId && c.branchedAt == null) c.forkParent = String(o.forkedFrom.sessionId);
+  else if (c.forkParent && c.branchedAt == null && ev.ts != null) c.branchedAt = ev.ts;
   if (ev.ts != null) {
     if (c.firstTs == null) c.firstTs = ev.ts;
     c.lastActivityAt = ev.ts; // last timed event wins
@@ -374,6 +381,7 @@ function cursorToFacts(filePath: string, c: CliCursor): SessionFacts {
     costByDay: { ...c.costByDay },
     costUnpriced: c.costUnpriced,
     continuedFrom: c.continuedFrom,
+    forkedFrom: c.forkParent && c.branchedAt != null ? { parentId: c.forkParent, at: c.branchedAt } : null,
     pendingTasks: [...c.pendingTasks.values()],
   };
 }

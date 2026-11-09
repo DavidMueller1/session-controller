@@ -180,6 +180,8 @@ export interface SessionFacts {
    *  (parsed from the "continued from a previous conversation" preamble). Lets the board
    *  fold a compacted session and its live continuation into one flight. null = fresh. */
   continuedFrom?: string | null;
+  /** CLI: a `/branch` fork — the session it was branched from, and when */
+  forkedFrom?: { parentId: string; at: number } | null;
 }
 
 export interface DiscoveredSession {
@@ -262,6 +264,8 @@ export interface DiscoveredSession {
   /** CLI: predecessor session this transcript continued from after a `/compact` (raw link
    *  from the transcript). Used by correlate to supersede the old session. */
   continuedFrom?: string | null;
+  /** CLI: a `/branch` fork — the session it was branched from, and when */
+  forkedFrom?: { parentId: string; at: number } | null;
   /** the Claude desktop app's own id for this session (`local_…`), when the desktop app has it —
    *  lets a click open exactly this session there (claude://code/continue) */
   desktopSessionId?: string | null;

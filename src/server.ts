@@ -10,7 +10,7 @@ import { DevServerScanner } from "./devServers.js";
 import { Engine } from "./engine.js";
 import { parseEnv, readEnvFile } from "./envfile.js";
 import { type HookSettings, assembleHealth, readHookSettings } from "./hooksHealth.js";
-import { detectSessionHost, openAircraft } from "./open.js";
+import { detectSessionHost, openAircraft, reopenTerminalSession } from "./open.js";
 import { startStatusPolling } from "./status.js";
 import { scanCosts } from "./costScan.js";
 import { Store } from "./store.js";
@@ -32,6 +32,7 @@ function counts(list: DiscoveredSession[]): Record<string, number> {
 /** setting choices: hours until Dormant, and how many landed strips stay on the board */
 const DORMANT_HOURS = [8, 24, 48, 72, 120, 168];
 const LANDED_KEEP = [10, 20, 50, 100];
+const BRANCH_REOPEN_WINDOW_MS = 2 * 60_000;
 
 async function main(): Promise<void> {
   const engine = new Engine();
@@ -366,6 +367,32 @@ async function main(): Promise<void> {
     return changed;
   }
 
+  // Reopen what /branch leaves behind (opt-in): the fork takes over its terminal, so open a tab next
+  // to it that resumes the original. Once per fork, only right after the branch, and only in a
+  // terminal we can script a new tab in (iTerm2, Terminal.app).
+  let reopenBranchParent = store.getSetting("reopenBranchParent") === "1";
+  const forksDone = new Set<string>();
+  async function reopenBranchParents(list: DiscoveredSession[]): Promise<void> {
+    if (!reopenBranchParent) return;
+    for (const a of list) {
+      const fork = a.forkedFrom;
+      if (!fork || forksDone.has(a.id)) continue;
+      if (Date.now() - fork.at > BRANCH_REOPEN_WINDOW_MS || store.getSetting(`forkReopened:${a.id}`)) {
+        forksDone.add(a.id);
+        continue;
+      }
+      if (engine.registryEntry(fork.parentId)) continue; // the original still runs (or the registry lags a tick)
+      const pid = engine.registryEntry(a.id)?.pid;
+      const host = (pid ? await detectSessionHost(pid) : null) ?? store.getHost(a.id) ?? store.getHost(fork.parentId);
+      const kind = host?.kind === "iterm" ? "iterm" : host?.kind === "terminal" ? "terminal" : null;
+      if (!kind || !a.project) continue;
+      forksDone.add(a.id);
+      store.setSetting(`forkReopened:${a.id}`, "1");
+      const configDir = a.account && a.account !== DEFAULT_ACCOUNT ? (accountById(a.account)?.dir ?? null) : null;
+      await reopenTerminalSession(kind, a.project, fork.parentId, configDir, true);
+    }
+  }
+
   // Remember each live terminal session's host (iTerm/Terminal/…) while it's running, so a
   // click after its tab is closed can reopen + `claude --resume` it. Detection walks the pid's
   // process tree, so it only works while alive — we do it once per session (guarded), lazily.
@@ -391,6 +418,7 @@ async function main(): Promise<void> {
   engine.on("update", (list: DiscoveredSession[]) => {
     store.syncSessions(list);
     void persistLiveHosts(list);
+    void reopenBranchParents(list);
     // fold each compacted predecessor's note/landed onto its live continuation and retire
     // its persisted row (so it can't come back as an offline strip). Idempotent per tick.
     let reassigned = false;
@@ -572,9 +600,13 @@ async function main(): Promise<void> {
     return { ok: true, id: req.params.id, landed: false };
   });
 
-  const settingsMsg = () => ({ autoLand, dormantHours: CONFIG.dormantMs / 3_600_000, landedKeep });
+  const settingsMsg = () => ({ autoLand, dormantHours: CONFIG.dormantMs / 3_600_000, landedKeep, reopenBranchParent });
   app.get("/api/settings", async () => settingsMsg());
-  app.put<{ Body: { autoLand?: AutoLand; dormantHours?: number; landedKeep?: number } }>("/api/settings", async (req) => {
+  app.put<{ Body: { autoLand?: AutoLand; dormantHours?: number; landedKeep?: number; reopenBranchParent?: boolean } }>("/api/settings", async (req) => {
+    if (typeof req.body?.reopenBranchParent === "boolean") {
+      reopenBranchParent = req.body.reopenBranchParent;
+      store.setSetting("reopenBranchParent", reopenBranchParent ? "1" : "0");
+    }
     const mode = AUTO_LAND.find((m) => m === req.body?.autoLand);
     if (mode) {
       autoLand = mode;

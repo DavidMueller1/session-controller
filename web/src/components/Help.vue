@@ -5,7 +5,7 @@ import type { SettingKey } from "../types";
 const emit = defineEmits<{ close: []; openSettings: [key: SettingKey] }>();
 
 // the current values, so the text quotes your own settings rather than the defaults
-const cfg = ref<{ dormantHours: number; landedKeep: number; autoLand: "off" | "merged" | "closed" }>({ dormantHours: 72, landedKeep: 20, autoLand: "off" });
+const cfg = ref<{ dormantHours: number; landedKeep: number; autoLand: "off" | "merged" | "closed"; reopenBranchParent: boolean }>({ dormantHours: 72, landedKeep: 20, autoLand: "off", reopenBranchParent: false });
 const AUTO_LAND_TEXT = { off: "Auto-land is set to never.", merged: "Auto-land is on: strips land once their PR is merged.", closed: "Auto-land is on: strips land once their session is closed (terminal exited, desktop session archived)." };
 onMounted(async () => {
   try {
@@ -64,6 +64,7 @@ const actions = computed<(Entry & { icon: string; title: string })[]>(() => [
   { icon: "ti-server-2", title: "dev ▾", desc: "Install dependencies, start / stop the dev server, and view live logs." },
   { icon: "ti-pin", title: "note", desc: "Pin a note — turns a flashing “Needs you” into a calm Parked strip." },
   { icon: "ti-plane-arrival", title: "land", desc: `Mark done → Landed. Auto-un-lands if the session starts working again. ${AUTO_LAND_TEXT[cfg.value.autoLand] ?? AUTO_LAND_TEXT.off}`, setting: "autoLand" },
+  { icon: "ti-git-fork", title: "/branch", desc: `The fork gets its own strip and the original keeps its own. With the setting on (${cfg.value.reopenBranchParent ? "on" : "off"}), the original reopens in a new tab next to the fork (iTerm2 / Terminal).`, setting: "reopenBranch" },
   { icon: "ti-sparkles", title: "What's new", desc: "The changelog. A dot on the icon marks new entries after an update." },
   { icon: "ti-settings", title: "Settings (gear)", desc: "Board view & notifications, when strips go dormant, how many landed strips stay, auto-land (on merged PR or closed session), show / hide PLAN and API per login, the overlay rail, check-for-updates / restart / quit, and per-repo dev config." },
 ]);

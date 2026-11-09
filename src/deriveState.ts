@@ -84,6 +84,7 @@ export function resolve(f: SessionFacts, now: number): DiscoveredSession {
     costByDay: f.costByDay,
     costUnpriced: f.costUnpriced,
     continuedFrom: f.continuedFrom ?? null,
+    forkedFrom: f.forkedFrom ?? null,
     scheduled: f.scheduled,
     waitingOnTasks: f.source === "cli" && f.tailKind === "assistant-text" ? pendingTasks(f, now) : 0,
   };

@@ -56,9 +56,11 @@ const DORMANT: [number, string][] = [[8, "8h"], [24, "1d"], [48, "2d"], [72, "3d
 const LANDED_KEEP = [10, 20, 50, 100];
 const dormantHours = ref<number | null>(null);
 const landedKeep = ref<number | null>(null);
-type ServerSettings = { autoLand?: AutoLand; dormantHours?: number; landedKeep?: number };
+const reopenBranch = ref(false);
+type ServerSettings = { autoLand?: AutoLand; dormantHours?: number; landedKeep?: number; reopenBranchParent?: boolean };
 function applySettings(d: ServerSettings) {
   autoLand.value = d.autoLand ?? null;
+  reopenBranch.value = !!d.reopenBranchParent;
   dormantHours.value = d.dormantHours ?? null;
   landedKeep.value = d.landedKeep ?? null;
 }
@@ -80,6 +82,10 @@ async function putSettings(body: ServerSettings) {
 function setAutoLand(mode: AutoLand) {
   autoLand.value = mode;
   void putSettings({ autoLand: mode });
+}
+function toggleReopenBranch() {
+  reopenBranch.value = !reopenBranch.value;
+  void putSettings({ reopenBranchParent: reopenBranch.value });
 }
 function setDormant(h: number) {
   dormantHours.value = h;
@@ -232,6 +238,12 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
           <div class="s-seg">
             <button v-for="[mode, label] in AUTO_LAND" :key="mode" :class="{ on: autoLand === mode }" @click="setAutoLand(mode)">{{ label }}</button>
           </div>
+        </div>
+        <div class="s-pref" data-setting="reopenBranch">
+          <span class="s-plabel">Reopen the original session after /branch</span>
+          <button class="s-toggle" :class="{ on: reopenBranch }" @click="toggleReopenBranch">
+            <i class="ti ti-git-fork"></i> {{ reopenBranch ? "On" : "Off" }}
+          </button>
         </div>
         <template v-for="sec in sections" :key="sec.id">
           <div class="s-pref" data-setting="sections">

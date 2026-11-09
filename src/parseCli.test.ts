@@ -254,3 +254,18 @@ test("lines Claude Code writes while a session sits idle (a recap, an idle compa
   assert.equal(res!.facts.tailKind, "assistant-text");
   assert.equal(resolve(res!.facts, Date.parse(at(40)) + 1_000).state, "needs-input");
 });
+
+test("a /branch fork knows the session it was branched from, and when", async () => {
+  const forkedFrom = { sessionId: "parent-0000", messageUuid: "m1" };
+  const file = await fixture([
+    JSON.stringify({ type: "user", sessionId: "s1", forkedFrom, timestamp: "2026-10-19T08:00:00.000Z", message: { role: "user", content: "Build the search." } }),
+    JSON.stringify({ type: "assistant", sessionId: "s1", forkedFrom, timestamp: "2026-10-19T08:01:00.000Z", message: { id: "m2", content: [{ type: "text", text: "Done." }] } }),
+    JSON.stringify({ type: "system", subtype: "local_command", sessionId: "s1", timestamp: "2026-10-19T08:59:24.000Z", content: "<command-name>/branch</command-name>" }),
+    JSON.stringify({ type: "user", sessionId: "s1", timestamp: "2026-10-19T09:03:04.000Z", message: { role: "user", content: "Next step." } }),
+  ]);
+  const res = await parseCliIncremental(file, null);
+  assert.deepEqual(res!.facts.forkedFrom, { parentId: "parent-0000", at: Date.parse("2026-10-19T08:59:24.000Z") });
+
+  const plain = await fixture([assistantLine({ requestId: "req_a" })]);
+  assert.equal((await parseCliIncremental(plain, null))!.facts.forkedFrom, null);
+});
