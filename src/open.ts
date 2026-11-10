@@ -3,6 +3,13 @@ import { promisify } from "node:util";
 
 const exec = promisify(execFile);
 
+// An app we launch inherits our env. When the backend runs inside a Claude session (dev:solo),
+// CLAUDE_CODE_CHILD_SESSION would reach iTerm and turn off transcript saving in every tab.
+const launchEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([k]) => !k.startsWith("CLAUDE_CODE_") && k !== "CLAUDECODE"),
+);
+const launch = (cmd: string, args: string[]) => exec(cmd, args, { env: launchEnv });
+
 export interface OpenResult {
   ok: boolean;
   action: string;
@@ -120,7 +127,7 @@ export async function detectSessionHost(pid: number): Promise<{ kind: HostKind; 
 
 /** macOS `open -a <app> [path]` */
 async function openApp(app: string, path?: string): Promise<void> {
-  await exec("open", path ? ["-a", app, path] : ["-a", app]);
+  await launch("open", path ? ["-a", app, path] : ["-a", app]);
 }
 
 /**
@@ -144,7 +151,7 @@ async function projectRoot(cwd: string): Promise<string> {
  * several projects/worktrees open. No Accessibility permission, no built-in-server token.
  */
 async function focusJetBrainsProject(bin: string, cwd: string): Promise<void> {
-  await exec("open", ["-na", bin, "--args", cwd]);
+  await launch("open", ["-na", bin, "--args", cwd]);
 }
 
 /** escape a string for embedding in an AppleScript literal */
@@ -201,7 +208,7 @@ async function focusTerminalTab(kind: HostKind, tty: string): Promise<boolean> {
   const script = tabScript(kind, tty);
   if (!script) return false;
   try {
-    const { stdout } = await exec("osascript", ["-e", script]);
+    const { stdout } = await launch("osascript", ["-e", script]);
     return stdout.trim() === "ok";
   } catch {
     return false;
@@ -275,7 +282,7 @@ export async function reopenTerminalSession(kind: HostKind, cwd: string, id: str
   const script = reopenScript(kind, cwd, id, configDir, background);
   if (!script) return false;
   try {
-    const { stdout } = await exec("osascript", ["-e", script]);
+    const { stdout } = await launch("osascript", ["-e", script]);
     return stdout.trim() === "ok";
   } catch {
     return false;
@@ -291,7 +298,7 @@ const DESKTOP_SESSION_ID = /^local_[A-Za-z0-9-]{1,64}$/;
 async function focusDesktopSession(id: string | null | undefined): Promise<OpenResult> {
   if (id && DESKTOP_SESSION_ID.test(id)) {
     try {
-      await exec("open", [`claude://code/continue?session=${id}`]);
+      await launch("open", [`claude://code/continue?session=${id}`]);
       return { ok: true, action: "focus-claude-session", detail: id };
     } catch {
       /* fall back to the app */

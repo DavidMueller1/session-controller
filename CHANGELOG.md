@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 184 — 2026-11-10
+- Terminals and apps the board opens no longer inherit Claude Code's session environment, so sessions started there keep saving their transcripts.
+
 ## Build 183 — 2026-11-09
 - Since Claude Code 2.1.319, strips no longer stay In-flight for up to 15 minutes after a turn ends.
 
