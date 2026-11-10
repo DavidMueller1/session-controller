@@ -4,6 +4,7 @@ import Strip from "./components/Strip.vue";
 import FlightBoard from "./components/FlightBoard.vue";
 import Panel from "./components/Panel.vue";
 import Overlay from "./components/Overlay.vue";
+import LayoutRestore from "./components/LayoutRestore.vue";
 import Settings from "./components/Settings.vue";
 import Help from "./components/Help.vue";
 import Whatsnew from "./components/Whatsnew.vue";
@@ -15,6 +16,7 @@ import Helicopter from "./components/Helicopter.vue";
 import { useBoard } from "./useBoard";
 import { isDemo } from "./demo";
 import { accountTag, laneOf, isFlashing, formatUsd, projectName } from "./format";
+import { defaultSkip, fetchLayout, restoreLayout, savedWhen } from "./itermLayout";
 import type { Aircraft, CostSummary, LanePartition, PlanUsage, SettingKey } from "./types";
 
 // Compact mode for the menu-bar popover (loaded as /?panel). Renders just the mini-board
@@ -24,7 +26,7 @@ const panel = new URLSearchParams(location.search).has("panel");
 // panel. Also silent — the full dashboard owns notifications.
 const overlay = new URLSearchParams(location.search).has("overlay");
 
-const { aircraft, status, health, costs, plans, desktopLayoutChanged, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
+const { aircraft, status, health, costs, plans, desktopLayoutChanged, itermOffer, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify } = useBoard({ notify: !panel && !overlay });
 onMounted(start);
 
 // Cost readout: today's spend leads (it's the number that changes), the running month
@@ -284,6 +286,26 @@ function onLogoClick() {
   }
 }
 
+// iTerm layout of an earlier iTerm run: restore with the preview's defaults, preview, or dismiss
+const layoutOpen = ref(false);
+const layoutRestoring = ref(false);
+async function restoreLayoutNow() {
+  const l = await fetchLayout();
+  if (!l) return;
+  layoutRestoring.value = true;
+  if (!(await restoreLayout(l.at, defaultSkip(l)))) layoutOpen.value = true; // let the preview show what failed
+  layoutRestoring.value = false;
+}
+function dismissLayout() {
+  const at = itermOffer.value?.at;
+  itermOffer.value = null;
+  if (at) void fetch("/api/iterm-layout/dismiss", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ at }) });
+}
+function openLayoutFromSettings() {
+  settingsOpen.value = false;
+  layoutOpen.value = true;
+}
+
 const settingsOpen = ref(false);
 // a Settings row to scroll to + highlight when Settings opens from a Help link
 const settingsFocus = ref<SettingKey | null>(null);
@@ -493,6 +515,20 @@ function onOpen(id: string) { open(id); }
       <button class="s-action" :disabled="updating" @click="applyUpdate">{{ updating ? 'Updating…' : 'Update now' }}</button>
     </div>
 
+    <!-- iTerm (or the Mac) restarted since the last saved layout -->
+    <div v-if="itermOffer" class="status-bar sev-info">
+      <i class="ti ti-app-window"></i>
+      <span class="s-desc">
+        iTerm layout from {{ savedWhen(itermOffer.at) }}: {{ itermOffer.windows }} window{{ itermOffer.windows === 1 ? "" : "s" }},
+        {{ itermOffer.tabs }} tab{{ itermOffer.tabs === 1 ? "" : "s" }}, {{ itermOffer.claude }} with Claude
+      </span>
+      <span class="s-acts">
+        <button class="s-action" :disabled="layoutRestoring" @click="restoreLayoutNow">{{ layoutRestoring ? "Restoring…" : "Restore" }}</button>
+        <button class="s-action s-quiet" @click="layoutOpen = true">Preview</button>
+        <button class="s-x" aria-label="Dismiss" @click="dismissLayout"><i class="ti ti-x"></i></button>
+      </span>
+    </div>
+
     <!-- a click that could not be routed (session gone, host never recorded) -->
     <div v-if="openHint" class="status-bar sev-info">
       <i class="ti ti-app-window"></i>
@@ -665,8 +701,10 @@ function onOpen(id: string) { open(id); }
       @toggle-flight="toggleFlight"
       @toggle-notify="toggleNotify"
       @toggle-section="(kind, id) => setShown(kind, id, !isShown(kind, id))"
+      @open-layout="openLayoutFromSettings"
       @close="(settingsOpen = false), (settingsFocus = null)"
     />
+    <LayoutRestore v-if="layoutOpen" @close="layoutOpen = false" />
     <Help v-if="helpOpen" @close="closeHelp" @open-settings="openSettingsAt" />
     <Whatsnew v-if="whatsnewOpen" :since-build="seenBuild" @close="closeWhatsnew" />
     <div v-if="version" class="version-tag">{{ version }}</div>
@@ -694,6 +732,12 @@ function onOpen(id: string) { open(id); }
 .s-action { all: unset; margin-left: auto; cursor: pointer; font-size: 11px; font-weight: 600; color: var(--blue); border: 0.5px solid color-mix(in srgb, var(--blue) 50%, transparent); border-radius: 6px; padding: 3px 10px; white-space: nowrap; }
 .s-action:hover { background: color-mix(in srgb, var(--blue) 15%, transparent); }
 .s-action:disabled { opacity: 0.6; cursor: default; }
+.s-acts { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.s-acts .s-action { margin-left: 0; }
+.s-action.s-quiet { color: var(--text-dim); border-color: var(--border); }
+.s-action.s-quiet:hover { color: var(--text-hi); background: rgba(255, 255, 255, 0.05); }
+.s-x { all: unset; cursor: pointer; display: inline-flex; padding: 3px; border-radius: 5px; color: var(--text-faint); font-size: 13px; }
+.s-x:hover { color: var(--text-dim); background: rgba(255, 255, 255, 0.07); }
 .stat.cost { display: inline-flex; align-items: center; cursor: help; }
 /* Airbus RMP: two equal amber 7-segment windows, each with a caption above (like ACTIVE / STBY) */
 .rmp { display: inline-flex; align-items: baseline; gap: 6px; font-size: 15px; line-height: 1; }

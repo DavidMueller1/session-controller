@@ -105,7 +105,7 @@ export interface CostSummary {
 }
 
 /** a Settings row other views can link to (Help) — Settings scrolls to and highlights it */
-export type SettingKey = "dormant" | "landedKeep" | "autoLand" | "reopenBranch" | "sections";
+export type SettingKey = "dormant" | "landedKeep" | "autoLand" | "reopenBranch" | "itermLayout" | "sections";
 
 export type Lane = "inflight" | "mia" | "holding" | "parked" | "cold" | "landed";
 
@@ -155,6 +155,14 @@ export interface PlanUsage {
   asOf: number;
 }
 
+/** an iTerm layout from an earlier iTerm run that still has Claude sessions to reopen */
+export interface ItermOffer {
+  at: number;
+  windows: number;
+  tabs: number;
+  claude: number;
+}
+
 export type WsMessage =
   | { type: "snapshot" | "update"; ts: number; aircraft: Aircraft[] }
   | { type: "plan"; ts: number; plan: PlanUsage | null; accounts?: Record<string, PlanUsage | null> }
@@ -162,6 +170,7 @@ export type WsMessage =
   | { type: "health"; ts: number; health: HooksHealth | null }
   | { type: "cost"; ts: number; cost: CostSummary; accounts?: Record<string, CostSummary> }
   | { type: "layout"; ts: number; desktopLayoutChanged: boolean }
+  | { type: "iterm"; ts: number; enabled: boolean; savedAt: number | null; offer: ItermOffer | null }
   | {
       type: "version";
       ts: number;

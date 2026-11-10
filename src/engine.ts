@@ -99,6 +99,12 @@ export class Engine extends EventEmitter {
     return this.registryBySession().get(id);
   }
 
+  /** the session a live CLI process runs, from its registry entry */
+  sessionIdByPid(pid: number): string | undefined {
+    for (const e of this.registry.values()) if (e.pid === pid) return e.sessionId;
+    return undefined;
+  }
+
   /** freshness of our hook-state writes — proof the hooks are actually firing */
   hookStats(now = Date.now()): { fresh: number; lastAt: number | null } {
     let fresh = 0;

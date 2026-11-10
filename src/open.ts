@@ -8,7 +8,7 @@ const exec = promisify(execFile);
 const launchEnv = Object.fromEntries(
   Object.entries(process.env).filter(([k]) => !k.startsWith("CLAUDE_CODE_") && k !== "CLAUDECODE"),
 );
-const launch = (cmd: string, args: string[]) => exec(cmd, args, { env: launchEnv });
+export const launch = (cmd: string, args: string[]) => exec(cmd, args, { env: launchEnv });
 
 export interface OpenResult {
   ok: boolean;
@@ -155,7 +155,7 @@ async function focusJetBrainsProject(bin: string, cwd: string): Promise<void> {
 }
 
 /** escape a string for embedding in an AppleScript literal */
-function asLiteral(s: string): string {
+export function asLiteral(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
@@ -232,9 +232,14 @@ async function focusTerminal(host: Host): Promise<OpenResult> {
  * in the remembered host, cd to the session's folder, and resume. Only iTerm2 and Terminal.app
  * expose scripted new-tab-with-command, so this is limited to them.
  */
-function reopenScript(kind: HostKind, cwd: string, id: string, configDir?: string | null, background = false): string | null {
+/** the shell line that continues a CLI session in its own folder */
+export function resumeCommand(cwd: string, id: string, configDir?: string | null): string {
   const env = configDir ? `CLAUDE_CONFIG_DIR=${JSON.stringify(configDir)} ` : "";
-  const cmd = asLiteral(`cd ${JSON.stringify(cwd)} && ${env}claude --resume ${id}`);
+  return `cd ${JSON.stringify(cwd)} && ${env}claude --resume ${id}`;
+}
+
+function reopenScript(kind: HostKind, cwd: string, id: string, configDir?: string | null, background = false): string | null {
+  const cmd = asLiteral(resumeCommand(cwd, id, configDir));
   // background: open the tab but hand focus straight back to the tab you were in
   if (kind === "iterm" && background) {
     return `tell application id "com.googlecode.iterm2"

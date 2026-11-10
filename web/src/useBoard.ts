@@ -1,7 +1,7 @@
 import { ref, shallowRef } from "vue";
 import { createDemo, demoCost, demoPlan, isDemo, isDemoTour } from "./demo";
 import { isFlashing, projectName } from "./format";
-import type { Aircraft, AnthropicStatus, CostSummary, HooksHealth, PlanUsage, WsMessage } from "./types";
+import type { Aircraft, AnthropicStatus, CostSummary, HooksHealth, ItermOffer, PlanUsage, WsMessage } from "./types";
 
 /** how long a strip must stay in holding before we notify. 0 = fire immediately.
  *  (A larger value would suppress the session you're actively replying to.) */
@@ -25,6 +25,7 @@ export function useBoard(opts: { notify?: boolean } = {}) {
   const plans = ref<Record<string, PlanUsage | null>>({});
   // Claude moved its desktop session files — the server fell back to a full (slower) scan
   const desktopLayoutChanged = ref(false);
+  const itermOffer = ref<ItermOffer | null>(null);
   const connected = ref(false);
   const now = ref(Date.now());
   // build version (for the bottom stamp) + whether the tracked branch is ahead (banner)
@@ -166,6 +167,8 @@ export function useBoard(opts: { notify?: boolean } = {}) {
         plans.value = msg.accounts ?? { default: msg.plan };
       } else if (msg.type === "layout") {
         desktopLayoutChanged.value = msg.desktopLayoutChanged;
+      } else if (msg.type === "iterm") {
+        itermOffer.value = msg.offer;
       } else if (msg.type === "version") {
         version.value = msg.current?.pretty ?? "";
         currentBuild.value = msg.current?.build ?? null;
@@ -264,5 +267,5 @@ export function useBoard(opts: { notify?: boolean } = {}) {
     }
   }
 
-  return { aircraft, status, health, cost, plan, costs, plans, desktopLayoutChanged, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify };
+  return { aircraft, status, health, cost, plan, costs, plans, desktopLayoutChanged, itermOffer, connected, now, version, currentBuild, update, updating, applyUpdate, start, setNote, removeNote, land, unland, open, openHint, notifySupported, notifyEnabled, toggleNotify };
 }

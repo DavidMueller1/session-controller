@@ -10,6 +10,7 @@ import { DevServerScanner } from "./devServers.js";
 import { Engine } from "./engine.js";
 import { parseEnv, readEnvFile } from "./envfile.js";
 import { type HookSettings, assembleHealth, readHookSettings } from "./hooksHealth.js";
+import { type ItermLayout, claudeIds, itermStartedAt, restoreIterm, scanIterm } from "./itermLayout.js";
 import { detectSessionHost, openAircraft, reopenTerminalSession } from "./open.js";
 import { startStatusPolling } from "./status.js";
 import { scanCosts } from "./costScan.js";
@@ -33,6 +34,8 @@ function counts(list: DiscoveredSession[]): Record<string, number> {
 const DORMANT_HOURS = [8, 24, 48, 72, 120, 168];
 const LANDED_KEEP = [10, 20, 50, 100];
 const BRANCH_REOPEN_WINDOW_MS = 2 * 60_000;
+const LAYOUT_SCAN_MS = 45_000;
+const LAYOUT_OFFER_MS = 24 * 3_600_000;
 
 async function main(): Promise<void> {
   const engine = new Engine();
@@ -393,6 +396,78 @@ async function main(): Promise<void> {
     }
   }
 
+  // iTerm layout (on by default): snapshot the windows, tabs and panes while iTerm runs, so after
+  // iTerm or the Mac restarted they can be reopened the same way. The newest snapshot of the
+  // previous iTerm run is kept apart, so the empty shells iTerm brings back on its own can't
+  // overwrite it before you restore.
+  let rememberLayout = store.getSetting("rememberLayout") !== "0";
+  let itermStart: number | null = null;
+  const readLayout = (key: string): ItermLayout | null => {
+    try {
+      return JSON.parse(store.getSetting(key) ?? "null") as ItermLayout | null;
+    } catch {
+      return null;
+    }
+  };
+  const sameIterm = (l: ItermLayout, start: number | null) => start != null && Math.abs(l.itermStartedAt - start) < 5_000;
+  const configDirOf = (account: string | null) => (account && account !== DEFAULT_ACCOUNT ? (accountById(account)?.dir ?? null) : null);
+  /** the snapshot of an earlier iTerm run that still has Claude sessions to bring back */
+  function layoutOffer(): ItermLayout | null {
+    if (!rememberLayout) return null;
+    const latest = readLayout("itermLayout");
+    const cand = latest && !sameIterm(latest, itermStart) ? latest : readLayout("itermLayoutPrev");
+    if (!cand || Date.now() - cand.at > LAYOUT_OFFER_MS) return null;
+    if (Number(store.getSetting("itermLayoutDismissed") ?? 0) >= cand.at) return null;
+    return restorableIds(cand).length ? cand : null;
+  }
+  /** Claude sessions in a snapshot worth bringing back: not landed, not running again */
+  const restorableIds = (l: ItermLayout) => claudeIds(l).filter((id) => !landed.has(id) && !engine.registryEntry(id));
+  const itermMsg = () => {
+    const offer = layoutOffer();
+    const tabs = offer?.windows.flatMap((w) => w.tabs) ?? [];
+    return {
+      type: "iterm",
+      ts: Date.now(),
+      enabled: rememberLayout,
+      savedAt: readLayout("itermLayout")?.at ?? null,
+      offer: offer ? { at: offer.at, windows: offer.windows.length, tabs: tabs.length, claude: restorableIds(offer).length } : null,
+    };
+  };
+  let itermSig = "";
+  function pushIterm(): void {
+    const m = itermMsg();
+    const sig = JSON.stringify({ ...m, ts: 0 });
+    if (sig === itermSig) return;
+    itermSig = sig;
+    broadcast(m);
+  }
+  let layoutBusy = false;
+  async function scanLayout(): Promise<void> {
+    if (!rememberLayout || layoutBusy) return;
+    layoutBusy = true;
+    try {
+      itermStart = await itermStartedAt();
+      if (itermStart == null) return;
+      const snap = await scanIterm((pid, command) => {
+        // no registry entry (e.g. a session that doesn't persist): fall back to what it was resumed with
+        const id = engine.sessionIdByPid(pid) ?? /(?:--resume|-r)\s+([0-9a-f-]{36})/.exec(command)?.[1];
+        if (!id) return null;
+        // where the process started, not the transcript's latest cwd: --resume finds the session from there
+        const account = engine.aircraft().find((x) => x.id === id)?.account ?? null;
+        return { sessionId: id, cwd: engine.registryEntry(id)?.cwd ?? null, account };
+      }, itermStart);
+      const latest = readLayout("itermLayout");
+      if (!snap?.windows.length || JSON.stringify(snap.windows) === JSON.stringify(latest?.windows)) return;
+      if (latest && !sameIterm(latest, itermStart) && claudeIds(latest).length) store.setSetting("itermLayoutPrev", JSON.stringify(latest));
+      store.setSetting("itermLayout", JSON.stringify(snap));
+    } finally {
+      layoutBusy = false;
+      pushIterm();
+    }
+  }
+  setTimeout(() => void scanLayout(), 8_000);
+  const layoutTimer = setInterval(() => void scanLayout(), LAYOUT_SCAN_MS);
+
   // Remember each live terminal session's host (iTerm/Terminal/…) while it's running, so a
   // click after its tab is closed can reopen + `claude --resume` it. Detection walks the pid's
   // process tree, so it only works while alive — we do it once per session (guarded), lazily.
@@ -600,12 +675,18 @@ async function main(): Promise<void> {
     return { ok: true, id: req.params.id, landed: false };
   });
 
-  const settingsMsg = () => ({ autoLand, dormantHours: CONFIG.dormantMs / 3_600_000, landedKeep, reopenBranchParent });
+  const settingsMsg = () => ({ autoLand, dormantHours: CONFIG.dormantMs / 3_600_000, landedKeep, reopenBranchParent, rememberLayout });
   app.get("/api/settings", async () => settingsMsg());
-  app.put<{ Body: { autoLand?: AutoLand; dormantHours?: number; landedKeep?: number; reopenBranchParent?: boolean } }>("/api/settings", async (req) => {
+  app.put<{ Body: { autoLand?: AutoLand; dormantHours?: number; landedKeep?: number; reopenBranchParent?: boolean; rememberLayout?: boolean } }>("/api/settings", async (req) => {
     if (typeof req.body?.reopenBranchParent === "boolean") {
       reopenBranchParent = req.body.reopenBranchParent;
       store.setSetting("reopenBranchParent", reopenBranchParent ? "1" : "0");
+    }
+    if (typeof req.body?.rememberLayout === "boolean") {
+      rememberLayout = req.body.rememberLayout;
+      store.setSetting("rememberLayout", rememberLayout ? "1" : "0");
+      if (rememberLayout) void scanLayout();
+      else pushIterm();
     }
     const mode = AUTO_LAND.find((m) => m === req.body?.autoLand);
     if (mode) {
@@ -798,6 +879,53 @@ async function main(): Promise<void> {
     }
   });
 
+  // The layout to restore: the offered snapshot of an earlier iTerm run, else the latest one.
+  // Each pane carries its strip's title and whether that session already runs again.
+  app.get("/api/iterm-layout", async () => {
+    const offer = layoutOffer();
+    const layout = offer ?? readLayout("itermLayout");
+    if (!layout) return { layout: null };
+    const byId = new Map(fullList().map((a) => [a.id, a]));
+    const windows = layout.windows.map((w) => ({
+      bounds: w.bounds,
+      tabs: w.tabs.map((panes) =>
+        panes.map((p) =>
+          p.kind === "claude"
+            ? { ...p, title: byId.get(p.sessionId)?.title ?? null, landed: !!byId.get(p.sessionId)?.landed, live: !!engine.registryEntry(p.sessionId) }
+            : { ...p, live: false },
+        ),
+      ),
+    }));
+    return { layout: { at: layout.at, previousRun: !!offer, windows } };
+  });
+
+  // Reopen a snapshot. `skip` lists panes as "window.tab.pane"; sessions that run again are always
+  // skipped, so a restore never starts a second process on one transcript.
+  app.post<{ Body: { at?: number; skip?: string[] } }>("/api/iterm-layout/restore", async (req, reply) => {
+    const layout = [layoutOffer(), readLayout("itermLayout")].find((l) => l && l.at === req.body?.at);
+    if (!layout) return reply.code(404).send({ ok: false, error: "layout not found" });
+    const skip = new Set(req.body?.skip ?? []);
+    const windows = layout.windows
+      .map((w, wi) => ({
+        bounds: w.bounds,
+        tabs: w.tabs
+          .map((panes, ti) => panes.filter((p, pi) => !skip.has(`${wi}.${ti}.${pi}`) && !(p.kind === "claude" && engine.registryEntry(p.sessionId))))
+          .filter((panes) => panes.length),
+      }))
+      .filter((w) => w.tabs.length);
+    if (!windows.length) return { ok: true, opened: 0 };
+    const ok = await restoreIterm(windows, configDirOf);
+    if (ok) store.setSetting("itermLayoutDismissed", String(layout.at));
+    pushIterm();
+    return { ok, opened: windows.flatMap((w) => w.tabs).length };
+  });
+
+  app.post<{ Body: { at?: number } }>("/api/iterm-layout/dismiss", async (req) => {
+    if (typeof req.body?.at === "number") store.setSetting("itermLayoutDismissed", String(req.body.at));
+    pushIterm();
+    return { ok: true };
+  });
+
   // Claude moved its desktop session files: the engine already fell back to the full walk,
   // the board says so (a slower scan, and a sign this app needs an update)
   const layoutMsg = () => ({ type: "layout", ts: Date.now(), desktopLayoutChanged: engine.desktopLayoutChanged() });
@@ -812,6 +940,7 @@ async function main(): Promise<void> {
     socket.send(JSON.stringify(costMsg()));
     socket.send(JSON.stringify(planMsg()));
     socket.send(JSON.stringify(layoutMsg()));
+    socket.send(JSON.stringify(itermMsg()));
     socket.send(JSON.stringify(versionMsg()));
     socket.on("close", () => clients.delete(socket));
     socket.on("error", () => clients.delete(socket));
@@ -843,6 +972,7 @@ async function main(): Promise<void> {
     clearInterval(devTimer);
     clearInterval(updateTimer);
     clearInterval(planTimer);
+    clearInterval(layoutTimer);
     clearInterval(costScanTimer);
     await engine.stop();
     await app.close();

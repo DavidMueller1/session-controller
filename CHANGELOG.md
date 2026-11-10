@@ -3,6 +3,9 @@
 What's new in Session Controller — newest first. Surfaced in-app under **What's new**.
 Each entry is tagged with the build it shipped in (the number in the version stamp).
 
+## Build 185 — 2026-11-10
+- **iTerm layout** (Settings, on by default): the board remembers your iTerm windows, tabs and splits. After iTerm or your Mac restarts, a banner offers to reopen them the same way — Claude tabs resume their session, other tabs open a shell in their folder. Preview lets you pick which tabs come back.
+
 ## Build 184 — 2026-11-10
 - Terminals and apps the board opens no longer inherit Claude Code's session environment, so sessions started there keep saving their transcripts.
 

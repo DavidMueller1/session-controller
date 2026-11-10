@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { devUrl } from "../format";
+import { fetchLayout, savedWhen } from "../itermLayout";
 import type { SettingKey } from "../types";
 
 interface Cfg {
@@ -23,7 +24,7 @@ interface SectionPref {
   api: boolean;
 }
 const props = defineProps<{ flight: boolean; notifySupported: boolean; notifyEnabled: boolean; sections: SectionPref[]; version?: string; focus?: SettingKey | null }>();
-const emit = defineEmits<{ close: []; toggleFlight: []; toggleNotify: []; toggleSection: [kind: "plan" | "api", id: string] }>();
+const emit = defineEmits<{ close: []; toggleFlight: []; toggleNotify: []; toggleSection: [kind: "plan" | "api", id: string]; openLayout: [] }>();
 
 // App controls (moved out of the native menu). These queue a command the menu-bar app runs
 // on its ~1s poll; overlay state is read back so the toggle reflects reality.
@@ -57,10 +58,13 @@ const LANDED_KEEP = [10, 20, 50, 100];
 const dormantHours = ref<number | null>(null);
 const landedKeep = ref<number | null>(null);
 const reopenBranch = ref(false);
-type ServerSettings = { autoLand?: AutoLand; dormantHours?: number; landedKeep?: number; reopenBranchParent?: boolean };
+const rememberLayout = ref(true);
+const layoutSavedAt = ref<number | null>(null);
+type ServerSettings = { autoLand?: AutoLand; dormantHours?: number; landedKeep?: number; reopenBranchParent?: boolean; rememberLayout?: boolean };
 function applySettings(d: ServerSettings) {
   autoLand.value = d.autoLand ?? null;
   reopenBranch.value = !!d.reopenBranchParent;
+  rememberLayout.value = d.rememberLayout !== false;
   dormantHours.value = d.dormantHours ?? null;
   landedKeep.value = d.landedKeep ?? null;
 }
@@ -87,6 +91,13 @@ function toggleReopenBranch() {
   reopenBranch.value = !reopenBranch.value;
   void putSettings({ reopenBranchParent: reopenBranch.value });
 }
+function toggleRememberLayout() {
+  rememberLayout.value = !rememberLayout.value;
+  void putSettings({ rememberLayout: rememberLayout.value });
+}
+onMounted(async () => {
+  layoutSavedAt.value = (await fetchLayout())?.at ?? null;
+});
 function setDormant(h: number) {
   dormantHours.value = h;
   void putSettings({ dormantHours: h });
@@ -245,6 +256,18 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
             <i class="ti ti-git-fork"></i> {{ reopenBranch ? "On" : "Off" }}
           </button>
         </div>
+        <div class="s-pref" data-setting="itermLayout">
+          <span class="s-plabel">
+            Remember the iTerm layout
+            <span class="s-sub">
+              <template v-if="layoutSavedAt">saved {{ savedWhen(layoutSavedAt) }} · </template>
+              <button class="s-link-btn" @click="emit('openLayout')">Restore…</button>
+            </span>
+          </span>
+          <button class="s-toggle" :class="{ on: rememberLayout }" @click="toggleRememberLayout">
+            <i class="ti ti-app-window"></i> {{ rememberLayout ? "On" : "Off" }}
+          </button>
+        </div>
         <template v-for="sec in sections" :key="sec.id">
           <div class="s-pref" data-setting="sections">
             <span class="s-plabel">Show plan usage<span v-if="sec.tag" class="s-acct">{{ sec.tag }}</span></span>
@@ -391,6 +414,9 @@ const saveGlobal = () => put(GLOBAL_KEY, null, globals.value);
 .s-prefs { flex: none; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-bottom: 0.5px solid var(--border-soft); }
 .s-pref { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .s-plabel { font-size: 12.5px; color: var(--text); }
+.s-sub { display: block; margin-top: 2px; font-size: 11px; color: var(--text-faint); }
+.s-link-btn { all: unset; cursor: pointer; color: var(--blue); }
+.s-link-btn:hover { text-decoration: underline; }
 .s-seg { display: inline-flex; border: 0.5px solid var(--border); border-radius: 8px; overflow: hidden; }
 .s-seg button { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 5px 11px; color: var(--text-faint); }
 .s-seg button:hover { color: var(--text-dim); }
